@@ -679,6 +679,53 @@ function positionSuffix(n) {
   return 'th';
 }
 
+function checkCollisions(dt) {
+  const carLength = 8;   // car length in world units
+  const carWidth = 2.5;  // car width in world units
+  // Convert car length to track-progress units
+  const halfLenT = (carLength / trackLength) / 2;
+
+  for (let ai of aiCars) {
+    // Check longitudinal overlap (track progress)
+    const dProgress = Math.abs(trackProgress - ai.progress);
+    if (dProgress > halfLenT * 2) continue; // too far apart along track
+
+    // Check lateral overlap
+    const dLateral = Math.abs(lateralOffset - ai.lateral);
+    if (dLateral > carWidth * 2) continue; // too far apart sideways
+
+    // Collision! Apply effects
+    // Determine who is ahead
+    if (trackProgress > ai.progress) {
+      // Player is ahead — slow AI, slight push forward for player
+      ai.speed *= 0.7;
+      speed = Math.max(speed, speed * 0.95);
+    } else {
+      // AI is ahead — slow player down on impact
+      speed *= 0.85;
+    }
+
+    // Lateral push — push cars apart
+    const pushDir = (lateralOffset > ai.lateral) ? 1 : -1;
+    const pushStrength = 15 * dt;
+    lateralOffset += pushDir * pushStrength;
+    ai.lateral -= pushDir * pushStrength * 0.5;
+
+    // Clamp lateral
+    lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
+    ai.lateral = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, ai.lateral));
+
+    // Small progress separation to prevent sticking
+    if (Math.abs(trackProgress - ai.progress) < halfLenT * 0.5) {
+      if (trackProgress > ai.progress) {
+        trackProgress += halfLenT * 0.1;
+      } else {
+        ai.progress += halfLenT * 0.1;
+      }
+    }
+  }
+}
+
 // ── ENVIRONMENT ──
 function buildEnvironment() {
   // Ground plane
@@ -1049,6 +1096,9 @@ function animate(now = 0) {
     for (let ai of aiCars) {
       updateAICar(ai, dt);
     }
+
+    // Check collisions between player and AI
+    checkCollisions(dt);
 
     // Update position
     playerPosition = calcPosition();
