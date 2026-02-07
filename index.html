@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Horizon Drive — Accelerometer Controls</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0014;
+    color: #e0d0ff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  /* ── Launcher screen ── */
+  #launcher {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    padding: 2rem 1.5rem;
+    text-align: center;
+    background: linear-gradient(180deg, #12002a 0%, #1a0040 40%, #2d0060 100%);
+  }
+
+  h1 {
+    font-size: 1.8rem;
+    margin-bottom: .25rem;
+    background: linear-gradient(135deg, #ff6ec7, #ffd700);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    font-size: .9rem;
+    opacity: .6;
+    margin-bottom: 2rem;
+  }
+
+  .card {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+    width: 100%;
+    max-width: 420px;
+  }
+
+  .card h2 {
+    font-size: 1.05rem;
+    margin-bottom: .5rem;
+    color: #ffd700;
+  }
+
+  .card p, .card li {
+    font-size: .85rem;
+    line-height: 1.5;
+    opacity: .8;
+  }
+
+  .card ol {
+    padding-left: 1.25rem;
+    text-align: left;
+  }
+
+  .card li { margin-bottom: .35rem; }
+
+  .btn {
+    display: inline-block;
+    padding: .85rem 2rem;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform .15s, box-shadow .15s;
+    text-decoration: none;
+  }
+
+  .btn:active { transform: scale(.96); }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #ff6ec7, #ff3cac);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(255,60,172,.4);
+    margin-bottom: 1rem;
+  }
+
+  .btn-secondary {
+    background: rgba(255,255,255,.08);
+    color: #e0d0ff;
+    border: 1px solid rgba(255,255,255,.15);
+    font-size: .85rem;
+    padding: .65rem 1.5rem;
+  }
+
+  .or-divider {
+    font-size: .8rem;
+    opacity: .4;
+    margin: .75rem 0;
+  }
+
+  /* ── Game screen (iframe mode) ── */
+  #game-screen {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+  }
+
+  #game-screen iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+
+  /* ── HUD overlay ── */
+  #hud {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    pointer-events: none;
+    padding: 8px;
+  }
+
+  .hud-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(0,0,0,.55);
+    backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 6px 14px;
+    pointer-events: auto;
+  }
+
+  .hud-tilt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tilt-indicator {
+    width: 120px;
+    height: 8px;
+    background: rgba(255,255,255,.1);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .tilt-dot {
+    position: absolute;
+    top: -2px;
+    width: 12px;
+    height: 12px;
+    background: #ffd700;
+    border-radius: 50%;
+    transform: translateX(-50%);
+    left: 50%;
+    transition: left .08s ease-out;
+    box-shadow: 0 0 8px rgba(255,215,0,.6);
+  }
+
+  .tilt-label {
+    font-size: .7rem;
+    font-weight: 600;
+    min-width: 50px;
+    text-align: center;
+  }
+
+  .hud-status {
+    font-size: .65rem;
+    opacity: .7;
+  }
+
+  .hud-gas {
+    font-size: .7rem;
+    font-weight: 600;
+    color: #4f4;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .gas-icon {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #4f4;
+    border-radius: 50%;
+    animation: pulse-gas 1s infinite;
+  }
+
+  @keyframes pulse-gas {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .4; }
+  }
+
+  .hud-close {
+    background: rgba(255,255,255,.15);
+    border: none;
+    color: #fff;
+    font-size: .75rem;
+    padding: 4px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  /* ── Sensitivity slider (shown in HUD) ── */
+  .sensitivity-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .65rem;
+    opacity: .8;
+  }
+
+  .sensitivity-control input[type=range] {
+    width: 60px;
+    accent-color: #ff6ec7;
+  }
+
+  /* ── Console snippet view ── */
+  #snippet-screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100dvh;
+    padding: 2rem 1.5rem;
+    background: linear-gradient(180deg, #12002a 0%, #1a0040 100%);
+  }
+
+  #snippet-screen h2 {
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+    color: #ffd700;
+  }
+
+  .snippet-steps {
+    width: 100%;
+    max-width: 500px;
+    text-align: left;
+  }
+
+  .snippet-steps li {
+    font-size: .85rem;
+    margin-bottom: .75rem;
+    line-height: 1.5;
+    list-style: none;
+    padding-left: 1.75rem;
+    position: relative;
+  }
+
+  .snippet-steps li::before {
+    content: attr(data-step);
+    position: absolute;
+    left: 0;
+    color: #ff6ec7;
+    font-weight: 700;
+  }
+
+  pre.snippet-code {
+    width: 100%;
+    max-width: 500px;
+    background: rgba(0,0,0,.4);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    padding: 1rem;
+    margin: 1rem 0;
+    overflow-x: auto;
+    font-size: .7rem;
+    line-height: 1.4;
+    color: #c8b8e8;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .copy-btn {
+    background: linear-gradient(135deg, #ff6ec7, #ff3cac);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: .7rem 1.5rem;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    margin-bottom: 1rem;
+  }
+
+  .back-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,.15);
+    color: #e0d0ff;
+    border-radius: 10px;
+    padding: .5rem 1.25rem;
+    font-size: .8rem;
+    cursor: pointer;
+  }
+
+  /* ── iframe blocked message ── */
+  #iframe-blocked {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0,0,0,.92);
+    color: #e0d0ff;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  #iframe-blocked h2 {
+    font-size: 1.2rem;
+    color: #ffd700;
+    margin-bottom: .75rem;
+  }
+
+  #iframe-blocked p {
+    font-size: .85rem;
+    opacity: .75;
+    margin-bottom: 1.5rem;
+    max-width: 350px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ LAUNCHER ═══════════════════════ -->
+<div id="launcher">
+  <h1>Horizon Drive</h1>
+  <p class="subtitle">Accelerometer Steering Controller</p>
+
+  <div class="card">
+    <h2>How it works</h2>
+    <ol>
+      <li>Tilt your phone left/right to steer</li>
+      <li>Gas pedal is held down automatically</li>
+      <li>Tap the game screen to brake or interact</li>
+    </ol>
+  </div>
+
+  <button class="btn btn-primary" id="btn-launch-iframe">
+    Launch Game
+  </button>
+
+  <p class="or-divider">— or —</p>
+
+  <button class="btn btn-secondary" id="btn-show-snippet">
+    Use Console Injection Mode
+  </button>
+</div>
+
+<!-- ═══════════════════════ GAME SCREEN ═══════════════════════ -->
+<div id="game-screen">
+  <iframe
+    id="game-iframe"
+    src="about:blank"
+    allow="accelerometer; gyroscope; autoplay; fullscreen"
+    sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+    allowfullscreen
+  ></iframe>
+</div>
+
+<!-- ═══════════════════════ HUD OVERLAY ═══════════════════════ -->
+<div id="hud">
+  <div class="hud-bar">
+    <div class="hud-tilt">
+      <span class="tilt-label" id="tilt-label">0°</span>
+      <div class="tilt-indicator">
+        <div class="tilt-dot" id="tilt-dot"></div>
+      </div>
+    </div>
+    <div class="hud-gas">
+      <span class="gas-icon"></span> GAS
+    </div>
+    <div class="sensitivity-control">
+      <label for="sens-slider">Sens</label>
+      <input type="range" id="sens-slider" min="3" max="30" value="12">
+    </div>
+    <button class="hud-close" id="btn-hud-close">EXIT</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════ IFRAME BLOCKED FALLBACK ═══════════════════════ -->
+<div id="iframe-blocked">
+  <h2>Iframe blocked by Shopify</h2>
+  <p>The game can't be embedded in an iframe. Use the console injection method instead — it runs directly inside the game page.</p>
+  <button class="btn btn-primary" id="btn-blocked-snippet" style="margin-bottom:.75rem;">
+    Console Injection Mode
+  </button>
+  <a class="btn btn-secondary" href="https://www.shopify.com/editions/summer2025/drive" target="_blank" rel="noopener">
+    Open Game in New Tab
+  </a>
+</div>
+
+<!-- ═══════════════════════ SNIPPET SCREEN ═══════════════════════ -->
+<div id="snippet-screen">
+  <h2>Console Injection Mode</h2>
+  <ul class="snippet-steps">
+    <li data-step="1.">Open the game: <a href="https://www.shopify.com/editions/summer2025/drive" target="_blank" rel="noopener" style="color:#ff6ec7;">Horizon Drive</a></li>
+    <li data-step="2.">Open your browser's DevTools console
+      <br><em style="font-size:.75rem;opacity:.6;">(Desktop: F12 → Console tab. Mobile: use remote debugging or Eruda.)</em></li>
+    <li data-step="3.">Paste the script below and press Enter</li>
+  </ul>
+  <pre class="snippet-code" id="snippet-code"></pre>
+  <button class="copy-btn" id="btn-copy-snippet">Copy Script</button>
+  <button class="back-btn" id="btn-snippet-back">Back</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// Accelerometer → Keyboard bridge for Horizon Drive
+// ═══════════════════════════════════════════════════════════
+
+const GAME_URL = 'https://www.shopify.com/editions/summer2025/drive';
+
+// ── The injectable controller script (runs inside the game page) ──
+const CONTROLLER_SCRIPT = `(function(){
+  if(window.__accelDriveActive){console.log('Already running');return;}
+  window.__accelDriveActive=true;
+
+  /* ── Config ── */
+  let DEAD_ZONE=4;
+  let SENSITIVITY=12;
+  let calibration=0;
+  let gasActive=true;
+
+  /* ── State ── */
+  let currentSteering='none';
+  let gamma=0;
+
+  /* ── Key simulation helpers ── */
+  function pressKey(code,key){
+    window.dispatchEvent(new KeyboardEvent('keydown',{code:code,key:key,bubbles:true,cancelable:true}));
+  }
+  function releaseKey(code,key){
+    window.dispatchEvent(new KeyboardEvent('keyup',{code:code,key:key,bubbles:true,cancelable:true}));
+  }
+
+  /* ── Gas: hold ArrowUp perpetually ── */
+  function startGas(){
+    pressKey('ArrowUp','ArrowUp');
+    /* re-press every 120ms to keep it held */
+    window.__accelGasInterval=setInterval(function(){
+      if(!gasActive)return;
+      pressKey('ArrowUp','ArrowUp');
+    },120);
+  }
+  startGas();
+
+  /* ── Steering logic ── */
+  function updateSteering(g){
+    let adjusted=g-calibration;
+    let direction='none';
+    if(adjusted<-DEAD_ZONE) direction='left';
+    else if(adjusted>DEAD_ZONE) direction='right';
+
+    if(direction===currentSteering)return;
+
+    /* release old key */
+    if(currentSteering==='left') releaseKey('ArrowLeft','ArrowLeft');
+    if(currentSteering==='right') releaseKey('ArrowRight','ArrowRight');
+
+    /* press new key */
+    if(direction==='left') pressKey('ArrowLeft','ArrowLeft');
+    if(direction==='right') pressKey('ArrowRight','ArrowRight');
+
+    currentSteering=direction;
+    updateHUD(adjusted,direction);
+  }
+
+  /* ── HUD overlay ── */
+  let hud=document.createElement('div');
+  hud.id='accel-hud';
+  hud.innerHTML=\`
+    <div style="position:fixed;top:6px;left:6px;right:6px;z-index:99999;
+      display:flex;align-items:center;justify-content:space-between;
+      background:rgba(0,0,0,.6);backdrop-filter:blur(6px);
+      border-radius:10px;padding:5px 12px;font-family:system-ui;font-size:12px;color:#fff;">
+      <span id="ah-dir" style="min-width:55px;font-weight:700;text-align:center;">STRAIGHT</span>
+      <span style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:10px;opacity:.6;">Tilt</span>
+        <span id="ah-gamma" style="min-width:36px;text-align:right;">0°</span>
+      </span>
+      <span style="color:#4f4;font-weight:700;display:flex;align-items:center;gap:4px;">
+        <span id="ah-gas-dot" style="width:7px;height:7px;background:#4f4;border-radius:50%;"></span>
+        GAS
+      </span>
+      <span style="display:flex;align-items:center;gap:4px;font-size:10px;">
+        Sens <input id="ah-sens" type="range" min="3" max="30" value="12" style="width:50px;accent-color:#ff6ec7;">
+      </span>
+      <button id="ah-cal" style="background:rgba(255,255,255,.15);border:none;color:#fff;
+        border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;">Zero</button>
+      <button id="ah-stop" style="background:rgba(255,60,60,.5);border:none;color:#fff;
+        border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;">Stop</button>
+    </div>\`;
+  document.body.appendChild(hud);
+
+  function updateHUD(adjusted,dir){
+    let el=document.getElementById('ah-dir');
+    if(el) el.textContent=dir==='left'?'<< LEFT':dir==='right'?'RIGHT >>':'STRAIGHT';
+    let ge=document.getElementById('ah-gamma');
+    if(ge) ge.textContent=Math.round(adjusted)+'°';
+  }
+
+  /* sensitivity slider */
+  setTimeout(function(){
+    let sl=document.getElementById('ah-sens');
+    if(sl) sl.addEventListener('input',function(){SENSITIVITY=+this.value;DEAD_ZONE=Math.max(2,SENSITIVITY/3);});
+    let cal=document.getElementById('ah-cal');
+    if(cal) cal.addEventListener('click',function(){calibration=gamma;});
+    let stop=document.getElementById('ah-stop');
+    if(stop) stop.addEventListener('click',function(){
+      clearInterval(window.__accelGasInterval);
+      releaseKey('ArrowUp','ArrowUp');
+      releaseKey('ArrowLeft','ArrowLeft');
+      releaseKey('ArrowRight','ArrowRight');
+      hud.remove();
+      window.__accelDriveActive=false;
+    });
+  },100);
+
+  /* ── Accelerometer ── */
+  function onOrientation(e){
+    gamma=e.gamma||0;
+    updateSteering(gamma);
+  }
+
+  /* iOS 13+ requires permission request */
+  if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+    DeviceOrientationEvent.requestPermission().then(function(state){
+      if(state==='granted') window.addEventListener('deviceorientation',onOrientation);
+      else console.warn('Accelerometer permission denied');
+    }).catch(console.error);
+  } else {
+    window.addEventListener('deviceorientation',onOrientation);
+  }
+
+  console.log('Accel-Drive controller active! Tilt to steer, gas is auto-held.');
+})();`;
+
+// ── Populate snippet display ──
+document.getElementById('snippet-code').textContent = CONTROLLER_SCRIPT;
+
+// ═══════════════════════════════════════════════════════════
+// UI Logic
+// ═══════════════════════════════════════════════════════════
+
+const $launcher      = document.getElementById('launcher');
+const $gameScreen    = document.getElementById('game-screen');
+const $iframe        = document.getElementById('game-iframe');
+const $hud           = document.getElementById('hud');
+const $snippetScreen = document.getElementById('snippet-screen');
+const $iframeBlocked = document.getElementById('iframe-blocked');
+
+// ── Launch iframe mode ──
+document.getElementById('btn-launch-iframe').addEventListener('click', async () => {
+  // Request accelerometer permission (iOS)
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const perm = await DeviceOrientationEvent.requestPermission();
+      if (perm !== 'granted') {
+        alert('Accelerometer permission is required for tilt steering.');
+        return;
+      }
+    } catch (e) {
+      alert('Could not request accelerometer permission: ' + e.message);
+      return;
+    }
+  }
+
+  $launcher.style.display = 'none';
+  $gameScreen.style.display = 'block';
+  $hud.style.display = 'block';
+
+  // Try loading the game in the iframe
+  $iframe.src = GAME_URL;
+
+  // Detect if iframe was blocked (heuristic: onload fires but
+  // contentWindow.location is inaccessible for cross-origin)
+  let blocked = false;
+  $iframe.addEventListener('load', () => {
+    try {
+      // If we can access contentWindow.document, it loaded same-origin (unlikely)
+      void $iframe.contentWindow.document;
+    } catch (e) {
+      // Cross-origin — expected. We can still try keyboard events.
+    }
+  });
+
+  // Fallback: if the iframe shows nothing after a timeout, assume blocked
+  setTimeout(() => {
+    // Check if iframe body has been replaced by about:blank or error
+    try {
+      const loc = $iframe.contentWindow.location.href;
+      if (loc === 'about:blank') {
+        showIframeBlocked();
+      }
+    } catch (e) {
+      // Cross-origin — likely loaded fine
+    }
+  }, 5000);
+
+  startAccelerometerHUD();
+});
+
+function showIframeBlocked() {
+  $gameScreen.style.display = 'none';
+  $hud.style.display = 'none';
+  $iframeBlocked.style.display = 'flex';
+}
+
+// ── Snippet mode buttons ──
+document.getElementById('btn-show-snippet').addEventListener('click', () => {
+  $launcher.style.display = 'none';
+  $snippetScreen.style.display = 'flex';
+});
+
+document.getElementById('btn-blocked-snippet').addEventListener('click', () => {
+  $iframeBlocked.style.display = 'none';
+  $snippetScreen.style.display = 'flex';
+});
+
+document.getElementById('btn-snippet-back').addEventListener('click', () => {
+  $snippetScreen.style.display = 'none';
+  $launcher.style.display = 'flex';
+});
+
+document.getElementById('btn-copy-snippet').addEventListener('click', () => {
+  navigator.clipboard.writeText(CONTROLLER_SCRIPT).then(() => {
+    const btn = document.getElementById('btn-copy-snippet');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy Script'; }, 1500);
+  });
+});
+
+// ── HUD close ──
+document.getElementById('btn-hud-close').addEventListener('click', () => {
+  $gameScreen.style.display = 'none';
+  $hud.style.display = 'none';
+  $iframe.src = 'about:blank';
+  $launcher.style.display = 'flex';
+  stopAccelerometerHUD();
+});
+
+// ═══════════════════════════════════════════════════════════
+// Accelerometer HUD (for iframe mode — visual only unless
+// the iframe allows keyboard event injection)
+// ═══════════════════════════════════════════════════════════
+
+let accelActive = false;
+let sensitivity = 12;
+let deadZone = 4;
+let calibration = 0;
+let currentGamma = 0;
+let currentDirection = 'none';
+let gasInterval = null;
+
+function startAccelerometerHUD() {
+  accelActive = true;
+
+  // Start gas: continuously press ArrowUp into the iframe
+  gasInterval = setInterval(() => {
+    tryInjectKey('keydown', 'ArrowUp', 'ArrowUp');
+  }, 120);
+
+  window.addEventListener('deviceorientation', onDeviceOrientation);
+
+  // Sensitivity slider
+  const slider = document.getElementById('sens-slider');
+  slider.addEventListener('input', () => {
+    sensitivity = +slider.value;
+    deadZone = Math.max(2, sensitivity / 3);
+  });
+}
+
+function stopAccelerometerHUD() {
+  accelActive = false;
+  if (gasInterval) clearInterval(gasInterval);
+  window.removeEventListener('deviceorientation', onDeviceOrientation);
+  tryInjectKey('keyup', 'ArrowUp', 'ArrowUp');
+  tryInjectKey('keyup', 'ArrowLeft', 'ArrowLeft');
+  tryInjectKey('keyup', 'ArrowRight', 'ArrowRight');
+}
+
+function onDeviceOrientation(e) {
+  if (!accelActive) return;
+  currentGamma = e.gamma || 0;
+  const adjusted = currentGamma - calibration;
+
+  let dir = 'none';
+  if (adjusted < -deadZone) dir = 'left';
+  else if (adjusted > deadZone) dir = 'right';
+
+  // Update HUD visuals
+  const dot = document.getElementById('tilt-dot');
+  const label = document.getElementById('tilt-label');
+  if (dot) {
+    const pct = Math.max(0, Math.min(100, 50 + (adjusted / 45) * 50));
+    dot.style.left = pct + '%';
+  }
+  if (label) {
+    label.textContent = dir === 'left' ? '< ' + Math.round(Math.abs(adjusted)) + '°'
+                       : dir === 'right' ? Math.round(Math.abs(adjusted)) + '° >'
+                       : Math.round(Math.abs(adjusted)) + '°';
+  }
+
+  if (dir === currentDirection) return;
+
+  // Release old
+  if (currentDirection === 'left') tryInjectKey('keyup', 'ArrowLeft', 'ArrowLeft');
+  if (currentDirection === 'right') tryInjectKey('keyup', 'ArrowRight', 'ArrowRight');
+
+  // Press new
+  if (dir === 'left') tryInjectKey('keydown', 'ArrowLeft', 'ArrowLeft');
+  if (dir === 'right') tryInjectKey('keydown', 'ArrowRight', 'ArrowRight');
+
+  currentDirection = dir;
+}
+
+function tryInjectKey(type, code, key) {
+  // Try sending keyboard events to the iframe's content window
+  try {
+    $iframe.contentWindow.postMessage({
+      type: 'accel-drive-key',
+      eventType: type,
+      code: code,
+      key: key
+    }, '*');
+  } catch (e) { /* cross-origin, expected */ }
+
+  // Also dispatch on the parent document (might reach iframe if focused)
+  try {
+    $iframe.contentWindow.dispatchEvent(new KeyboardEvent(type, {
+      code: code,
+      key: key,
+      bubbles: true,
+      cancelable: true
+    }));
+  } catch (e) { /* cross-origin */ }
+
+  // Dispatch on parent window as last resort
+  document.dispatchEvent(new KeyboardEvent(type, {
+    code: code,
+    key: key,
+    bubbles: true,
+    cancelable: true
+  }));
+}
+
+</script>
+</body>
+</html>
