@@ -72,6 +72,7 @@ canvas{display:block;width:100%;height:100%}
     <div class="progress" id="progress-val">0%</div>
     <div id="boost-hud" style="display:none;color:#0f0;font-size:16px;font-weight:900;text-shadow:0 0 12px #0f0,0 0 24px #0f0">BOOST!</div>
   </div>
+  <div id="position-hud" style="position:absolute;top:50px;right:16px;font:900 28px system-ui;color:#ffd700;text-shadow:0 0 12px rgba(255,215,0,.6);display:none"><span id="pos-num">1</span><span id="pos-suffix" style="font-size:14px;opacity:.7">st</span><span style="font-size:12px;opacity:.5;margin-left:4px">/ 6</span></div>
 
   <div id="countdown"></div>
 
@@ -118,6 +119,12 @@ const CFG = {
   boostDuration: 1.5,   // seconds of boost (shorter since there are more)
   boostPadWidth: 6,     // pad width on road
   boostPadLength: 4,    // pad length along track
+  // AI opponents
+  aiCount: 5,           // number of AI cars
+  aiMinSpeed: 110,      // slowest AI base speed (km/h)
+  aiMaxSpeed: 165,      // fastest AI base speed (km/h)
+  aiWeaveAmp: 2.5,      // lateral weave amplitude
+  aiWeaveFreq: 0.3,     // weave frequency (Hz)
 };
 
 // ── STATE ──
@@ -131,6 +138,8 @@ let barrierLeft, barrierRight;
 let boostPads = [];     // [{t: 0..1, mesh, used: false}]
 let boostTimer = 0;     // remaining boost seconds
 let boostMeshes = [];   // for animation
+let aiCars = [];        // [{group, progress, speed, baseSpeed, lateral, weavePhase}]
+let playerPosition = 1; // 1-based position among all racers
 
 let gameState = 'loading'; // loading, ready, countdown, racing, finished
 let raceStartTime = 0;
@@ -161,6 +170,9 @@ const $finalTime = document.getElementById('final-time');
 const $restartBtn = document.getElementById('restart-btn');
 const $tiltIndicator = document.getElementById('tilt-indicator');
 const $tiltDot = document.getElementById('tilt-dot');
+const $positionHud = document.getElementById('position-hud');
+const $posNum = document.getElementById('pos-num');
+const $posSuffix = document.getElementById('pos-suffix');
 
 // ── LOAD TRACK ──
 fetch('track.json')
@@ -188,6 +200,7 @@ function init() {
   setupScene();
   buildTrack();
   buildCar();
+  buildAICars();
   buildEnvironment();
   setupInput();
   setupUI();
@@ -524,6 +537,142 @@ function buildCar() {
   scene.add(carGroup);
 }
 
+// ── AI CARS ──
+function buildAICars() {
+  aiCars = [];
+  const aiColors = [0xff3333, 0x33aaff, 0xffaa00, 0xaa33ff, 0x33ff88];
+
+  for (let i = 0; i < CFG.aiCount; i++) {
+    const group = new THREE.Group();
+
+    // Simple box car body
+    const bodyGeo = new THREE.BoxGeometry(2.2, 1.0, 4.5);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: aiColors[i % aiColors.length],
+      emissive: new THREE.Color(aiColors[i % aiColors.length]),
+      emissiveIntensity: 0.4,
+      metalness: 0.7,
+      roughness: 0.3,
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.7;
+    group.add(body);
+
+    // Roof
+    const roofGeo = new THREE.BoxGeometry(1.8, 0.6, 2.2);
+    const roof = new THREE.Mesh(roofGeo, bodyMat);
+    roof.position.set(0, 1.35, -0.3);
+    group.add(roof);
+
+    // Tail lights (red glow)
+    const tailGeo = new THREE.BoxGeometry(1.8, 0.2, 0.1);
+    const tailMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
+    const tail = new THREE.Mesh(tailGeo, tailMat);
+    tail.position.set(0, 0.7, -2.3);
+    group.add(tail);
+
+    // Neon underglow matching car color
+    const ugLight = new THREE.PointLight(aiColors[i % aiColors.length], 1.5, 8);
+    ugLight.position.set(0, -0.1, 0);
+    group.add(ugLight);
+
+    scene.add(group);
+
+    // Stagger starting positions: AI cars start slightly behind player
+    const startProgress = -0.002 * (i + 1);
+    // Each AI has a different base speed
+    const baseSpeed = CFG.aiMinSpeed + (CFG.aiMaxSpeed - CFG.aiMinSpeed) * (i / Math.max(1, CFG.aiCount - 1));
+
+    aiCars.push({
+      group: group,
+      progress: startProgress,
+      speed: 0,
+      baseSpeed: baseSpeed,
+      lateral: (i - 2) * 3,  // spread across the road
+      weavePhase: Math.random() * Math.PI * 2,
+      boostTimer: 0,
+      finished: false,
+    });
+  }
+}
+
+function updateAICar(ai, dt) {
+  if (ai.finished) return;
+
+  // Accelerate toward base speed
+  if (ai.speed < ai.baseSpeed) {
+    ai.speed += CFG.accel * 0.8 * dt;
+  } else {
+    ai.speed -= CFG.friction * dt;
+  }
+  ai.speed = Math.max(0, ai.speed);
+
+  // Boost pad detection for AI
+  const padHitZone = (CFG.boostPadLength / trackLength) / 2;
+  for (let bp of boostPads) {
+    if (Math.abs(ai.progress - bp.t) < padHitZone && ai.boostTimer <= 0) {
+      ai.boostTimer = CFG.boostDuration * 0.8; // slightly shorter AI boost
+    }
+  }
+  if (ai.boostTimer > 0) {
+    ai.boostTimer -= dt;
+    ai.speed = Math.max(ai.speed, CFG.boostSpeed * 0.9);
+  }
+
+  // Add slight speed variation (personality)
+  const speedVariation = Math.sin(performance.now() * 0.001 + ai.weavePhase * 10) * 8;
+  const effectiveSpeed = ai.speed + speedVariation;
+
+  // Progress along track
+  const metersPerSec = Math.max(0, effectiveSpeed) / 3.6;
+  ai.progress += (metersPerSec * dt) / trackLength;
+
+  // Lateral weaving
+  ai.lateral = Math.sin(performance.now() * 0.001 * CFG.aiWeaveFreq + ai.weavePhase) * CFG.aiWeaveAmp;
+
+  // Finish check
+  if (ai.progress >= 1) {
+    ai.progress = 1;
+    ai.finished = true;
+  }
+
+  // Position the car on track
+  const t = Math.max(0, Math.min(0.9999, ai.progress));
+  const point = curve.getPointAt(t);
+  const tangent = curve.getTangentAt(t).normalize();
+  const up = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+  if (right.length() < 0.1) right.set(1, 0, 0);
+
+  ai.group.position.set(
+    point.x + right.x * ai.lateral,
+    point.y + 0.15,
+    point.z + right.z * ai.lateral
+  );
+
+  const lookTarget = new THREE.Vector3(
+    point.x + tangent.x * 5 + right.x * ai.lateral,
+    point.y + tangent.y * 5,
+    point.z + tangent.z * 5 + right.z * ai.lateral
+  );
+  ai.group.lookAt(lookTarget);
+}
+
+function calcPosition() {
+  let pos = 1;
+  for (let ai of aiCars) {
+    if (ai.progress > trackProgress) pos++;
+  }
+  return pos;
+}
+
+function positionSuffix(n) {
+  if (n === 1) return 'st';
+  if (n === 2) return 'nd';
+  if (n === 3) return 'rd';
+  return 'th';
+}
+
 // ── ENVIRONMENT ──
 function buildEnvironment() {
   // Ground plane
@@ -715,6 +864,7 @@ function doCountdown() {
       gameState = 'racing';
       raceStartTime = performance.now();
       $hud.style.display = 'flex';
+      $positionHud.style.display = '';
       if (gyroAvailable) $tiltIndicator.style.display = 'block';
     }
   }, 800);
@@ -723,11 +873,16 @@ function doCountdown() {
 function finishRace() {
   gameState = 'finished';
   $hud.style.display = 'none';
+  $positionHud.style.display = 'none';
   $tiltIndicator.style.display = 'none';
   const t = raceTime;
   const min = Math.floor(t / 60);
   const sec = (t % 60).toFixed(2);
   $finalTime.textContent = min + ':' + (sec < 10 ? '0' : '') + sec;
+  // Show final position
+  const pos = calcPosition();
+  document.querySelector('#finish-screen .label').textContent =
+    'You finished ' + pos + positionSuffix(pos) + ' out of ' + (CFG.aiCount + 1);
   $finishScreen.style.display = 'flex';
 }
 
@@ -739,7 +894,16 @@ function restartRace() {
   steerInput = 0;
   raceTime = 0;
   boostTimer = 0;
+  playerPosition = 1;
   for (let bp of boostPads) { bp.active = false; }
+  // Reset AI cars
+  for (let i = 0; i < aiCars.length; i++) {
+    aiCars[i].progress = -0.002 * (i + 1);
+    aiCars[i].speed = 0;
+    aiCars[i].boostTimer = 0;
+    aiCars[i].finished = false;
+    aiCars[i].lateral = (i - 2) * 3;
+  }
   updateCarPosition(0, 0);
   updateCamera(true);
   startRace();
@@ -874,6 +1038,16 @@ function animate(now = 0) {
     const effectiveSpeed = boostTimer > 0 ? Math.max(speed, CFG.boostSpeed) : speed;
     const metersPerSec = effectiveSpeed / 3.6;
     trackProgress += (metersPerSec * dt) / trackLength;
+
+    // Update AI cars
+    for (let ai of aiCars) {
+      updateAICar(ai, dt);
+    }
+
+    // Update position
+    playerPosition = calcPosition();
+    $posNum.textContent = playerPosition;
+    $posSuffix.textContent = positionSuffix(playerPosition);
 
     // Update HUD
     $speedVal.textContent = Math.round(speed);
