@@ -868,8 +868,8 @@ function animate(now = 0) {
     speed -= CFG.friction * dt;
     speed = Math.max(0, Math.min(CFG.maxSpeed, speed));
 
-    // Boost pad detection
-    const padHitZone = 0.008; // ~0.8% of track = hit detection window
+    // Boost pad detection — hit zone matches the visual pad length
+    const padHitZone = (CFG.boostPadLength / trackLength) / 2;
     for (let bp of boostPads) {
       if (!bp.used && Math.abs(trackProgress - bp.t) < padHitZone) {
         bp.used = true;
