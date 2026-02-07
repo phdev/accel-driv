@@ -87,6 +87,12 @@ canvas{display:block;width:100%;height:100%}
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 <script>
 (function(){
 'use strict';
@@ -110,7 +116,7 @@ const CFG = {
 let trackData = null;
 let curve = null;
 let trackLength = 0;
-let scene, camera, renderer;
+let scene, camera, renderer, composer, bloomPass;
 let roadMesh, groundMesh;
 let carGroup, carBody;
 let barrierLeft, barrierRight;
@@ -213,10 +219,23 @@ function setupScene() {
   underLight.position.set(0, -5, 0);
   scene.add(underLight);
 
+  // ── BLOOM POST-PROCESSING ──
+  const renderPass = new THREE.RenderPass(scene, camera);
+  bloomPass = new THREE.UnrealBloomPass(
+    new THREE.Vector2(innerWidth, innerHeight),
+    1.4,   // bloom strength (Horizon Drive uses heavy bloom)
+    0.6,   // bloom radius (how far glow spreads)
+    0.15   // bloom threshold (low = more things glow)
+  );
+  composer = new THREE.EffectComposer(renderer);
+  composer.addPass(renderPass);
+  composer.addPass(bloomPass);
+
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth/innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
   });
 }
 
@@ -273,10 +292,10 @@ function buildTrack() {
 
   const roadMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    metalness: 0.7,
-    roughness: 0.3,
-    emissive: new THREE.Color(0x220044),
-    emissiveIntensity: 0.3,
+    metalness: 0.8,
+    roughness: 0.2,
+    emissive: new THREE.Color(0x330066),
+    emissiveIntensity: 0.6,
     side: THREE.DoubleSide,
   });
 
@@ -291,8 +310,7 @@ function buildTrack() {
 }
 
 function buildBarriers(divisions, halfWidth) {
-  const barrierHeight = 0.8;
-  const step = 4; // only every Nth division for perf
+  const step = 4;
   const leftPts = [];
   const rightPts = [];
 
@@ -306,35 +324,37 @@ function buildBarriers(divisions, halfWidth) {
 
     leftPts.push(new THREE.Vector3(
       point.x - right.x * (halfWidth + 0.3),
-      point.y + barrierHeight / 2,
+      point.y + 0.4,
       point.z - right.z * (halfWidth + 0.3)
     ));
     rightPts.push(new THREE.Vector3(
       point.x + right.x * (halfWidth + 0.3),
-      point.y + barrierHeight / 2,
+      point.y + 0.4,
       point.z + right.z * (halfWidth + 0.3)
     ));
   }
 
-  // Left barrier - pink neon
-  const leftGeo = new THREE.BufferGeometry().setFromPoints(leftPts);
-  const leftMat = new THREE.LineBasicMaterial({ color: 0xff6ec7, linewidth: 2 });
-  barrierLeft = new THREE.Line(leftGeo, leftMat);
+  // Glowing tube barriers using TubeGeometry on CatmullRomCurve3
+  const leftCurve = new THREE.CatmullRomCurve3(leftPts, false, 'catmullrom', 0.5);
+  const rightCurve = new THREE.CatmullRomCurve3(rightPts, false, 'catmullrom', 0.5);
+
+  // Left barrier - hot pink neon glow
+  const leftGeo = new THREE.TubeGeometry(leftCurve, divisions / step, 0.12, 6, false);
+  const leftMat = new THREE.MeshBasicMaterial({ color: 0xff6ec7 });
+  barrierLeft = new THREE.Mesh(leftGeo, leftMat);
   scene.add(barrierLeft);
 
-  // Right barrier - cyan neon
-  const rightGeo = new THREE.BufferGeometry().setFromPoints(rightPts);
-  const rightMat = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 2 });
-  barrierRight = new THREE.Line(rightGeo, rightMat);
+  // Right barrier - cyan neon glow
+  const rightGeo = new THREE.TubeGeometry(rightCurve, divisions / step, 0.12, 6, false);
+  const rightMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+  barrierRight = new THREE.Mesh(rightGeo, rightMat);
   scene.add(barrierRight);
 }
 
 function buildStartLine() {
   const geo = new THREE.PlaneGeometry(CFG.roadWidth, 1.5);
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.8,
+    color: 0xffd700,
     side: THREE.DoubleSide,
   });
   const startLine = new THREE.Mesh(geo, mat);
@@ -353,18 +373,25 @@ function buildStartLine() {
 function buildCar() {
   carGroup = new THREE.Group();
 
-  // Car body - low poly retrowave style
+  // Car body - low poly retrowave style with strong emissive for bloom
   const bodyGeo = new THREE.BoxGeometry(1.6, 0.5, 3.2);
   const bodyMat = new THREE.MeshStandardMaterial({
     color: 0xff3cac,
-    metalness: 0.8,
-    roughness: 0.2,
-    emissive: 0xff3cac,
-    emissiveIntensity: 0.15,
+    metalness: 0.85,
+    roughness: 0.15,
+    emissive: new THREE.Color(0xff3cac),
+    emissiveIntensity: 0.4,
   });
   carBody = new THREE.Mesh(bodyGeo, bodyMat);
   carBody.position.y = 0.4;
   carGroup.add(carBody);
+
+  // Neon trim strip along car sides (blooms brightly)
+  const trimGeo = new THREE.BoxGeometry(1.65, 0.06, 3.25);
+  const trimMat = new THREE.MeshBasicMaterial({ color: 0xff6ec7 });
+  const trim = new THREE.Mesh(trimGeo, trimMat);
+  trim.position.y = 0.2;
+  carGroup.add(trim);
 
   // Roof/cockpit
   const roofGeo = new THREE.BoxGeometry(1.2, 0.4, 1.4);
@@ -372,13 +399,15 @@ function buildCar() {
     color: 0x200040,
     metalness: 0.9,
     roughness: 0.1,
+    emissive: new THREE.Color(0x100020),
+    emissiveIntensity: 0.3,
   });
   const roof = new THREE.Mesh(roofGeo, roofMat);
   roof.position.set(0, 0.85, -0.2);
   carGroup.add(roof);
 
-  // Headlights
-  const hlGeo = new THREE.SphereGeometry(0.15, 8, 8);
+  // Headlights - bright white emissive for bloom glow
+  const hlGeo = new THREE.SphereGeometry(0.18, 8, 8);
   const hlMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const hlL = new THREE.Mesh(hlGeo, hlMat);
   hlL.position.set(-0.55, 0.4, 1.6);
@@ -388,25 +417,39 @@ function buildCar() {
   carGroup.add(hlR);
 
   // Headlight beams
-  const beamLight = new THREE.SpotLight(0xffffff, 1.5, 60, Math.PI/6, 0.5);
+  const beamLight = new THREE.SpotLight(0xffffff, 2.0, 80, Math.PI/6, 0.5);
   beamLight.position.set(0, 0.5, 2);
   beamLight.target.position.set(0, 0, 20);
   carGroup.add(beamLight);
   carGroup.add(beamLight.target);
 
-  // Tail lights
-  const tlMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-  const tlL = new THREE.Mesh(hlGeo, tlMat);
+  // Tail lights - red emissive glow
+  const tlGeo = new THREE.SphereGeometry(0.15, 8, 8);
+  const tlMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
+  const tlL = new THREE.Mesh(tlGeo, tlMat);
   tlL.position.set(-0.55, 0.4, -1.6);
   carGroup.add(tlL);
-  const tlR = new THREE.Mesh(hlGeo, tlMat);
+  const tlR = new THREE.Mesh(tlGeo, tlMat);
   tlR.position.set(0.55, 0.4, -1.6);
   carGroup.add(tlR);
 
-  // Neon underglow
-  const underGlow = new THREE.PointLight(0xff6ec7, 1.5, 8);
+  // Neon underglow - brighter for bloom
+  const underGlow = new THREE.PointLight(0xff6ec7, 2.5, 12);
   underGlow.position.set(0, -0.1, 0);
   carGroup.add(underGlow);
+
+  // Underglow visible mesh (flat plane under car that blooms)
+  const ugGeo = new THREE.PlaneGeometry(1.4, 2.8);
+  const ugMat = new THREE.MeshBasicMaterial({
+    color: 0xff6ec7,
+    transparent: true,
+    opacity: 0.4,
+    side: THREE.DoubleSide,
+  });
+  const ugMesh = new THREE.Mesh(ugGeo, ugMat);
+  ugMesh.rotation.x = -Math.PI / 2;
+  ugMesh.position.y = 0.02;
+  carGroup.add(ugMesh);
 
   // Wheels
   const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 8);
@@ -459,10 +502,21 @@ function buildEnvironment() {
 }
 
 function buildTrackDecorations() {
-  const pillarGeo = new THREE.CylinderGeometry(0.15, 0.15, 8, 6);
+  const pillarGeo = new THREE.CylinderGeometry(0.12, 0.12, 8, 6);
+  const glowOrbGeo = new THREE.SphereGeometry(0.35, 8, 8);
   const neonColors = [0xff6ec7, 0x00ffff, 0xffd700, 0x6e3cff];
   const halfWidth = CFG.roadWidth / 2;
-  const count = 120; // enough for visual density, light on GPU
+  const count = 120;
+
+  // Pre-create materials for reuse
+  const pillarMats = neonColors.map(c => new THREE.MeshStandardMaterial({
+    color: 0x111122,
+    emissive: new THREE.Color(c),
+    emissiveIntensity: 0.15,
+    metalness: 0.9,
+    roughness: 0.3,
+  }));
+  const orbMats = neonColors.map(c => new THREE.MeshBasicMaterial({ color: c }));
 
   for (let i = 0; i < count; i++) {
     const t = i / count;
@@ -473,15 +527,21 @@ function buildTrackDecorations() {
     if (right.length() < 0.1) continue;
 
     const side = (i % 2 === 0) ? -1 : 1;
-    const color = neonColors[i % neonColors.length];
-    const mat = new THREE.MeshBasicMaterial({ color: color });
-    const pillar = new THREE.Mesh(pillarGeo, mat);
+    const ci = i % neonColors.length;
+
+    // Dark pillar with faint emissive
+    const pillar = new THREE.Mesh(pillarGeo, pillarMats[ci]);
     pillar.position.set(
       point.x + right.x * (halfWidth + 3) * side,
       point.y + 4,
       point.z + right.z * (halfWidth + 3) * side
     );
     scene.add(pillar);
+
+    // Bright glowing orb on top — this blooms hard
+    const orb = new THREE.Mesh(glowOrbGeo, orbMats[ci]);
+    orb.position.set(pillar.position.x, pillar.position.y + 4.3, pillar.position.z);
+    scene.add(orb);
   }
 }
 
@@ -741,7 +801,7 @@ function animate(now = 0) {
     groundMesh.position.z = camera.position.z;
   }
 
-  renderer.render(scene, camera);
+  composer.render();
 }
 
 })();
