@@ -70,6 +70,7 @@ canvas{display:block;width:100%;height:100%}
     <div><span class="speed" id="speed-val">0</span> <span style="font-size:11px;opacity:.5">km/h</span></div>
     <div class="time" id="time-val">0:00.0</div>
     <div class="progress" id="progress-val">0%</div>
+    <div id="boost-hud" style="display:none;color:#0f0;font-size:16px;font-weight:900;text-shadow:0 0 12px #0f0,0 0 24px #0f0">BOOST!</div>
   </div>
 
   <div id="countdown"></div>
@@ -110,6 +111,12 @@ const CFG = {
   cameraDist: 12,
   cameraLerp: 0.08,
   fov: 72,
+  // Boost pads
+  boostCount: 8,        // number of boost pads on the track
+  boostSpeed: 260,      // speed during boost (km/h)
+  boostDuration: 2.0,   // seconds of boost
+  boostPadWidth: 6,     // pad width on road
+  boostPadLength: 4,    // pad length along track
 };
 
 // ── STATE ──
@@ -120,6 +127,9 @@ let scene, camera, renderer, composer, bloomPass;
 let roadMesh, groundMesh;
 let carGroup, carBody;
 let barrierLeft, barrierRight;
+let boostPads = [];     // [{t: 0..1, mesh, used: false}]
+let boostTimer = 0;     // remaining boost seconds
+let boostMeshes = [];   // for animation
 
 let gameState = 'loading'; // loading, ready, countdown, racing, finished
 let raceStartTime = 0;
@@ -307,6 +317,9 @@ function buildTrack() {
 
   // Start/finish line
   buildStartLine();
+
+  // Boost pads
+  buildBoostPads();
 }
 
 function buildBarriers(divisions, halfWidth) {
@@ -367,6 +380,63 @@ function buildStartLine() {
   startLine.lookAt(p.clone().add(t));
   startLine.rotateX(-Math.PI / 2);
   scene.add(startLine);
+}
+
+function buildBoostPads() {
+  boostPads = [];
+  boostMeshes = [];
+  const hw = CFG.boostPadWidth / 2;
+  const hl = CFG.boostPadLength / 2;
+
+  for (let i = 0; i < CFG.boostCount; i++) {
+    // Evenly space pads from 10% to 90% of track (avoid start/finish)
+    const t = 0.1 + (i / CFG.boostCount) * 0.8;
+    const point = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (right.length() < 0.1) right.set(1, 0, 0);
+
+    // Pad group
+    const padGroup = new THREE.Group();
+    padGroup.position.set(point.x, point.y + 0.08, point.z);
+    padGroup.lookAt(point.x + tangent.x, point.y + tangent.y + 0.08, point.z + tangent.z);
+
+    // Base glow rectangle
+    const baseGeo = new THREE.PlaneGeometry(CFG.boostPadWidth, CFG.boostPadLength);
+    const baseMat = new THREE.MeshBasicMaterial({
+      color: 0x00ff88,
+      transparent: true,
+      opacity: 0.25,
+      side: THREE.DoubleSide,
+    });
+    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+    baseMesh.rotation.x = -Math.PI / 2;
+    padGroup.add(baseMesh);
+
+    // Chevron arrows (3 arrows pointing forward)
+    const arrowMat = new THREE.MeshBasicMaterial({ color: 0x00ff44 });
+    for (let a = -1; a <= 1; a++) {
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0.8);       // tip
+      shape.lineTo(-0.5, -0.4);   // bottom left
+      shape.lineTo(0, 0);         // inner notch
+      shape.lineTo(0.5, -0.4);    // bottom right
+      shape.closePath();
+
+      const arrowGeo = new THREE.ShapeGeometry(shape);
+      const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+      arrow.rotation.x = -Math.PI / 2;
+      arrow.position.set(0, 0.02, a * 1.2);
+      arrow.scale.set(1.2, 1.2, 1.2);
+      padGroup.add(arrow);
+    }
+
+    scene.add(padGroup);
+
+    boostPads.push({ t: t, group: padGroup, used: false });
+    boostMeshes.push(padGroup);
+  }
 }
 
 // ── BUILD CAR ──
@@ -670,6 +740,8 @@ function restartRace() {
   lateralOffset = 0;
   steerInput = 0;
   raceTime = 0;
+  boostTimer = 0;
+  for (let bp of boostPads) { bp.used = false; bp.group.visible = true; }
   updateCarPosition(0, 0);
   updateCamera(true);
   startRace();
@@ -770,8 +842,36 @@ function animate(now = 0) {
     speed -= CFG.friction * dt;
     speed = Math.max(0, Math.min(CFG.maxSpeed, speed));
 
+    // Boost pad detection
+    const padHitZone = 0.008; // ~0.8% of track = hit detection window
+    for (let bp of boostPads) {
+      if (!bp.used && Math.abs(trackProgress - bp.t) < padHitZone) {
+        bp.used = true;
+        boostTimer = CFG.boostDuration;
+        bp.group.visible = false; // hide pad after pickup
+      }
+    }
+
+    // Apply boost
+    if (boostTimer > 0) {
+      boostTimer -= dt;
+      speed = Math.max(speed, CFG.boostSpeed);
+      document.getElementById('boost-hud').style.display = '';
+    } else {
+      document.getElementById('boost-hud').style.display = 'none';
+    }
+
+    // Animate visible boost pads (pulse glow)
+    for (let bp of boostPads) {
+      if (!bp.used) {
+        const pulse = 0.8 + Math.sin(performance.now() * 0.005) * 0.2;
+        bp.group.children[0].material.opacity = 0.2 * pulse;
+      }
+    }
+
     // Progress along track
-    const metersPerSec = speed / 3.6;
+    const effectiveSpeed = boostTimer > 0 ? Math.max(speed, CFG.boostSpeed) : speed;
+    const metersPerSec = effectiveSpeed / 3.6;
     trackProgress += (metersPerSec * dt) / trackLength;
 
     // Update HUD
