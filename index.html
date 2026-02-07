@@ -422,21 +422,23 @@ function buildBoostPads() {
     if (right.lengthSq() < 0.01) right.set(1, 0, 0);
     const normal = new THREE.Vector3().crossVectors(right, tangent).normalize();
 
-    const mat4 = new THREE.Matrix4();
-    mat4.makeBasis(right, normal, tangent);
-
     const padGroup = new THREE.Group();
     padGroup.position.copy(point);
-    // Lift well above road surface to avoid z-fighting
+    // Lift above road surface to avoid z-fighting
     padGroup.position.addScaledVector(normal, 0.2);
-    padGroup.quaternion.setFromRotationMatrix(mat4);
 
-    // Bright base rectangle
+    // Orient: look along the tangent (track forward), with surface normal as up
+    const lookTarget = point.clone().add(tangent);
+    lookTarget.addScaledVector(normal, 0.2);
+    padGroup.up.copy(normal);
+    padGroup.lookAt(lookTarget);
+
+    // Base rectangle — XY plane facing up after lookAt
     const base = new THREE.Mesh(baseGeo, baseMat.clone());
     base.rotation.x = -Math.PI / 2;
     padGroup.add(base);
 
-    // 3 big chevron arrows spaced along the forward axis
+    // 3 chevron arrows spread along the forward (local Z) direction
     for (let a = -1; a <= 1; a++) {
       const arrow = new THREE.Mesh(arrowGeo, arrowMat);
       arrow.rotation.x = -Math.PI / 2;
@@ -445,7 +447,7 @@ function buildBoostPads() {
       padGroup.add(arrow);
     }
 
-    // Add edge glow strips on left/right sides of the pad
+    // Edge glow strips on left/right sides
     const edgeGeo = new THREE.PlaneGeometry(0.3, CFG.boostPadLength);
     const edgeMat = new THREE.MeshBasicMaterial({
       color: 0x00ff44, side: THREE.DoubleSide, depthWrite: false,
@@ -460,7 +462,7 @@ function buildBoostPads() {
     padGroup.add(edgeR);
 
     scene.add(padGroup);
-    boostPads.push({ t: t, group: padGroup, used: false });
+    boostPads.push({ t: t, group: padGroup, active: false });
     boostMeshes.push(padGroup);
   }
 }
@@ -767,7 +769,7 @@ function restartRace() {
   steerInput = 0;
   raceTime = 0;
   boostTimer = 0;
-  for (let bp of boostPads) { bp.used = false; bp.group.visible = true; }
+  for (let bp of boostPads) { bp.active = false; }
   updateCarPosition(0, 0);
   updateCamera(true);
   startRace();
@@ -871,10 +873,15 @@ function animate(now = 0) {
     // Boost pad detection — hit zone matches the visual pad length
     const padHitZone = (CFG.boostPadLength / trackLength) / 2;
     for (let bp of boostPads) {
-      if (!bp.used && Math.abs(trackProgress - bp.t) < padHitZone) {
-        bp.used = true;
+      if (Math.abs(trackProgress - bp.t) < padHitZone && !bp.active) {
+        bp.active = true;
         boostTimer = CFG.boostDuration;
-        bp.group.visible = false; // hide pad after pickup
+      }
+    }
+    // Reset active flag once car passes through
+    for (let bp of boostPads) {
+      if (bp.active && Math.abs(trackProgress - bp.t) >= padHitZone) {
+        bp.active = false;
       }
     }
 
@@ -887,12 +894,10 @@ function animate(now = 0) {
       document.getElementById('boost-hud').style.display = 'none';
     }
 
-    // Animate visible boost pads (pulse glow)
+    // Animate boost pads (pulse glow)
+    const pulse = 0.4 + Math.sin(performance.now() * 0.005) * 0.15;
     for (let bp of boostPads) {
-      if (!bp.used) {
-        const pulse = 0.8 + Math.sin(performance.now() * 0.005) * 0.2;
-        bp.group.children[0].material.opacity = 0.2 * pulse;
-      }
+      bp.group.children[0].material.opacity = pulse;
     }
 
     // Progress along track
