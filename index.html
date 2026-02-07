@@ -396,14 +396,14 @@ function buildBoostPads() {
     color: 0x44ffaa, side: THREE.DoubleSide, depthWrite: false,
   });
 
-  // Build a bigger, chunkier chevron arrow
+  // Build a bigger, chunkier chevron arrow (pointing backward in local Y so it faces forward after lookAt)
   const arrowShape = new THREE.Shape();
-  arrowShape.moveTo(0, 1.1);
-  arrowShape.lineTo(-0.7, -0.3);
-  arrowShape.lineTo(-0.3, -0.3);
-  arrowShape.lineTo(0, 0.2);
-  arrowShape.lineTo(0.3, -0.3);
-  arrowShape.lineTo(0.7, -0.3);
+  arrowShape.moveTo(0, -1.1);
+  arrowShape.lineTo(-0.7, 0.3);
+  arrowShape.lineTo(-0.3, 0.3);
+  arrowShape.lineTo(0, -0.2);
+  arrowShape.lineTo(0.3, 0.3);
+  arrowShape.lineTo(0.7, 0.3);
   arrowShape.closePath();
   const arrowGeo = new THREE.ShapeGeometry(arrowShape);
 
