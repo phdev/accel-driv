@@ -825,14 +825,9 @@ function animate(now = 0) {
     raceTime = (performance.now() - raceStartTime) / 1000;
     $timeVal.textContent = formatTime(raceTime);
 
-    // Steering
+    // Steering — purely player input, no auto-centering
     steerInput = getSteerInput();
-    if (Math.abs(steerInput) > 0.01) {
-      lateralOffset += steerInput * CFG.steerSpeed * dt * (speed / CFG.maxSpeed + 0.3);
-    } else {
-      // Gently drift back to center when no input
-      lateralOffset *= (1 - 1.5 * dt);
-    }
+    lateralOffset += steerInput * CFG.steerSpeed * dt * (speed / CFG.maxSpeed + 0.3);
     lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
 
     // Speed: always accelerating (auto-gas)
