@@ -7,263 +7,148 @@
 <title>Accel-Drive</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{
-    background:#0a0014;color:#e0d0ff;
-    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
-    min-height:100dvh;
-  }
+  body{background:#000;overflow:hidden;position:fixed;inset:0}
 
-  /* ── Launcher ── */
   #launcher{
+    position:fixed;inset:0;z-index:100;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    min-height:100dvh;padding:2rem 1.5rem;text-align:center;
     background:linear-gradient(180deg,#12002a,#1a0040 40%,#2d0060);
+    color:#e0d0ff;font-family:system-ui,sans-serif;padding:2rem;text-align:center;
   }
   h1{
     font-size:1.8rem;margin-bottom:.2rem;
     background:linear-gradient(135deg,#ff6ec7,#ffd700);
     -webkit-background-clip:text;-webkit-text-fill-color:transparent;
   }
-  .sub{font-size:.8rem;opacity:.5;margin-bottom:2.5rem}
+  .sub{font-size:.8rem;opacity:.5;margin-bottom:2rem}
   .btn{
-    display:block;width:100%;max-width:340px;padding:1rem;border:none;border-radius:14px;
+    display:block;width:100%;max-width:320px;padding:1rem;border:none;border-radius:14px;
     font-size:1rem;font-weight:700;cursor:pointer;text-align:center;
-    -webkit-tap-highlight-color:transparent;transition:transform .12s;
-    text-decoration:none;
+    -webkit-tap-highlight-color:transparent;margin-bottom:.75rem;
   }
-  .btn:active{transform:scale(.97)}
-  .btn-go{
-    background:linear-gradient(135deg,#ff6ec7,#ff3cac);color:#fff;
-    box-shadow:0 6px 24px rgba(255,60,172,.4);margin-bottom:1rem;
-  }
-  .hint{font-size:.75rem;opacity:.45;max-width:320px;line-height:1.45;margin-top:.5rem}
+  .btn-go{background:linear-gradient(135deg,#ff6ec7,#ff3cac);color:#fff;box-shadow:0 6px 24px rgba(255,60,172,.4)}
+  .hint{font-size:.72rem;opacity:.4;max-width:300px;line-height:1.4;margin-top:.5rem}
 
-  /* ── Loading overlay ── */
-  #loading{
-    display:none;position:fixed;inset:0;z-index:500;
-    background:rgba(10,0,20,.95);
-    flex-direction:column;align-items:center;justify-content:center;
-  }
-  #loading.show{display:flex}
-  .spinner{
-    width:40px;height:40px;border:3px solid rgba(255,255,255,.1);
-    border-top-color:#ff6ec7;border-radius:50%;
-    animation:spin .8s linear infinite;margin-bottom:1rem;
-  }
-  @keyframes spin{to{transform:rotate(360deg)}}
-  #load-status{font-size:.85rem;opacity:.7;text-align:center;max-width:280px}
+  iframe{position:fixed;inset:0;width:100%;height:100%;border:none;z-index:1}
 
-  /* ── Error ── */
-  #error-screen{
-    display:none;position:fixed;inset:0;z-index:500;
-    background:rgba(10,0,20,.95);
-    flex-direction:column;align-items:center;justify-content:center;
-    padding:2rem;text-align:center;
+  /* HUD */
+  #hud{
+    display:none;position:fixed;top:0;left:0;right:0;z-index:9999;
+    background:rgba(0,0,0,.5);backdrop-filter:blur(6px);
+    padding:4px 10px;font:600 11px system-ui;color:#fff;
+    align-items:center;gap:8px;
   }
-  #error-screen.show{display:flex}
-  #error-screen h2{color:#ffd700;font-size:1.1rem;margin-bottom:.75rem}
-  #error-screen p{font-size:.82rem;opacity:.7;max-width:320px;line-height:1.5;margin-bottom:1rem}
-  .btn-outline{
-    background:transparent;color:#e0d0ff;
-    border:1px solid rgba(255,255,255,.2);
-    max-width:260px;
-  }
+  #hud.on{display:flex}
+  #hud span{white-space:nowrap}
+  .g{color:#4f4}
 </style>
 </head>
 <body>
 
 <div id="launcher">
   <h1>Accel-Drive</h1>
-  <p class="sub">Tilt your phone to steer Horizon Drive</p>
-  <button class="btn btn-go" id="btn-play">Play with Tilt Controls</button>
+  <p class="sub">Tilt to steer Horizon Drive</p>
+  <button class="btn btn-go" id="btn-play">Play</button>
   <p class="hint">
-    Loads the game with accelerometer steering injected.
-    Gas is held automatically. Tilt left/right to steer.
+    Loads the game and maps your phone's accelerometer to
+    left/right steering. Gas is held automatically.
   </p>
 </div>
 
-<div id="loading">
-  <div class="spinner"></div>
-  <p id="load-status">Loading Horizon Drive...</p>
-</div>
+<iframe id="gf" src="about:blank" allow="accelerometer;gyroscope;autoplay;fullscreen" allowfullscreen></iframe>
 
-
-<div id="error-screen">
-  <h2>Couldn't load the game</h2>
-  <p id="error-msg">The CORS proxy may be down. Try again or use the bookmarklet fallback.</p>
-  <button class="btn btn-go" id="btn-retry" style="margin-bottom:.75rem;max-width:260px">Try Again</button>
-  <a class="btn btn-outline" href="https://www.shopify.com/editions/summer2025/drive" target="_blank" rel="noopener">Open Game Directly</a>
+<div id="hud">
+  <span id="hdir">STRAIGHT</span>
+  <span id="htilt" style="opacity:.5">0°</span>
+  <span class="g">GAS</span>
+  <span style="font-size:9px;opacity:.6">Sens</span>
+  <input id="hsens" type="range" min="3" max="30" value="10" style="width:40px;accent-color:#ff6ec7">
+  <button id="hzero" style="background:rgba(255,255,255,.15);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Zero</button>
+  <button id="hstop" style="background:rgba(255,60,60,.4);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Stop</button>
 </div>
 
 <script>
-// ══════════════════════════════════════════════════════════════
-// Controller script — gets injected directly into the game HTML
-// ══════════════════════════════════════════════════════════════
-const CTRL = `(function(){
-if(window.__ad)return;window.__ad=1;
-var DZ=5,cal=0,steer='none',gm=0;
+const GAME = 'https://www.shopify.com/editions/summer2025/drive';
+const iframe = document.getElementById('gf');
 
-/* Button positions as % of viewport [x%, y%] */
-var BTN={left:[0.12,0.87],right:[0.32,0.87],gas:[0.90,0.87]};
-var pid={left:2,right:3,gas:4};
+let active = false, cal = 0, gm = 0, DZ = 3.3, steer = 'none', gasIv;
 
-/* Tap at viewport coordinates */
-function tap(x,y,id){
-  var el=document.elementFromPoint(x,y)||document.body;
-  el.dispatchEvent(new PointerEvent('pointerdown',{clientX:x,clientY:y,pointerId:id,pointerType:'touch',isPrimary:id===2,bubbles:true,cancelable:true,pressure:0.5}));
-  try{var t=new Touch({identifier:id,target:el,clientX:x,clientY:y,pageX:x,pageY:y});
-  el.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true,touches:[t],targetTouches:[t],changedTouches:[t]}))}catch(e){}
-}
-function release(x,y,id){
-  var el=document.elementFromPoint(x,y)||document.body;
-  el.dispatchEvent(new PointerEvent('pointerup',{clientX:x,clientY:y,pointerId:id,pointerType:'touch',isPrimary:id===2,bubbles:true,cancelable:true}));
-  try{var t=new Touch({identifier:id,target:el,clientX:x,clientY:y,pageX:x,pageY:y});
-  el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,cancelable:true,touches:[],targetTouches:[],changedTouches:[t]}))}catch(e){}
+function kev(type, code) {
+  const opts = {code, key: code, bubbles: true, cancelable: true, repeat: type === 'keydown'};
+  // Fire on every target we can reach
+  document.dispatchEvent(new KeyboardEvent(type, opts));
+  window.dispatchEvent(new KeyboardEvent(type, opts));
+  try { iframe.contentWindow.postMessage({_ad: type, code}, '*'); } catch(e) {}
+  try { iframe.contentWindow.dispatchEvent(new KeyboardEvent(type, opts)); } catch(e) {}
+  // Also try dispatching directly on the iframe element
+  iframe.dispatchEvent(new KeyboardEvent(type, opts));
 }
 
-function coords(name){return[BTN[name][0]*innerWidth,BTN[name][1]*innerHeight]}
-
-/* Gas: hold perpetually */
-var gc=coords('gas');
-tap(gc[0],gc[1],pid.gas);
-var gi=setInterval(function(){var c=coords('gas');release(c[0],c[1],pid.gas);tap(c[0],c[1],pid.gas)},200);
-
-/* Steering */
-function us(g){
-  var a=g-cal,d='none';
-  if(a<-DZ)d='left';else if(a>DZ)d='right';
-  if(d===steer)return;
-  /* release old */
-  if(steer==='left'){var c=coords('left');release(c[0],c[1],pid.left)}
-  if(steer==='right'){var c=coords('right');release(c[0],c[1],pid.right)}
-  /* press new */
-  if(d==='left'){var c=coords('left');tap(c[0],c[1],pid.left)}
-  if(d==='right'){var c=coords('right');tap(c[0],c[1],pid.right)}
-  steer=d;
-  var de=document.getElementById('ad-d');if(de)de.textContent=d==='left'?'\\u25C0 LEFT':d==='right'?'RIGHT \\u25B6':'STRAIGHT';
-  var ge=document.getElementById('ad-g');if(ge)ge.textContent=Math.round(a)+'\\u00b0';
+function startGas() {
+  kev('keydown', 'ArrowUp');
+  gasIv = setInterval(() => kev('keydown', 'ArrowUp'), 100);
 }
 
-/* HUD */
-var h=document.createElement('div');
-h.innerHTML='<div style="position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:5px 10px;font:600 11px system-ui;color:#fff"><span id=ad-d style="min-width:55px;text-align:center">STRAIGHT</span><span id=ad-g style="opacity:.6;min-width:28px;text-align:right">0\\u00b0</span><span style="color:#4f4">GAS</span><input id=ad-s type=range min=3 max=30 value=12 style="width:40px;accent-color:#ff6ec7"><button id=ad-z style="background:rgba(255,255,255,.15);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Zero</button><button id=ad-x style="background:rgba(255,60,60,.4);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Stop</button></div>';
-document.body.appendChild(h);
-setTimeout(function(){
-  var s=document.getElementById('ad-s');if(s)s.oninput=function(){DZ=Math.max(2,(+this.value)/3)};
-  document.getElementById('ad-z').onclick=function(){cal=gm};
-  document.getElementById('ad-x').onclick=function(){clearInterval(gi);var c=coords('gas');release(c[0],c[1],pid.gas);c=coords('left');release(c[0],c[1],pid.left);c=coords('right');release(c[0],c[1],pid.right);window.removeEventListener('deviceorientation',oo);h.remove();window.__ad=0};
-},100);
-
-function oo(e){gm=e.gamma||0;us(gm)}
-if(typeof DeviceOrientationEvent!='undefined'&&typeof DeviceOrientationEvent.requestPermission=='function'){
-  DeviceOrientationEvent.requestPermission().then(function(s){if(s==='granted')window.addEventListener('deviceorientation',oo)}).catch(function(){})
-}else{window.addEventListener('deviceorientation',oo)}
-console.log('Accel-Drive active. Gas='+coords('gas')+' Left='+coords('left')+' Right='+coords('right'));
-})();`;
-
-// ══════════════════════════════════════════════════════════════
-// Main logic
-// ══════════════════════════════════════════════════════════════
-const GAME_URL = 'https://www.shopify.com/editions/summer2025/drive';
-
-const PROXIES = [
-  url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
-  url => 'https://corsproxy.io/?' + encodeURIComponent(url),
-  url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url),
-];
-
-async function requestAccel() {
-  if (typeof DeviceOrientationEvent !== 'undefined' &&
-      typeof DeviceOrientationEvent.requestPermission === 'function') {
-    const perm = await DeviceOrientationEvent.requestPermission();
-    if (perm !== 'granted') throw new Error('Accelerometer permission denied');
-  }
+function stopGas() {
+  clearInterval(gasIv);
+  kev('keyup', 'ArrowUp');
 }
 
-async function fetchGameHTML() {
-  for (const mkUrl of PROXIES) {
-    try {
-      const r = await fetch(mkUrl(GAME_URL), { signal: AbortSignal.timeout(12000) });
-      if (r.ok) {
-        const text = await r.text();
-        // Basic sanity: must look like HTML
-        if (text.length > 500 && text.includes('<')) return text;
-      }
-    } catch (e) { /* try next proxy */ }
-  }
-  throw new Error('All proxies failed');
+function updateSteer(gamma) {
+  const a = gamma - cal;
+  let d = 'none';
+  if (a < -DZ) d = 'left';
+  else if (a > DZ) d = 'right';
+
+  document.getElementById('htilt').textContent = Math.round(a) + '°';
+  document.getElementById('hdir').textContent =
+    d === 'left' ? '\u25C0 LEFT' : d === 'right' ? 'RIGHT \u25B6' : 'STRAIGHT';
+
+  if (d === steer) return;
+  if (steer === 'left') kev('keyup', 'ArrowLeft');
+  if (steer === 'right') kev('keyup', 'ArrowRight');
+  if (d === 'left') kev('keydown', 'ArrowLeft');
+  if (d === 'right') kev('keydown', 'ArrowRight');
+  steer = d;
 }
 
-function injectIntoHTML(html) {
-  // Strip any CSP meta tags that would block our injected script
-  html = html.replace(/<meta[^>]*http-equiv\s*=\s*["']?Content-Security-Policy["']?[^>]*>/gi, '');
-
-  // Add <base> so relative asset URLs resolve to Shopify
-  if (html.includes('<head>')) {
-    html = html.replace('<head>', '<head><base href="' + GAME_URL + '">');
-  } else if (html.includes('<HEAD>')) {
-    html = html.replace('<HEAD>', '<HEAD><base href="' + GAME_URL + '">');
-  }
-
-  // Inject controller script before </body>
-  const script = '<script>' + CTRL + '<\/script>';
-  if (html.includes('</body>')) {
-    html = html.replace('</body>', script + '</body>');
-  } else if (html.includes('</BODY>')) {
-    html = html.replace('</BODY>', script + '</BODY>');
-  } else {
-    html += script;
-  }
-
-  return html;
-}
-
-function showGame(html) {
-  // Replace the entire page with the game HTML (no iframe, no blob URL)
-  document.open();
-  document.write(html);
-  document.close();
-}
+function onOrient(e) { gm = e.gamma || 0; updateSteer(gm); }
 
 async function launch() {
-  const $loading = document.getElementById('loading');
-  const $status = document.getElementById('load-status');
-  const $launcher = document.getElementById('launcher');
-  const $error = document.getElementById('error-screen');
-
-  $error.classList.remove('show');
-  $launcher.style.display = 'none';
-  $loading.classList.add('show');
-
-  try {
-    // 1. Accelerometer permission (must be in user-gesture context)
-    $status.textContent = 'Requesting accelerometer access...';
-    await requestAccel();
-
-    // 2. Fetch game
-    $status.textContent = 'Fetching Horizon Drive...';
-    const html = await fetchGameHTML();
-
-    // 3. Inject controller
-    $status.textContent = 'Injecting tilt controls...';
-    const modifiedHTML = injectIntoHTML(html);
-
-    // 4. Display
-    $loading.classList.remove('show');
-    showGame(modifiedHTML);
-
-  } catch (err) {
-    $loading.classList.remove('show');
-    document.getElementById('error-msg').textContent = err.message;
-    $error.classList.add('show');
+  // Request accelerometer (iOS)
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const p = await DeviceOrientationEvent.requestPermission();
+      if (p !== 'granted') { alert('Accelerometer access required'); return; }
+    } catch(e) { alert('Accelerometer error: ' + e.message); return; }
   }
+
+  document.getElementById('launcher').style.display = 'none';
+  iframe.src = GAME;
+  document.getElementById('hud').classList.add('on');
+  active = true;
+
+  window.addEventListener('deviceorientation', onOrient);
+
+  // Start gas after a delay to let game load
+  setTimeout(startGas, 3000);
 }
 
 document.getElementById('btn-play').addEventListener('click', launch);
-document.getElementById('btn-retry').addEventListener('click', () => {
-  document.getElementById('error-screen').classList.remove('show');
-  launch();
-});
+
+document.getElementById('hsens').oninput = function() {
+  DZ = Math.max(1.5, (+this.value) / 3);
+};
+document.getElementById('hzero').onclick = function() { cal = gm; };
+document.getElementById('hstop').onclick = function() {
+  stopGas();
+  kev('keyup', 'ArrowLeft');
+  kev('keyup', 'ArrowRight');
+  window.removeEventListener('deviceorientation', onOrient);
+  document.getElementById('hud').classList.remove('on');
+  active = false;
+};
 </script>
 </body>
 </html>
