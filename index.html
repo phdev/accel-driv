@@ -386,68 +386,78 @@ function buildBoostPads() {
   boostPads = [];
   boostMeshes = [];
 
-  // Shared geometries and materials
+  // Shared geometries — bigger and brighter
   const baseGeo = new THREE.PlaneGeometry(CFG.boostPadWidth, CFG.boostPadLength);
   const baseMat = new THREE.MeshBasicMaterial({
-    color: 0x00ff88, transparent: true, opacity: 0.25, side: THREE.DoubleSide,
+    color: 0x00ffaa, transparent: true, opacity: 0.55, side: THREE.DoubleSide,
+    depthWrite: false,
   });
-  const arrowMat = new THREE.MeshBasicMaterial({ color: 0x00ff44, side: THREE.DoubleSide });
+  const arrowMat = new THREE.MeshBasicMaterial({
+    color: 0x44ffaa, side: THREE.DoubleSide, depthWrite: false,
+  });
 
-  // Build arrow shape once
+  // Build a bigger, chunkier chevron arrow
   const arrowShape = new THREE.Shape();
-  arrowShape.moveTo(0, 0.8);
-  arrowShape.lineTo(-0.5, -0.4);
-  arrowShape.lineTo(0, 0);
-  arrowShape.lineTo(0.5, -0.4);
+  arrowShape.moveTo(0, 1.1);
+  arrowShape.lineTo(-0.7, -0.3);
+  arrowShape.lineTo(-0.3, -0.3);
+  arrowShape.lineTo(0, 0.2);
+  arrowShape.lineTo(0.3, -0.3);
+  arrowShape.lineTo(0.7, -0.3);
   arrowShape.closePath();
   const arrowGeo = new THREE.ShapeGeometry(arrowShape);
 
   for (let i = 0; i < CFG.boostCount; i++) {
-    // Spread pads from 5% to 95% of track
     const t = 0.05 + (i / CFG.boostCount) * 0.9;
 
-    // Sample two nearby points to get the true track surface normal
     const tA = Math.max(0, t - 0.001);
     const tB = Math.min(0.9999, t + 0.001);
     const point = curve.getPointAt(t);
     const pA = curve.getPointAt(tA);
     const pB = curve.getPointAt(tB);
 
-    // Tangent = forward direction along the track
     const tangent = new THREE.Vector3().subVectors(pB, pA).normalize();
-
-    // Right vector: cross tangent with world up, then normalize
     const worldUp = new THREE.Vector3(0, 1, 0);
     const right = new THREE.Vector3().crossVectors(tangent, worldUp).normalize();
     if (right.lengthSq() < 0.01) right.set(1, 0, 0);
-
-    // Surface normal: cross right with tangent (gives the actual track-surface up)
     const normal = new THREE.Vector3().crossVectors(right, tangent).normalize();
 
-    // Build a rotation matrix from the basis vectors:
-    //   X-axis = right, Y-axis = normal (surface up), Z-axis = tangent (forward)
     const mat4 = new THREE.Matrix4();
     mat4.makeBasis(right, normal, tangent);
 
     const padGroup = new THREE.Group();
     padGroup.position.copy(point);
-    // Lift slightly along the surface normal so it doesn't z-fight
-    padGroup.position.addScaledVector(normal, 0.06);
+    // Lift well above road surface to avoid z-fighting
+    padGroup.position.addScaledVector(normal, 0.2);
     padGroup.quaternion.setFromRotationMatrix(mat4);
 
-    // Base glow rectangle — lies in XZ plane of the group
+    // Bright base rectangle
     const base = new THREE.Mesh(baseGeo, baseMat.clone());
     base.rotation.x = -Math.PI / 2;
     padGroup.add(base);
 
-    // 3 chevron arrows spread along the forward (Z) direction
+    // 3 big chevron arrows spaced along the forward axis
     for (let a = -1; a <= 1; a++) {
       const arrow = new THREE.Mesh(arrowGeo, arrowMat);
       arrow.rotation.x = -Math.PI / 2;
-      arrow.position.set(0, 0.01, a * 1.2);
-      arrow.scale.set(1.2, 1.2, 1.2);
+      arrow.position.set(0, 0.02, a * 1.3);
+      arrow.scale.set(1.5, 1.5, 1.5);
       padGroup.add(arrow);
     }
+
+    // Add edge glow strips on left/right sides of the pad
+    const edgeGeo = new THREE.PlaneGeometry(0.3, CFG.boostPadLength);
+    const edgeMat = new THREE.MeshBasicMaterial({
+      color: 0x00ff44, side: THREE.DoubleSide, depthWrite: false,
+    });
+    const edgeL = new THREE.Mesh(edgeGeo, edgeMat);
+    edgeL.rotation.x = -Math.PI / 2;
+    edgeL.position.set(-CFG.boostPadWidth / 2, 0.01, 0);
+    padGroup.add(edgeL);
+    const edgeR = new THREE.Mesh(edgeGeo, edgeMat);
+    edgeR.rotation.x = -Math.PI / 2;
+    edgeR.position.set(CFG.boostPadWidth / 2, 0.01, 0);
+    padGroup.add(edgeR);
 
     scene.add(padGroup);
     boostPads.push({ t: t, group: padGroup, used: false });
