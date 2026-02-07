@@ -7,181 +7,136 @@
 <title>Accel-Drive</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#000;overflow:hidden;position:fixed;inset:0}
-
-  #launcher{
-    position:fixed;inset:0;z-index:100;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
+  body{
     background:linear-gradient(180deg,#12002a,#1a0040 40%,#2d0060);
-    color:#e0d0ff;font-family:system-ui,sans-serif;padding:2rem;text-align:center;
+    color:#e0d0ff;font-family:system-ui,sans-serif;
+    min-height:100dvh;padding:1.5rem;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
   }
   h1{
-    font-size:1.8rem;margin-bottom:.2rem;
+    font-size:1.6rem;margin-bottom:.15rem;
     background:linear-gradient(135deg,#ff6ec7,#ffd700);
     -webkit-background-clip:text;-webkit-text-fill-color:transparent;
   }
-  .sub{font-size:.8rem;opacity:.5;margin-bottom:2rem}
+  .sub{font-size:.75rem;opacity:.45;margin-bottom:2rem}
+  .steps{width:100%;max-width:380px}
+  .step{
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+    border-radius:14px;padding:1.1rem;margin-bottom:.75rem;
+  }
+  .step b{color:#ffd700;font-size:.85rem}
+  .step p{font-size:.8rem;opacity:.75;line-height:1.5;margin-top:.3rem}
   .btn{
-    display:block;width:100%;max-width:320px;padding:1rem;border:none;border-radius:14px;
-    font-size:1rem;font-weight:700;cursor:pointer;text-align:center;
-    -webkit-tap-highlight-color:transparent;margin-bottom:.75rem;
+    display:block;width:100%;padding:.9rem;border:none;border-radius:12px;
+    font-size:.95rem;font-weight:700;cursor:pointer;text-align:center;
+    -webkit-tap-highlight-color:transparent;text-decoration:none;
   }
-  .btn-go{background:linear-gradient(135deg,#ff6ec7,#ff3cac);color:#fff;box-shadow:0 6px 24px rgba(255,60,172,.4)}
-  .hint{font-size:.72rem;opacity:.4;max-width:300px;line-height:1.4;margin-top:.5rem}
-
-  iframe{position:fixed;inset:0;width:100%;height:100%;border:none;z-index:1}
-
-  /* HUD */
-  #hud{
-    display:none;position:fixed;top:0;left:0;right:0;z-index:9999;
-    background:rgba(0,0,0,.5);backdrop-filter:blur(6px);
-    padding:4px 10px;font:600 11px system-ui;color:#fff;
-    align-items:center;gap:8px;
+  .btn-pink{background:linear-gradient(135deg,#ff6ec7,#ff3cac);color:#fff;box-shadow:0 4px 16px rgba(255,60,172,.35)}
+  .btn-blue{background:linear-gradient(135deg,#6e3cff,#3c8cff);color:#fff;box-shadow:0 4px 16px rgba(60,140,255,.25)}
+  .btn+.btn{margin-top:.5rem}
+  .note{font-size:.68rem;opacity:.35;line-height:1.4;margin-top:.4rem;text-align:center}
+  .toast{
+    position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(80px);
+    background:#111;color:#4f4;border:1px solid rgba(0,200,0,.2);
+    padding:.45rem 1.2rem;border-radius:10px;font-size:.8rem;font-weight:600;
+    transition:transform .2s ease-out;z-index:999;pointer-events:none;
   }
-  #hud.on{display:flex}
-  #hud span{white-space:nowrap}
-  .g{color:#4f4}
+  .toast.show{transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
 
-<div id="launcher">
-  <h1>Accel-Drive</h1>
-  <p class="sub">Tilt to steer Horizon Drive</p>
-  <button class="btn btn-go" id="btn-play">Play</button>
-  <p class="hint">
-    Loads the game and maps your phone's accelerometer to
-    left/right steering. Gas is held automatically.
-  </p>
+<h1>Accel-Drive</h1>
+<p class="sub">Tilt your phone to steer Horizon Drive</p>
+
+<div class="steps">
+  <div class="step">
+    <b>One-time setup (30 sec)</b>
+    <p>1. Tap <b>Copy Controller</b> below<br>
+       2. Bookmark any page in Safari<br>
+       3. Go to Bookmarks → Edit → tap that bookmark<br>
+       4. Delete the URL and <b>paste</b> the copied code<br>
+       5. Rename it "Accel-Drive" → Done</p>
+  </div>
+
+  <button class="btn btn-pink" id="btn-copy">Copy Controller</button>
+  <p class="note">Copies a javascript: URL to your clipboard</p>
+
+  <div class="step" style="margin-top:1rem">
+    <b>Every time you play</b>
+    <p>1. Open the game<br>
+       2. Open Bookmarks → tap <b>Accel-Drive</b><br>
+       3. Allow accelerometer if prompted<br>
+       4. Tilt to steer — gas is automatic</p>
+  </div>
+
+  <a class="btn btn-blue" href="https://www.shopify.com/editions/summer2025/drive" target="_blank" rel="noopener">Open Horizon Drive</a>
 </div>
 
-<iframe id="gf" src="about:blank" allow="accelerometer;gyroscope;autoplay;fullscreen" allowfullscreen></iframe>
-
-<div id="hud">
-  <span id="hdir">STRAIGHT</span>
-  <span id="htilt" style="opacity:.5">0°</span>
-  <span class="g">GAS</span>
-  <span style="font-size:9px;opacity:.6">Sens</span>
-  <input id="hsens" type="range" min="3" max="30" value="10" style="width:40px;accent-color:#ff6ec7">
-  <button id="hzero" style="background:rgba(255,255,255,.15);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Zero</button>
-  <button id="hstop" style="background:rgba(255,60,60,.4);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Stop</button>
-</div>
+<div class="toast" id="toast">Copied!</div>
 
 <script>
-const GAME = 'https://www.shopify.com/editions/summer2025/drive';
-const iframe = document.getElementById('gf');
-
-let active = false, cal = 0, gm = 0, DZ = 3.3, steer = 'none', gasIv;
-
-/*
- * Button positions from screenshot (% of viewport)
- *   ◀ left steer:  12% x, 86% y
- *   ▶ right steer: 33% x, 86% y
- *   gas (dots):    90% x, 86% y
- */
-const BTN = { left: [0.12, 0.86], right: [0.33, 0.86], gas: [0.90, 0.86] };
-
-/* Unique pointer IDs per button so multi-touch works */
-const PID = { left: 2, right: 3, gas: 4 };
-
-function btnXY(name) {
-  return [BTN[name][0] * window.innerWidth, BTN[name][1] * window.innerHeight];
+const CTRL=`(function(){
+if(window.__ad)return;window.__ad=1;
+var DZ=5,cal=0,steer='none',gm=0;
+var BTN={left:[0.12,0.86],right:[0.33,0.86],gas:[0.90,0.86]};
+var PID={left:2,right:3,gas:4};
+function xy(n){return[BTN[n][0]*innerWidth,BTN[n][1]*innerHeight]}
+function el(n){var c=xy(n);return document.elementFromPoint(c[0],c[1])||document.body}
+function td(n){
+  var c=xy(n),id=PID[n],e=el(n);
+  e.dispatchEvent(new PointerEvent('pointerdown',{clientX:c[0],clientY:c[1],pointerId:id,pointerType:'touch',isPrimary:id===2,bubbles:true,cancelable:true,pressure:.5}));
+  try{var t=new Touch({identifier:id,target:e,clientX:c[0],clientY:c[1],pageX:c[0],pageY:c[1]});
+  e.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true,touches:[t],targetTouches:[t],changedTouches:[t]}))}catch(x){}
 }
-
-function touchDown(name) {
-  const [x, y] = btnXY(name);
-  const id = PID[name];
-  iframe.dispatchEvent(new PointerEvent('pointerdown', {
-    clientX: x, clientY: y, pointerId: id, pointerType: 'touch',
-    isPrimary: id === 2, bubbles: true, cancelable: true, pressure: 0.5
-  }));
-  try {
-    const t = new Touch({identifier: id, target: iframe, clientX: x, clientY: y, pageX: x, pageY: y});
-    iframe.dispatchEvent(new TouchEvent('touchstart', {
-      bubbles: true, cancelable: true, touches: [t], targetTouches: [t], changedTouches: [t]
-    }));
-  } catch(e) {}
+function tu(n){
+  var c=xy(n),id=PID[n],e=el(n);
+  e.dispatchEvent(new PointerEvent('pointerup',{clientX:c[0],clientY:c[1],pointerId:id,pointerType:'touch',isPrimary:id===2,bubbles:true,cancelable:true}));
+  try{var t=new Touch({identifier:id,target:e,clientX:c[0],clientY:c[1],pageX:c[0],pageY:c[1]});
+  e.dispatchEvent(new TouchEvent('touchend',{bubbles:true,cancelable:true,touches:[],targetTouches:[],changedTouches:[t]}))}catch(x){}
 }
-
-function touchUp(name) {
-  const [x, y] = btnXY(name);
-  const id = PID[name];
-  iframe.dispatchEvent(new PointerEvent('pointerup', {
-    clientX: x, clientY: y, pointerId: id, pointerType: 'touch',
-    isPrimary: id === 2, bubbles: true, cancelable: true
-  }));
-  try {
-    const t = new Touch({identifier: id, target: iframe, clientX: x, clientY: y, pageX: x, pageY: y});
-    iframe.dispatchEvent(new TouchEvent('touchend', {
-      bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [t]
-    }));
-  } catch(e) {}
+var gi=setInterval(function(){tu('gas');td('gas')},200);
+td('gas');
+function us(g){
+  var a=g-cal,d='none';if(a<-DZ)d='left';else if(a>DZ)d='right';
+  if(d===steer)return;
+  if(steer==='left')tu('left');if(steer==='right')tu('right');
+  if(d==='left')td('left');if(d==='right')td('right');
+  steer=d;
+  var de=document.getElementById('ad-d');if(de)de.textContent=d==='left'?'< LEFT':d==='right'?'RIGHT >':'STRAIGHT';
+  var ge=document.getElementById('ad-g');if(ge)ge.textContent=Math.round(a)+'°';
 }
+var h=document.createElement('div');
+h.innerHTML='<div style="position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:5px 10px;font:600 11px system-ui;color:#fff"><span id=ad-d style="min-width:55px;text-align:center">STRAIGHT</span><span id=ad-g style="opacity:.6;min-width:28px;text-align:right">0°</span><span style="color:#4f4">GAS</span><input id=ad-s type=range min=3 max=30 value=12 style="width:40px;accent-color:#ff6ec7"><button id=ad-z style="background:rgba(255,255,255,.15);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Zero</button><button id=ad-x style="background:rgba(255,60,60,.4);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Stop</button></div>';
+document.body.appendChild(h);
+setTimeout(function(){
+  var s=document.getElementById('ad-s');if(s)s.oninput=function(){DZ=Math.max(2,(+this.value)/3)};
+  document.getElementById('ad-z').onclick=function(){cal=gm};
+  document.getElementById('ad-x').onclick=function(){clearInterval(gi);tu('gas');tu('left');tu('right');window.removeEventListener('deviceorientation',oo);h.remove();window.__ad=0};
+},50);
+function oo(e){gm=e.gamma||0;us(gm)}
+if(typeof DeviceOrientationEvent!='undefined'&&typeof DeviceOrientationEvent.requestPermission=='function'){
+  DeviceOrientationEvent.requestPermission().then(function(s){if(s==='granted')window.addEventListener('deviceorientation',oo)}).catch(function(){})
+}else{window.addEventListener('deviceorientation',oo)}
+})()`;
 
-function startGas() {
-  touchDown('gas');
-  gasIv = setInterval(() => { touchUp('gas'); touchDown('gas'); }, 200);
-}
+const BOOKMARKLET='javascript:'+encodeURIComponent(CTRL);
 
-function stopGas() {
-  clearInterval(gasIv);
-  touchUp('gas');
-}
-
-function updateSteer(gamma) {
-  const a = gamma - cal;
-  let d = 'none';
-  if (a < -DZ) d = 'left';
-  else if (a > DZ) d = 'right';
-
-  document.getElementById('htilt').textContent = Math.round(a) + '°';
-  document.getElementById('hdir').textContent =
-    d === 'left' ? '\u25C0 LEFT' : d === 'right' ? 'RIGHT \u25B6' : 'STRAIGHT';
-
-  if (d === steer) return;
-  if (steer === 'left') touchUp('left');
-  if (steer === 'right') touchUp('right');
-  if (d === 'left') touchDown('left');
-  if (d === 'right') touchDown('right');
-  steer = d;
-}
-
-function onOrient(e) { gm = e.gamma || 0; updateSteer(gm); }
-
-async function launch() {
-  if (typeof DeviceOrientationEvent !== 'undefined' &&
-      typeof DeviceOrientationEvent.requestPermission === 'function') {
-    try {
-      const p = await DeviceOrientationEvent.requestPermission();
-      if (p !== 'granted') { alert('Accelerometer access required'); return; }
-    } catch(e) { alert('Accelerometer error: ' + e.message); return; }
-  }
-
-  document.getElementById('launcher').style.display = 'none';
-  iframe.src = GAME;
-  document.getElementById('hud').classList.add('on');
-  active = true;
-
-  window.addEventListener('deviceorientation', onOrient);
-
-  // Start gas after delay for game to load
-  setTimeout(startGas, 4000);
-}
-
-document.getElementById('btn-play').addEventListener('click', launch);
-
-document.getElementById('hsens').oninput = function() {
-  DZ = Math.max(1.5, (+this.value) / 3);
-};
-document.getElementById('hzero').onclick = function() { cal = gm; };
-document.getElementById('hstop').onclick = function() {
-  stopGas();
-  touchUp('left');
-  touchUp('right');
-  window.removeEventListener('deviceorientation', onOrient);
-  document.getElementById('hud').classList.remove('on');
-  active = false;
-};
+document.getElementById('btn-copy').addEventListener('click',function(){
+  navigator.clipboard.writeText(BOOKMARKLET).then(function(){
+    var t=document.getElementById('toast');
+    t.textContent='Copied! Now bookmark any page & paste as the URL.';
+    t.classList.add('show');
+    setTimeout(function(){t.classList.remove('show')},3000);
+  }).catch(function(){
+    var ta=document.createElement('textarea');
+    ta.value=BOOKMARKLET;ta.style.cssText='position:fixed;left:-9999px';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();
+    var t=document.getElementById('toast');
+    t.textContent='Copied!';t.classList.add('show');
+    setTimeout(function(){t.classList.remove('show')},2500);
+  });
+});
 </script>
 </body>
 </html>
