@@ -53,12 +53,6 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   #load-status{font-size:.85rem;opacity:.7;text-align:center;max-width:280px}
 
-  /* ── Game screen ── */
-  #game-screen{
-    display:none;position:fixed;inset:0;z-index:10;background:#000;
-  }
-  #game-screen iframe{width:100%;height:100%;border:none}
-
   /* ── Error ── */
   #error-screen{
     display:none;position:fixed;inset:0;z-index:500;
@@ -93,9 +87,6 @@
   <p id="load-status">Loading Horizon Drive...</p>
 </div>
 
-<div id="game-screen">
-  <iframe id="game-iframe" allow="accelerometer;gyroscope;autoplay;fullscreen" allowfullscreen></iframe>
-</div>
 
 <div id="error-screen">
   <h2>Couldn't load the game</h2>
@@ -228,10 +219,10 @@ function injectIntoHTML(html) {
 }
 
 function showGame(html) {
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  document.getElementById('game-iframe').src = url;
-  document.getElementById('game-screen').style.display = 'block';
+  // Replace the entire page with the game HTML (no iframe, no blob URL)
+  document.open();
+  document.write(html);
+  document.close();
 }
 
 async function launch() {
