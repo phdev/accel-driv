@@ -4,334 +4,270 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Accel-Drive — Tilt to Steer</title>
+<title>Accel-Drive</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: linear-gradient(180deg, #0a0014 0%, #1a0040 50%, #12002a 100%);
-    color: #e0d0ff;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    min-height: 100dvh;
-    padding: 0 1.25rem 3rem;
-    -webkit-text-size-adjust: 100%;
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:#0a0014;color:#e0d0ff;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    min-height:100dvh;
   }
 
-  header {
-    text-align: center;
-    padding: 2.5rem 0 1rem;
+  /* ── Launcher ── */
+  #launcher{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    min-height:100dvh;padding:2rem 1.5rem;text-align:center;
+    background:linear-gradient(180deg,#12002a,#1a0040 40%,#2d0060);
   }
-  h1 {
-    font-size: 1.6rem;
-    background: linear-gradient(135deg, #ff6ec7, #ffd700);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+  h1{
+    font-size:1.8rem;margin-bottom:.2rem;
+    background:linear-gradient(135deg,#ff6ec7,#ffd700);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
   }
-  .subtitle { font-size: .8rem; opacity: .5; margin-top: .2rem; }
+  .sub{font-size:.8rem;opacity:.5;margin-bottom:2.5rem}
+  .btn{
+    display:block;width:100%;max-width:340px;padding:1rem;border:none;border-radius:14px;
+    font-size:1rem;font-weight:700;cursor:pointer;text-align:center;
+    -webkit-tap-highlight-color:transparent;transition:transform .12s;
+    text-decoration:none;
+  }
+  .btn:active{transform:scale(.97)}
+  .btn-go{
+    background:linear-gradient(135deg,#ff6ec7,#ff3cac);color:#fff;
+    box-shadow:0 6px 24px rgba(255,60,172,.4);margin-bottom:1rem;
+  }
+  .hint{font-size:.75rem;opacity:.45;max-width:320px;line-height:1.45;margin-top:.5rem}
 
-  /* Steps */
-  .step {
-    background: rgba(255,255,255,.04);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 16px;
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-    position: relative;
+  /* ── Loading overlay ── */
+  #loading{
+    display:none;position:fixed;inset:0;z-index:500;
+    background:rgba(10,0,20,.95);
+    flex-direction:column;align-items:center;justify-content:center;
   }
-  .step-num {
-    position: absolute;
-    top: -10px; left: 14px;
-    background: #ff3cac;
-    color: #fff;
-    font-size: .7rem;
-    font-weight: 800;
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
+  #loading.show{display:flex}
+  .spinner{
+    width:40px;height:40px;border:3px solid rgba(255,255,255,.1);
+    border-top-color:#ff6ec7;border-radius:50%;
+    animation:spin .8s linear infinite;margin-bottom:1rem;
   }
-  .step h2 {
-    font-size: .95rem;
-    color: #ffd700;
-    margin-bottom: .4rem;
-  }
-  .step p, .step li {
-    font-size: .82rem;
-    line-height: 1.55;
-    opacity: .8;
-  }
-  .step ol { padding-left: 1.1rem; }
-  .step li { margin-bottom: .25rem; }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #load-status{font-size:.85rem;opacity:.7;text-align:center;max-width:280px}
 
-  /* Buttons */
-  .btn {
-    display: block;
-    width: 100%;
-    padding: .9rem;
-    border: none;
-    border-radius: 12px;
-    font-size: .95rem;
-    font-weight: 700;
-    cursor: pointer;
-    text-align: center;
-    text-decoration: none;
-    transition: transform .12s;
-    -webkit-tap-highlight-color: transparent;
+  /* ── Game screen ── */
+  #game-screen{
+    display:none;position:fixed;inset:0;z-index:10;background:#000;
   }
-  .btn:active { transform: scale(.97); }
-  .btn-pink {
-    background: linear-gradient(135deg, #ff6ec7, #ff3cac);
-    color: #fff;
-    box-shadow: 0 4px 18px rgba(255,60,172,.35);
-  }
-  .btn-outline {
-    background: transparent;
-    color: #e0d0ff;
-    border: 1px solid rgba(255,255,255,.2);
-  }
-  .btn-game {
-    background: linear-gradient(135deg, #6e3cff, #3c8cff);
-    color: #fff;
-    box-shadow: 0 4px 18px rgba(60,140,255,.3);
-  }
-  .btn + .btn { margin-top: .6rem; }
+  #game-screen iframe{width:100%;height:100%;border:none}
 
-  .small-note {
-    font-size: .72rem;
-    opacity: .45;
-    text-align: center;
-    margin-top: .5rem;
-    line-height: 1.4;
+  /* ── Error ── */
+  #error-screen{
+    display:none;position:fixed;inset:0;z-index:500;
+    background:rgba(10,0,20,.95);
+    flex-direction:column;align-items:center;justify-content:center;
+    padding:2rem;text-align:center;
   }
-
-  .copied-toast {
-    position: fixed;
-    bottom: 2rem; left: 50%;
-    transform: translateX(-50%) translateY(80px);
-    background: #1a1a2e;
-    color: #4f4;
-    border: 1px solid rgba(0,255,0,.2);
-    padding: .5rem 1.5rem;
-    border-radius: 10px;
-    font-size: .85rem;
-    font-weight: 600;
-    transition: transform .25s ease-out;
-    z-index: 999;
-    pointer-events: none;
-  }
-  .copied-toast.show { transform: translateX(-50%) translateY(0); }
-
-  .divider {
-    text-align: center;
-    font-size: .7rem;
-    opacity: .3;
-    margin: 1.5rem 0 .75rem;
-  }
-
-  /* Info accordion */
-  details {
-    background: rgba(255,255,255,.03);
-    border: 1px solid rgba(255,255,255,.06);
-    border-radius: 12px;
-    margin-top: 1.25rem;
-    padding: .8rem 1rem;
-  }
-  details summary {
-    font-size: .8rem;
-    font-weight: 600;
-    color: #c0b0e0;
-    cursor: pointer;
-    list-style: none;
-  }
-  details summary::-webkit-details-marker { display: none; }
-  details summary::before { content: '+ '; color: #ff6ec7; }
-  details[open] summary::before { content: '- '; }
-  details .inner {
-    margin-top: .6rem;
-    font-size: .78rem;
-    line-height: 1.5;
-    opacity: .7;
+  #error-screen.show{display:flex}
+  #error-screen h2{color:#ffd700;font-size:1.1rem;margin-bottom:.75rem}
+  #error-screen p{font-size:.82rem;opacity:.7;max-width:320px;line-height:1.5;margin-bottom:1rem}
+  .btn-outline{
+    background:transparent;color:#e0d0ff;
+    border:1px solid rgba(255,255,255,.2);
+    max-width:260px;
   }
 </style>
 </head>
 <body>
 
-<header>
+<div id="launcher">
   <h1>Accel-Drive</h1>
-  <p class="subtitle">Tilt your phone to steer Horizon Drive</p>
-</header>
-
-<!-- ── STEP 1: Bookmark the controller ── -->
-<div class="step">
-  <div class="step-num">1</div>
-  <h2>Save the controller bookmark</h2>
-  <p>Tap the button below, then <strong>bookmark this page</strong> in your browser (share icon → Add Bookmark). Name it something like "Accel-Drive".</p>
-  <br>
-  <button class="btn btn-pink" id="btn-bookmark">
-    Bookmark This Page
-  </button>
-  <p class="small-note">
-    After bookmarking, tap "Copy Controller Code" below,
-    then <strong>edit the bookmark's URL</strong> and paste the code.
+  <p class="sub">Tilt your phone to steer Horizon Drive</p>
+  <button class="btn btn-go" id="btn-play">Play with Tilt Controls</button>
+  <p class="hint">
+    Loads the game with accelerometer steering injected.
+    Gas is held automatically. Tilt left/right to steer.
   </p>
 </div>
 
-<!-- ── STEP 2: Copy the bookmarklet code ── -->
-<div class="step">
-  <div class="step-num">2</div>
-  <h2>Copy the controller code</h2>
-  <p>This copies a <code>javascript:</code> URL to your clipboard. Edit the bookmark you just made and <strong>replace its URL</strong> with the copied code.</p>
-  <br>
-  <button class="btn btn-pink" id="btn-copy">
-    Copy Controller Code
-  </button>
-  <p class="small-note">
-    On iOS: Bookmarks → Edit → tap the bookmark → paste over the URL.<br>
-    On Android: Bookmarks → long-press → Edit → paste over the URL.
-  </p>
+<div id="loading">
+  <div class="spinner"></div>
+  <p id="load-status">Loading Horizon Drive...</p>
 </div>
 
-<!-- ── STEP 3: Open the game ── -->
-<div class="step">
-  <div class="step-num">3</div>
-  <h2>Open the game</h2>
-  <a class="btn btn-game" href="https://www.shopify.com/editions/summer2025/drive" target="_blank" rel="noopener">
-    Open Horizon Drive
-  </a>
+<div id="game-screen">
+  <iframe id="game-iframe" allow="accelerometer;gyroscope;autoplay;fullscreen" allowfullscreen></iframe>
 </div>
 
-<!-- ── STEP 4: Activate ── -->
-<div class="step">
-  <div class="step-num">4</div>
-  <h2>Activate the controller</h2>
-  <p>While on the game page, open your bookmarks and tap <strong>"Accel-Drive"</strong>. Allow accelerometer access if prompted.</p>
-  <ol>
-    <li>A HUD bar appears at the top of the game</li>
-    <li>Gas is held automatically</li>
-    <li>Tilt left/right to steer</li>
-    <li>Tap <strong>Zero</strong> to recalibrate neutral tilt</li>
-    <li>Tap <strong>Stop</strong> to disable</li>
-  </ol>
+<div id="error-screen">
+  <h2>Couldn't load the game</h2>
+  <p id="error-msg">The CORS proxy may be down. Try again or use the bookmarklet fallback.</p>
+  <button class="btn btn-go" id="btn-retry" style="margin-bottom:.75rem;max-width:260px">Try Again</button>
+  <a class="btn btn-outline" href="https://www.shopify.com/editions/summer2025/drive" target="_blank" rel="noopener">Open Game Directly</a>
 </div>
-
-<div class="divider">— that's it —</div>
-
-<details>
-  <summary>How does it work?</summary>
-  <div class="inner">
-    The bookmarklet injects a script into the game page that reads your
-    phone's accelerometer (DeviceOrientation API). It finds the on-screen
-    touch buttons (◀ ▶ steering and the gas pedal) by scanning the bottom
-    of the viewport, then simulates pointer events on them based on your
-    tilt angle. The gas button is re-pressed every 200ms to stay held.
-  </div>
-</details>
-
-<details>
-  <summary>Doesn't work?</summary>
-  <div class="inner">
-    <strong>Buttons not found:</strong> Tap "Rescan" in the HUD after the game fully loads.<br><br>
-    <strong>No tilt response:</strong> On iOS you must allow motion access. Go to
-    Settings → Safari → Motion & Orientation Access → enable.<br><br>
-    <strong>Bookmarklet won't run:</strong> Some browsers block <code>javascript:</code> bookmarks.
-    Try Safari (iOS) or Chrome/Firefox (Android). As a fallback, open DevTools console and paste the code directly.
-  </div>
-</details>
-
-<!-- Toast -->
-<div class="copied-toast" id="toast">Copied!</div>
 
 <script>
-// ═══════════════════════════════════════════════════════════
-// The controller code — injected into the game page via bookmarklet
-// ═══════════════════════════════════════════════════════════
-
-const CONTROLLER_CODE = `(function(){
-if(window.__ad){console.log('Accel-Drive already active');return}
-window.__ad=1;
-var DZ=5,SN=12,cal=0,steer='none',gm=0,ctl=null;
+// ══════════════════════════════════════════════════════════════
+// Controller script — gets injected directly into the game HTML
+// ══════════════════════════════════════════════════════════════
+const CTRL = `(function(){
+if(window.__ad)return;window.__ad=1;
+var DZ=5,cal=0,steer='none',gm=0,ctl=null;
 
 function po(el){var r=el.getBoundingClientRect();return{bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,pointerId:1,pointerType:'touch',isPrimary:true,width:1,height:1,pressure:.5}}
 function pd(el){if(!el)return;var o=po(el);el.dispatchEvent(new PointerEvent('pointerdown',o));try{var t=new Touch({identifier:Date.now(),target:el,clientX:o.clientX,clientY:o.clientY,pageX:o.clientX,pageY:o.clientY,radiusX:1,radiusY:1});el.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true,touches:[t],targetTouches:[t],changedTouches:[t]}))}catch(e){}}
 function pu(el){if(!el)return;var o=po(el);el.dispatchEvent(new PointerEvent('pointerup',o));try{var t=new Touch({identifier:Date.now(),target:el,clientX:o.clientX,clientY:o.clientY,pageX:o.clientX,pageY:o.clientY,radiusX:1,radiusY:1});el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,cancelable:true,touches:[],targetTouches:[],changedTouches:[t]}))}catch(e){}}
 
 function scan(){
-  var vh=innerHeight,vw=innerWidth,cut=vh*.65,all=document.querySelectorAll('button,div,span,a,svg,[role=button]'),c=[];
-  for(var i=0;i<all.length;i++){var el=all[i],r=el.getBoundingClientRect();if(r.top>=cut&&r.width>=35&&r.height>=35&&r.width<vw*.35&&r.height<vh*.25)c.push({el:el,r:r,cx:r.left+r.width/2,cy:r.top+r.height/2})}
-  if(!c.length){console.warn('AD: no buttons found');return null}
+  var vh=innerHeight,vw=innerWidth,cut=vh*.65;
+  var all=document.querySelectorAll('button,div,span,a,svg,[role=button]'),c=[];
+  for(var i=0;i<all.length;i++){var el=all[i],r=el.getBoundingClientRect();
+    if(r.top>=cut&&r.width>=35&&r.height>=35&&r.width<vw*.35&&r.height<vh*.25)
+      c.push({el:el,r:r,cx:r.left+r.width/2,cy:r.top+r.height/2})}
+  if(!c.length)return null;
   c.sort(function(a,b){return a.r.width*a.r.height-b.r.width*b.r.height});
   var k=[];for(var i=0;i<c.length;i++){var dup=false;for(var j=0;j<k.length;j++){if(Math.abs(c[i].cx-k[j].cx)<20&&Math.abs(c[i].cy-k[j].cy)<20){dup=true;break}}if(!dup)k.push(c[i])}
   k.sort(function(a,b){return a.cx-b.cx});
   var m=vw/2,L=k.filter(function(c){return c.cx<m}),R=k.filter(function(c){return c.cx>=m});
   L.sort(function(a,b){return a.cx-b.cx});R.sort(function(a,b){return a.cx-b.cx});
-  var res={left:L.length>=1?L[0].el:null,right:L.length>=2?L[1].el:null,gas:R.length>=1?R[R.length-1].el:null};
-  console.log('AD controls:',res);return res
+  return{left:L[0]?L[0].el:null,right:L[1]?L[1].el:null,gas:R.length?R[R.length-1].el:null}
 }
 
+/* Gas: re-press every 200ms */
 var gi=setInterval(function(){if(!ctl)ctl=scan();if(!ctl||!ctl.gas)return;pu(ctl.gas);pd(ctl.gas)},200);
 
 function us(g){
   var a=g-cal,d='none';if(a<-DZ)d='left';else if(a>DZ)d='right';
   if(d===steer)return;if(!ctl)ctl=scan();if(!ctl)return;
-  if(steer==='left'&&ctl.left)pu(ctl.left);if(steer==='right'&&ctl.right)pu(ctl.right);
-  if(d==='left'&&ctl.left)pd(ctl.left);if(d==='right'&&ctl.right)pd(ctl.right);
+  if(steer==='left'&&ctl.left)pu(ctl.left);
+  if(steer==='right'&&ctl.right)pu(ctl.right);
+  if(d==='left'&&ctl.left)pd(ctl.left);
+  if(d==='right'&&ctl.right)pd(ctl.right);
   steer=d;
-  var de=document.getElementById('ad-d');if(de)de.textContent=d==='left'?'<< LEFT':d==='right'?'RIGHT >>':'STRAIGHT';
-  var ge=document.getElementById('ad-g');if(ge)ge.textContent=Math.round(a)+'°';
+  var de=document.getElementById('ad-d');if(de)de.textContent=d==='left'?'\\u25C0 LEFT':d==='right'?'RIGHT \\u25B6':'STRAIGHT';
+  var ge=document.getElementById('ad-g');if(ge)ge.textContent=Math.round(a)+'\\u00b0';
 }
 
+/* HUD */
 var h=document.createElement('div');
-h.innerHTML='<div id=ad-h style="position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);padding:5px 10px;font:600 11px system-ui;color:#fff"><span id=ad-d style="min-width:55px;text-align:center">STRAIGHT</span><span id=ad-g style="opacity:.6;min-width:28px;text-align:right">0°</span><span style="color:#4f4">GAS</span><input id=ad-s type=range min=3 max=30 value=12 style="width:40px;accent-color:#ff6ec7"><button id=ad-z style="background:rgba(255,255,255,.15);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Zero</button><button id=ad-r style="background:rgba(100,100,255,.3);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Rescan</button><button id=ad-x style="background:rgba(255,60,60,.4);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Stop</button></div>';
+h.innerHTML='<div id=ad-h style="position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:5px 10px;font:600 11px system-ui;color:#fff"><span id=ad-d style="min-width:55px;text-align:center">STRAIGHT</span><span id=ad-g style="opacity:.6;min-width:28px;text-align:right">0\\u00b0</span><span style="color:#4f4">GAS</span><input id=ad-s type=range min=3 max=30 value=12 style="width:40px;accent-color:#ff6ec7"><button id=ad-z style="background:rgba(255,255,255,.15);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Zero</button><button id=ad-r style="background:rgba(100,100,255,.3);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Rescan</button><button id=ad-x style="background:rgba(255,60,60,.4);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Stop</button></div>';
 document.body.appendChild(h);
-
 setTimeout(function(){
-  var s=document.getElementById('ad-s');if(s)s.oninput=function(){SN=+this.value;DZ=Math.max(2,SN/3)};
+  var s=document.getElementById('ad-s');if(s)s.oninput=function(){DZ=Math.max(2,(+this.value)/3)};
   var z=document.getElementById('ad-z');if(z)z.onclick=function(){cal=gm};
   var r=document.getElementById('ad-r');if(r)r.onclick=function(){ctl=scan()};
   var x=document.getElementById('ad-x');if(x)x.onclick=function(){clearInterval(gi);if(ctl){if(ctl.gas)pu(ctl.gas);if(ctl.left)pu(ctl.left);if(ctl.right)pu(ctl.right)}window.removeEventListener('deviceorientation',oo);h.remove();window.__ad=0}
-},50);
+},100);
 
 function oo(e){gm=e.gamma||0;us(gm)}
-if(typeof DeviceOrientationEvent!='undefined'&&typeof DeviceOrientationEvent.requestPermission=='function'){DeviceOrientationEvent.requestPermission().then(function(s){if(s==='granted')window.addEventListener('deviceorientation',oo)}).catch(console.error)}else{window.addEventListener('deviceorientation',oo)}
+if(typeof DeviceOrientationEvent!='undefined'&&typeof DeviceOrientationEvent.requestPermission=='function'){
+  DeviceOrientationEvent.requestPermission().then(function(s){if(s==='granted')window.addEventListener('deviceorientation',oo)}).catch(function(){})
+}else{window.addEventListener('deviceorientation',oo)}
 
-var sa=0,st=setInterval(function(){ctl=scan();sa++;if(ctl||sa>=10)clearInterval(st)},1000);
-console.log('Accel-Drive active!')
-})()`;
+var sa=0,st=setInterval(function(){ctl=scan();sa++;if(ctl||sa>=15)clearInterval(st)},1000);
+})();`;
 
-const BOOKMARKLET_URL = 'javascript:' + encodeURIComponent(CONTROLLER_CODE);
+// ══════════════════════════════════════════════════════════════
+// Main logic
+// ══════════════════════════════════════════════════════════════
+const GAME_URL = 'https://www.shopify.com/editions/summer2025/drive';
 
-// ── Step 1: Prompt native bookmark dialog ──
-document.getElementById('btn-bookmark').addEventListener('click', () => {
-  // Can't programmatically trigger bookmark on mobile, so guide the user
-  alert(
-    'Now bookmark this page using your browser\\'s Share menu:\\n\\n' +
-    'iOS: Tap the Share icon (box+arrow) → Add Bookmark\\n' +
-    'Android: Tap ⋮ menu → Bookmark\\n\\n' +
-    'Name it "Accel-Drive", then come back here for Step 2.'
-  );
-});
+const PROXIES = [
+  url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+  url => 'https://corsproxy.io/?' + encodeURIComponent(url),
+  url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url),
+];
 
-// ── Step 2: Copy bookmarklet code ──
-document.getElementById('btn-copy').addEventListener('click', () => {
-  navigator.clipboard.writeText(BOOKMARKLET_URL).then(() => {
-    showToast('Copied! Now edit your bookmark\\'s URL and paste.');
-  }).catch(() => {
-    // Fallback: select a temporary textarea
-    const ta = document.createElement('textarea');
-    ta.value = BOOKMARKLET_URL;
-    ta.style.cssText = 'position:fixed;left:-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
-    showToast('Copied! Now edit your bookmark\\'s URL and paste.');
-  });
-});
-
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+async function requestAccel() {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    const perm = await DeviceOrientationEvent.requestPermission();
+    if (perm !== 'granted') throw new Error('Accelerometer permission denied');
+  }
 }
+
+async function fetchGameHTML() {
+  for (const mkUrl of PROXIES) {
+    try {
+      const r = await fetch(mkUrl(GAME_URL), { signal: AbortSignal.timeout(12000) });
+      if (r.ok) {
+        const text = await r.text();
+        // Basic sanity: must look like HTML
+        if (text.length > 500 && text.includes('<')) return text;
+      }
+    } catch (e) { /* try next proxy */ }
+  }
+  throw new Error('All proxies failed');
+}
+
+function injectIntoHTML(html) {
+  // Strip any CSP meta tags that would block our injected script
+  html = html.replace(/<meta[^>]*http-equiv\s*=\s*["']?Content-Security-Policy["']?[^>]*>/gi, '');
+
+  // Add <base> so relative asset URLs resolve to Shopify
+  if (html.includes('<head>')) {
+    html = html.replace('<head>', '<head><base href="' + GAME_URL + '">');
+  } else if (html.includes('<HEAD>')) {
+    html = html.replace('<HEAD>', '<HEAD><base href="' + GAME_URL + '">');
+  }
+
+  // Inject controller script before </body>
+  const script = '<script>' + CTRL + '<\/script>';
+  if (html.includes('</body>')) {
+    html = html.replace('</body>', script + '</body>');
+  } else if (html.includes('</BODY>')) {
+    html = html.replace('</BODY>', script + '</BODY>');
+  } else {
+    html += script;
+  }
+
+  return html;
+}
+
+function showGame(html) {
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  document.getElementById('game-iframe').src = url;
+  document.getElementById('game-screen').style.display = 'block';
+}
+
+async function launch() {
+  const $loading = document.getElementById('loading');
+  const $status = document.getElementById('load-status');
+  const $launcher = document.getElementById('launcher');
+  const $error = document.getElementById('error-screen');
+
+  $error.classList.remove('show');
+  $launcher.style.display = 'none';
+  $loading.classList.add('show');
+
+  try {
+    // 1. Accelerometer permission (must be in user-gesture context)
+    $status.textContent = 'Requesting accelerometer access...';
+    await requestAccel();
+
+    // 2. Fetch game
+    $status.textContent = 'Fetching Horizon Drive...';
+    const html = await fetchGameHTML();
+
+    // 3. Inject controller
+    $status.textContent = 'Injecting tilt controls...';
+    const modifiedHTML = injectIntoHTML(html);
+
+    // 4. Display
+    $loading.classList.remove('show');
+    showGame(modifiedHTML);
+
+  } catch (err) {
+    $loading.classList.remove('show');
+    document.getElementById('error-msg').textContent = err.message;
+    $error.classList.add('show');
+  }
+}
+
+document.getElementById('btn-play').addEventListener('click', launch);
+document.getElementById('btn-retry').addEventListener('click', () => {
+  document.getElementById('error-screen').classList.remove('show');
+  launch();
+});
 </script>
 </body>
 </html>
