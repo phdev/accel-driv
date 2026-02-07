@@ -105,129 +105,6 @@
     margin: .75rem 0;
   }
 
-  /* ── Game screen (iframe mode) ── */
-  #game-screen {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 10;
-  }
-
-  #game-screen iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-  }
-
-  /* ── HUD overlay ── */
-  #hud {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    z-index: 100;
-    pointer-events: none;
-    padding: 8px;
-  }
-
-  .hud-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: rgba(0,0,0,.55);
-    backdrop-filter: blur(8px);
-    border-radius: 12px;
-    padding: 6px 14px;
-    pointer-events: auto;
-  }
-
-  .hud-tilt {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .tilt-indicator {
-    width: 120px;
-    height: 8px;
-    background: rgba(255,255,255,.1);
-    border-radius: 4px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .tilt-dot {
-    position: absolute;
-    top: -2px;
-    width: 12px;
-    height: 12px;
-    background: #ffd700;
-    border-radius: 50%;
-    transform: translateX(-50%);
-    left: 50%;
-    transition: left .08s ease-out;
-    box-shadow: 0 0 8px rgba(255,215,0,.6);
-  }
-
-  .tilt-label {
-    font-size: .7rem;
-    font-weight: 600;
-    min-width: 50px;
-    text-align: center;
-  }
-
-  .hud-status {
-    font-size: .65rem;
-    opacity: .7;
-  }
-
-  .hud-gas {
-    font-size: .7rem;
-    font-weight: 600;
-    color: #4f4;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .gas-icon {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    background: #4f4;
-    border-radius: 50%;
-    animation: pulse-gas 1s infinite;
-  }
-
-  @keyframes pulse-gas {
-    0%, 100% { opacity: 1; }
-    50% { opacity: .4; }
-  }
-
-  .hud-close {
-    background: rgba(255,255,255,.15);
-    border: none;
-    color: #fff;
-    font-size: .75rem;
-    padding: 4px 10px;
-    border-radius: 8px;
-    cursor: pointer;
-    pointer-events: auto;
-  }
-
-  /* ── Sensitivity slider (shown in HUD) ── */
-  .sensitivity-control {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: .65rem;
-    opacity: .8;
-  }
-
-  .sensitivity-control input[type=range] {
-    width: 60px;
-    accent-color: #ff6ec7;
-  }
-
   /* ── Console snippet view ── */
   #snippet-screen {
     display: none;
@@ -306,33 +183,17 @@
     cursor: pointer;
   }
 
-  /* ── iframe blocked message ── */
-  #iframe-blocked {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 200;
-    background: rgba(0,0,0,.92);
-    color: #e0d0ff;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    text-align: center;
+  .status-badge {
+    display: inline-block;
+    padding: .25rem .6rem;
+    border-radius: 6px;
+    font-size: .7rem;
+    font-weight: 600;
+    margin-top: .5rem;
   }
 
-  #iframe-blocked h2 {
-    font-size: 1.2rem;
-    color: #ffd700;
-    margin-bottom: .75rem;
-  }
-
-  #iframe-blocked p {
-    font-size: .85rem;
-    opacity: .75;
-    margin-bottom: 1.5rem;
-    max-width: 350px;
-  }
+  .status-badge.found { background: rgba(0,200,0,.2); color: #4f4; }
+  .status-badge.missing { background: rgba(255,60,60,.2); color: #f66; }
 </style>
 </head>
 <body>
@@ -345,74 +206,52 @@
   <div class="card">
     <h2>How it works</h2>
     <ol>
+      <li>Open the game link below on your phone</li>
+      <li>Paste the controller script into your browser console</li>
       <li>Tilt your phone left/right to steer</li>
-      <li>Gas pedal is held down automatically</li>
-      <li>Tap the game screen to brake or interact</li>
+      <li>Gas pedal button is pressed automatically</li>
     </ol>
   </div>
 
-  <button class="btn btn-primary" id="btn-launch-iframe">
-    Launch Game
-  </button>
-
-  <p class="or-divider">— or —</p>
-
-  <button class="btn btn-secondary" id="btn-show-snippet">
-    Use Console Injection Mode
-  </button>
-</div>
-
-<!-- ═══════════════════════ GAME SCREEN ═══════════════════════ -->
-<div id="game-screen">
-  <iframe
-    id="game-iframe"
-    src="about:blank"
-    allow="accelerometer; gyroscope; autoplay; fullscreen"
-    sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-    allowfullscreen
-  ></iframe>
-</div>
-
-<!-- ═══════════════════════ HUD OVERLAY ═══════════════════════ -->
-<div id="hud">
-  <div class="hud-bar">
-    <div class="hud-tilt">
-      <span class="tilt-label" id="tilt-label">0°</span>
-      <div class="tilt-indicator">
-        <div class="tilt-dot" id="tilt-dot"></div>
-      </div>
-    </div>
-    <div class="hud-gas">
-      <span class="gas-icon"></span> GAS
-    </div>
-    <div class="sensitivity-control">
-      <label for="sens-slider">Sens</label>
-      <input type="range" id="sens-slider" min="3" max="30" value="12">
-    </div>
-    <button class="hud-close" id="btn-hud-close">EXIT</button>
+  <div class="card">
+    <h2>Why console injection?</h2>
+    <p>The game runs on Shopify's domain and uses touch buttons for controls.
+       The script runs inside the game page so it can directly press those
+       buttons based on your phone's accelerometer tilt.</p>
   </div>
-</div>
 
-<!-- ═══════════════════════ IFRAME BLOCKED FALLBACK ═══════════════════════ -->
-<div id="iframe-blocked">
-  <h2>Iframe blocked by Shopify</h2>
-  <p>The game can't be embedded in an iframe. Use the console injection method instead — it runs directly inside the game page.</p>
-  <button class="btn btn-primary" id="btn-blocked-snippet" style="margin-bottom:.75rem;">
-    Console Injection Mode
+  <button class="btn btn-primary" id="btn-show-snippet">
+    Get Controller Script
   </button>
-  <a class="btn btn-secondary" href="https://www.shopify.com/editions/summer2025/drive" target="_blank" rel="noopener">
-    Open Game in New Tab
-  </a>
+
+  <p class="or-divider" style="margin-top:.5rem;">
+    <a href="https://www.shopify.com/editions/summer2025/drive"
+       target="_blank" rel="noopener"
+       style="color:#ff6ec7;font-size:.85rem;">
+      Open Horizon Drive
+    </a>
+  </p>
 </div>
 
 <!-- ═══════════════════════ SNIPPET SCREEN ═══════════════════════ -->
 <div id="snippet-screen">
-  <h2>Console Injection Mode</h2>
+  <h2>Controller Script</h2>
   <ul class="snippet-steps">
-    <li data-step="1.">Open the game: <a href="https://www.shopify.com/editions/summer2025/drive" target="_blank" rel="noopener" style="color:#ff6ec7;">Horizon Drive</a></li>
-    <li data-step="2.">Open your browser's DevTools console
-      <br><em style="font-size:.75rem;opacity:.6;">(Desktop: F12 → Console tab. Mobile: use remote debugging or Eruda.)</em></li>
+    <li data-step="1.">Open the game:
+      <a href="https://www.shopify.com/editions/summer2025/drive"
+         target="_blank" rel="noopener" style="color:#ff6ec7;">
+        Horizon Drive
+      </a>
+    </li>
+    <li data-step="2.">Open browser DevTools console
+      <br><em style="font-size:.75rem;opacity:.6;">
+        Desktop: F12 → Console.
+        iOS: Settings → Safari → Advanced → Web Inspector, then connect Mac Safari.
+        Android: chrome://inspect from desktop Chrome.
+      </em>
+    </li>
     <li data-step="3.">Paste the script below and press Enter</li>
+    <li data-step="4.">Allow accelerometer access if prompted (iOS)</li>
   </ul>
   <pre class="snippet-code" id="snippet-code"></pre>
   <button class="copy-btn" id="btn-copy-snippet">Copy Script</button>
@@ -420,135 +259,252 @@
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════════
-// Accelerometer → Keyboard bridge for Horizon Drive
-// ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// Controller script — runs INSIDE the Horizon Drive game page.
+// Finds the actual touch-control button elements in the DOM, then
+// uses DeviceOrientation (gamma) to simulate pointerdown/pointerup
+// on the left/right steer buttons, and holds gas perpetually.
+// ═══════════════════════════════════════════════════════════════════
 
-const GAME_URL = 'https://www.shopify.com/editions/summer2025/drive';
-
-// ── The injectable controller script (runs inside the game page) ──
 const CONTROLLER_SCRIPT = `(function(){
-  if(window.__accelDriveActive){console.log('Already running');return;}
-  window.__accelDriveActive=true;
+if(window.__accelDriveActive){console.log('Accel-Drive already running.');return;}
+window.__accelDriveActive=true;
 
-  /* ── Config ── */
-  let DEAD_ZONE=4;
-  let SENSITIVITY=12;
-  let calibration=0;
-  let gasActive=true;
+/* ═══ Configuration ═══ */
+var DEAD_ZONE=5;
+var SENSITIVITY=12;
+var calibration=0;
 
-  /* ── State ── */
-  let currentSteering='none';
-  let gamma=0;
+/* ═══ State ═══ */
+var currentSteering='none'; /* 'left' | 'right' | 'none' */
+var latestGamma=0;
+var controls=null; /* {left, right, gas} DOM elements */
 
-  /* ── Key simulation helpers ── */
-  function pressKey(code,key){
-    window.dispatchEvent(new KeyboardEvent('keydown',{code:code,key:key,bubbles:true,cancelable:true}));
+/* ═══ Pointer-event helpers ═══ */
+function ptrOpts(el){
+  var r=el.getBoundingClientRect();
+  return {
+    bubbles:true,cancelable:true,
+    clientX:r.left+r.width/2,
+    clientY:r.top+r.height/2,
+    pointerId:1,pointerType:'touch',
+    isPrimary:true,width:1,height:1,pressure:0.5
+  };
+}
+function pointerDown(el){
+  if(!el)return;
+  var o=ptrOpts(el);
+  el.dispatchEvent(new PointerEvent('pointerdown',o));
+  /* also fire touch events for frameworks that listen on those */
+  try{
+    var t=new Touch({identifier:Date.now(),target:el,clientX:o.clientX,clientY:o.clientY,
+      pageX:o.clientX,pageY:o.clientY,radiusX:1,radiusY:1});
+    el.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true,touches:[t],targetTouches:[t],changedTouches:[t]}));
+  }catch(e){}
+}
+function pointerUp(el){
+  if(!el)return;
+  var o=ptrOpts(el);
+  el.dispatchEvent(new PointerEvent('pointerup',o));
+  try{
+    var t=new Touch({identifier:Date.now(),target:el,clientX:o.clientX,clientY:o.clientY,
+      pageX:o.clientX,pageY:o.clientY,radiusX:1,radiusY:1});
+    el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,cancelable:true,touches:[],targetTouches:[],changedTouches:[t]}));
+  }catch(e){}
+}
+
+/* ═══ Find game control buttons ═══ */
+function findControls(){
+  var vh=window.innerHeight;
+  var vw=window.innerWidth;
+  var cutoff=vh*0.65; /* buttons are in the bottom ~35% */
+
+  /* Gather ALL leaf-ish elements in the bottom zone */
+  var all=document.querySelectorAll('button, div, span, a, svg, [role="button"]');
+  var candidates=[];
+  for(var i=0;i<all.length;i++){
+    var el=all[i];
+    var r=el.getBoundingClientRect();
+    /* Must be visible, in the bottom zone, and button-sized */
+    if(r.top>=cutoff && r.width>=35 && r.height>=35 && r.width<vw*0.35 && r.height<vh*0.25){
+      /* skip elements that contain other candidate-sized children */
+      candidates.push({el:el,r:r,cx:r.left+r.width/2,cy:r.top+r.height/2});
+    }
   }
-  function releaseKey(code,key){
-    window.dispatchEvent(new KeyboardEvent('keyup',{code:code,key:key,bubbles:true,cancelable:true}));
-  }
+  if(candidates.length===0){console.warn('Accel-Drive: no control buttons found');return null;}
 
-  /* ── Gas: hold ArrowUp perpetually ── */
-  function startGas(){
-    pressKey('ArrowUp','ArrowUp');
-    /* re-press every 120ms to keep it held */
-    window.__accelGasInterval=setInterval(function(){
-      if(!gasActive)return;
-      pressKey('ArrowUp','ArrowUp');
-    },120);
-  }
-  startGas();
-
-  /* ── Steering logic ── */
-  function updateSteering(g){
-    let adjusted=g-calibration;
-    let direction='none';
-    if(adjusted<-DEAD_ZONE) direction='left';
-    else if(adjusted>DEAD_ZONE) direction='right';
-
-    if(direction===currentSteering)return;
-
-    /* release old key */
-    if(currentSteering==='left') releaseKey('ArrowLeft','ArrowLeft');
-    if(currentSteering==='right') releaseKey('ArrowRight','ArrowRight');
-
-    /* press new key */
-    if(direction==='left') pressKey('ArrowLeft','ArrowLeft');
-    if(direction==='right') pressKey('ArrowRight','ArrowRight');
-
-    currentSteering=direction;
-    updateHUD(adjusted,direction);
-  }
-
-  /* ── HUD overlay ── */
-  let hud=document.createElement('div');
-  hud.id='accel-hud';
-  hud.innerHTML=\`
-    <div style="position:fixed;top:6px;left:6px;right:6px;z-index:99999;
-      display:flex;align-items:center;justify-content:space-between;
-      background:rgba(0,0,0,.6);backdrop-filter:blur(6px);
-      border-radius:10px;padding:5px 12px;font-family:system-ui;font-size:12px;color:#fff;">
-      <span id="ah-dir" style="min-width:55px;font-weight:700;text-align:center;">STRAIGHT</span>
-      <span style="display:flex;align-items:center;gap:6px;">
-        <span style="font-size:10px;opacity:.6;">Tilt</span>
-        <span id="ah-gamma" style="min-width:36px;text-align:right;">0°</span>
-      </span>
-      <span style="color:#4f4;font-weight:700;display:flex;align-items:center;gap:4px;">
-        <span id="ah-gas-dot" style="width:7px;height:7px;background:#4f4;border-radius:50%;"></span>
-        GAS
-      </span>
-      <span style="display:flex;align-items:center;gap:4px;font-size:10px;">
-        Sens <input id="ah-sens" type="range" min="3" max="30" value="12" style="width:50px;accent-color:#ff6ec7;">
-      </span>
-      <button id="ah-cal" style="background:rgba(255,255,255,.15);border:none;color:#fff;
-        border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;">Zero</button>
-      <button id="ah-stop" style="background:rgba(255,60,60,.5);border:none;color:#fff;
-        border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;">Stop</button>
-    </div>\`;
-  document.body.appendChild(hud);
-
-  function updateHUD(adjusted,dir){
-    let el=document.getElementById('ah-dir');
-    if(el) el.textContent=dir==='left'?'<< LEFT':dir==='right'?'RIGHT >>':'STRAIGHT';
-    let ge=document.getElementById('ah-gamma');
-    if(ge) ge.textContent=Math.round(adjusted)+'°';
+  /* De-duplicate overlapping elements — keep innermost (smallest area) */
+  candidates.sort(function(a,b){return(a.r.width*a.r.height)-(b.r.width*b.r.height);});
+  var kept=[];
+  for(var i=0;i<candidates.length;i++){
+    var dominated=false;
+    for(var j=0;j<kept.length;j++){
+      var dx=Math.abs(candidates[i].cx-kept[j].cx);
+      var dy=Math.abs(candidates[i].cy-kept[j].cy);
+      if(dx<20&&dy<20){dominated=true;break;}
+    }
+    if(!dominated)kept.push(candidates[i]);
   }
 
-  /* sensitivity slider */
-  setTimeout(function(){
-    let sl=document.getElementById('ah-sens');
-    if(sl) sl.addEventListener('input',function(){SENSITIVITY=+this.value;DEAD_ZONE=Math.max(2,SENSITIVITY/3);});
-    let cal=document.getElementById('ah-cal');
-    if(cal) cal.addEventListener('click',function(){calibration=gamma;});
-    let stop=document.getElementById('ah-stop');
-    if(stop) stop.addEventListener('click',function(){
-      clearInterval(window.__accelGasInterval);
-      releaseKey('ArrowUp','ArrowUp');
-      releaseKey('ArrowLeft','ArrowLeft');
-      releaseKey('ArrowRight','ArrowRight');
-      hud.remove();
-      window.__accelDriveActive=false;
-    });
-  },100);
+  /* Sort left-to-right by center x */
+  kept.sort(function(a,b){return a.cx-b.cx;});
 
-  /* ── Accelerometer ── */
-  function onOrientation(e){
-    gamma=e.gamma||0;
-    updateSteering(gamma);
+  /* Expect 4 buttons: [left_steer, right_steer, brake, gas] */
+  /* or at least identify left-half vs right-half */
+  var mid=vw/2;
+  var leftSide=kept.filter(function(c){return c.cx<mid;});
+  var rightSide=kept.filter(function(c){return c.cx>=mid;});
+
+  leftSide.sort(function(a,b){return a.cx-b.cx;});
+  rightSide.sort(function(a,b){return a.cx-b.cx;});
+
+  var result={
+    left: leftSide.length>=1 ? leftSide[0].el : null,
+    right: leftSide.length>=2 ? leftSide[1].el : null,
+    gas: rightSide.length>=1 ? rightSide[rightSide.length-1].el : null
+  };
+
+  console.log('Accel-Drive controls found:',
+    'LEFT=',result.left,
+    'RIGHT=',result.right,
+    'GAS=',result.gas);
+  return result;
+}
+
+/* ═══ Gas: hold the rightmost button perpetually ═══ */
+var gasHeld=false;
+function holdGas(){
+  if(!controls||!controls.gas)return;
+  if(!gasHeld){
+    pointerDown(controls.gas);
+    gasHeld=true;
   }
+}
+/* Re-press gas periodically to fight any auto-release the game may do */
+var gasInterval=setInterval(function(){
+  if(!controls){controls=findControls();}
+  if(!controls||!controls.gas)return;
+  /* release and re-press to keep it alive */
+  pointerUp(controls.gas);
+  pointerDown(controls.gas);
+  gasHeld=true;
+},200);
 
-  /* iOS 13+ requires permission request */
-  if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
-    DeviceOrientationEvent.requestPermission().then(function(state){
-      if(state==='granted') window.addEventListener('deviceorientation',onOrientation);
-      else console.warn('Accelerometer permission denied');
-    }).catch(console.error);
-  } else {
-    window.addEventListener('deviceorientation',onOrientation);
-  }
+/* ═══ Steering ═══ */
+function updateSteering(gamma){
+  var adjusted=gamma-calibration;
+  var dir='none';
+  if(adjusted<-DEAD_ZONE)dir='left';
+  else if(adjusted>DEAD_ZONE)dir='right';
 
-  console.log('Accel-Drive controller active! Tilt to steer, gas is auto-held.');
+  if(dir===currentSteering)return;
+
+  if(!controls){controls=findControls();}
+  if(!controls)return;
+
+  /* Release previous */
+  if(currentSteering==='left'&&controls.left) pointerUp(controls.left);
+  if(currentSteering==='right'&&controls.right) pointerUp(controls.right);
+
+  /* Press new */
+  if(dir==='left'&&controls.left) pointerDown(controls.left);
+  if(dir==='right'&&controls.right) pointerDown(controls.right);
+
+  currentSteering=dir;
+  updateHUD(adjusted,dir);
+}
+
+/* ═══ HUD overlay ═══ */
+var hud=document.createElement('div');
+hud.id='accel-hud';
+hud.innerHTML='<div style=\"position:fixed;top:0;left:0;right:0;z-index:99999;'+
+  'display:flex;align-items:center;justify-content:space-between;'+
+  'background:rgba(0,0,0,.55);backdrop-filter:blur(6px);'+
+  'padding:5px 10px;font-family:system-ui;font-size:11px;color:#fff;\">'+
+  '<span id=\"ah-dir\" style=\"min-width:60px;font-weight:700;text-align:center;\">STRAIGHT</span>'+
+  '<span style=\"display:flex;align-items:center;gap:4px;\">'+
+    '<span style=\"font-size:9px;opacity:.5;\">Tilt</span>'+
+    '<span id=\"ah-gamma\" style=\"min-width:32px;text-align:right;\">0\\u00b0</span>'+
+  '</span>'+
+  '<span style=\"color:#4f4;font-weight:700;\">GAS ON</span>'+
+  '<span style=\"display:flex;align-items:center;gap:3px;font-size:9px;\">'+
+    'Sens <input id=\"ah-sens\" type=\"range\" min=\"3\" max=\"30\" value=\"12\" style=\"width:45px;accent-color:#ff6ec7;\">'+
+  '</span>'+
+  '<button id=\"ah-cal\" style=\"background:rgba(255,255,255,.15);border:none;color:#fff;'+
+    'border-radius:5px;padding:2px 7px;font-size:9px;cursor:pointer;\">Zero</button>'+
+  '<button id=\"ah-rescan\" style=\"background:rgba(100,100,255,.3);border:none;color:#fff;'+
+    'border-radius:5px;padding:2px 7px;font-size:9px;cursor:pointer;\">Rescan</button>'+
+  '<button id=\"ah-stop\" style=\"background:rgba(255,60,60,.4);border:none;color:#fff;'+
+    'border-radius:5px;padding:2px 7px;font-size:9px;cursor:pointer;\">Stop</button>'+
+'</div>';
+document.body.appendChild(hud);
+
+function updateHUD(adjusted,dir){
+  var el=document.getElementById('ah-dir');
+  if(el)el.textContent=dir==='left'?'<< LEFT':dir==='right'?'RIGHT >>':'STRAIGHT';
+  var ge=document.getElementById('ah-gamma');
+  if(ge)ge.textContent=Math.round(adjusted)+'\\u00b0';
+}
+
+/* Wire up HUD buttons after DOM append */
+setTimeout(function(){
+  var sl=document.getElementById('ah-sens');
+  if(sl)sl.addEventListener('input',function(){SENSITIVITY=+this.value;DEAD_ZONE=Math.max(2,SENSITIVITY/3);});
+
+  var cal=document.getElementById('ah-cal');
+  if(cal)cal.addEventListener('click',function(){calibration=latestGamma;});
+
+  var rescan=document.getElementById('ah-rescan');
+  if(rescan)rescan.addEventListener('click',function(){
+    controls=findControls();
+    if(controls)console.log('Rescan done. Controls:',controls);
+    else console.warn('Rescan: no controls found');
+  });
+
+  var stop=document.getElementById('ah-stop');
+  if(stop)stop.addEventListener('click',function(){
+    clearInterval(gasInterval);
+    if(controls){
+      if(controls.gas)pointerUp(controls.gas);
+      if(controls.left)pointerUp(controls.left);
+      if(controls.right)pointerUp(controls.right);
+    }
+    window.removeEventListener('deviceorientation',onOrientation);
+    hud.remove();
+    window.__accelDriveActive=false;
+    console.log('Accel-Drive stopped.');
+  });
+},50);
+
+/* ═══ Accelerometer ═══ */
+function onOrientation(e){
+  latestGamma=e.gamma||0;
+  updateSteering(latestGamma);
+}
+
+/* iOS 13+ requires user-gesture permission request */
+if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+  DeviceOrientationEvent.requestPermission().then(function(state){
+    if(state==='granted'){
+      window.addEventListener('deviceorientation',onOrientation);
+      console.log('Accelerometer permission granted.');
+    } else {
+      console.warn('Accelerometer permission denied.');
+    }
+  }).catch(function(err){console.error('Accel permission error:',err);});
+} else {
+  window.addEventListener('deviceorientation',onOrientation);
+}
+
+/* ═══ Initial control scan (retry a few times in case game is still loading) ═══ */
+var scanAttempts=0;
+var scanTimer=setInterval(function(){
+  controls=findControls();
+  scanAttempts++;
+  if(controls||scanAttempts>=10)clearInterval(scanTimer);
+},1000);
+
+console.log('Accel-Drive v2 starting — scanning for game buttons...');
 })();`;
 
 // ── Populate snippet display ──
@@ -558,85 +514,14 @@ document.getElementById('snippet-code').textContent = CONTROLLER_SCRIPT;
 // UI Logic
 // ═══════════════════════════════════════════════════════════
 
-const $launcher      = document.getElementById('launcher');
-const $gameScreen    = document.getElementById('game-screen');
-const $iframe        = document.getElementById('game-iframe');
-const $hud           = document.getElementById('hud');
-const $snippetScreen = document.getElementById('snippet-screen');
-const $iframeBlocked = document.getElementById('iframe-blocked');
-
-// ── Launch iframe mode ──
-document.getElementById('btn-launch-iframe').addEventListener('click', async () => {
-  // Request accelerometer permission (iOS)
-  if (typeof DeviceOrientationEvent !== 'undefined' &&
-      typeof DeviceOrientationEvent.requestPermission === 'function') {
-    try {
-      const perm = await DeviceOrientationEvent.requestPermission();
-      if (perm !== 'granted') {
-        alert('Accelerometer permission is required for tilt steering.');
-        return;
-      }
-    } catch (e) {
-      alert('Could not request accelerometer permission: ' + e.message);
-      return;
-    }
-  }
-
-  $launcher.style.display = 'none';
-  $gameScreen.style.display = 'block';
-  $hud.style.display = 'block';
-
-  // Try loading the game in the iframe
-  $iframe.src = GAME_URL;
-
-  // Detect if iframe was blocked (heuristic: onload fires but
-  // contentWindow.location is inaccessible for cross-origin)
-  let blocked = false;
-  $iframe.addEventListener('load', () => {
-    try {
-      // If we can access contentWindow.document, it loaded same-origin (unlikely)
-      void $iframe.contentWindow.document;
-    } catch (e) {
-      // Cross-origin — expected. We can still try keyboard events.
-    }
-  });
-
-  // Fallback: if the iframe shows nothing after a timeout, assume blocked
-  setTimeout(() => {
-    // Check if iframe body has been replaced by about:blank or error
-    try {
-      const loc = $iframe.contentWindow.location.href;
-      if (loc === 'about:blank') {
-        showIframeBlocked();
-      }
-    } catch (e) {
-      // Cross-origin — likely loaded fine
-    }
-  }, 5000);
-
-  startAccelerometerHUD();
-});
-
-function showIframeBlocked() {
-  $gameScreen.style.display = 'none';
-  $hud.style.display = 'none';
-  $iframeBlocked.style.display = 'flex';
-}
-
-// ── Snippet mode buttons ──
 document.getElementById('btn-show-snippet').addEventListener('click', () => {
-  $launcher.style.display = 'none';
-  $snippetScreen.style.display = 'flex';
-});
-
-document.getElementById('btn-blocked-snippet').addEventListener('click', () => {
-  $iframeBlocked.style.display = 'none';
-  $snippetScreen.style.display = 'flex';
+  document.getElementById('launcher').style.display = 'none';
+  document.getElementById('snippet-screen').style.display = 'flex';
 });
 
 document.getElementById('btn-snippet-back').addEventListener('click', () => {
-  $snippetScreen.style.display = 'none';
-  $launcher.style.display = 'flex';
+  document.getElementById('snippet-screen').style.display = 'none';
+  document.getElementById('launcher').style.display = 'flex';
 });
 
 document.getElementById('btn-copy-snippet').addEventListener('click', () => {
@@ -646,120 +531,6 @@ document.getElementById('btn-copy-snippet').addEventListener('click', () => {
     setTimeout(() => { btn.textContent = 'Copy Script'; }, 1500);
   });
 });
-
-// ── HUD close ──
-document.getElementById('btn-hud-close').addEventListener('click', () => {
-  $gameScreen.style.display = 'none';
-  $hud.style.display = 'none';
-  $iframe.src = 'about:blank';
-  $launcher.style.display = 'flex';
-  stopAccelerometerHUD();
-});
-
-// ═══════════════════════════════════════════════════════════
-// Accelerometer HUD (for iframe mode — visual only unless
-// the iframe allows keyboard event injection)
-// ═══════════════════════════════════════════════════════════
-
-let accelActive = false;
-let sensitivity = 12;
-let deadZone = 4;
-let calibration = 0;
-let currentGamma = 0;
-let currentDirection = 'none';
-let gasInterval = null;
-
-function startAccelerometerHUD() {
-  accelActive = true;
-
-  // Start gas: continuously press ArrowUp into the iframe
-  gasInterval = setInterval(() => {
-    tryInjectKey('keydown', 'ArrowUp', 'ArrowUp');
-  }, 120);
-
-  window.addEventListener('deviceorientation', onDeviceOrientation);
-
-  // Sensitivity slider
-  const slider = document.getElementById('sens-slider');
-  slider.addEventListener('input', () => {
-    sensitivity = +slider.value;
-    deadZone = Math.max(2, sensitivity / 3);
-  });
-}
-
-function stopAccelerometerHUD() {
-  accelActive = false;
-  if (gasInterval) clearInterval(gasInterval);
-  window.removeEventListener('deviceorientation', onDeviceOrientation);
-  tryInjectKey('keyup', 'ArrowUp', 'ArrowUp');
-  tryInjectKey('keyup', 'ArrowLeft', 'ArrowLeft');
-  tryInjectKey('keyup', 'ArrowRight', 'ArrowRight');
-}
-
-function onDeviceOrientation(e) {
-  if (!accelActive) return;
-  currentGamma = e.gamma || 0;
-  const adjusted = currentGamma - calibration;
-
-  let dir = 'none';
-  if (adjusted < -deadZone) dir = 'left';
-  else if (adjusted > deadZone) dir = 'right';
-
-  // Update HUD visuals
-  const dot = document.getElementById('tilt-dot');
-  const label = document.getElementById('tilt-label');
-  if (dot) {
-    const pct = Math.max(0, Math.min(100, 50 + (adjusted / 45) * 50));
-    dot.style.left = pct + '%';
-  }
-  if (label) {
-    label.textContent = dir === 'left' ? '< ' + Math.round(Math.abs(adjusted)) + '°'
-                       : dir === 'right' ? Math.round(Math.abs(adjusted)) + '° >'
-                       : Math.round(Math.abs(adjusted)) + '°';
-  }
-
-  if (dir === currentDirection) return;
-
-  // Release old
-  if (currentDirection === 'left') tryInjectKey('keyup', 'ArrowLeft', 'ArrowLeft');
-  if (currentDirection === 'right') tryInjectKey('keyup', 'ArrowRight', 'ArrowRight');
-
-  // Press new
-  if (dir === 'left') tryInjectKey('keydown', 'ArrowLeft', 'ArrowLeft');
-  if (dir === 'right') tryInjectKey('keydown', 'ArrowRight', 'ArrowRight');
-
-  currentDirection = dir;
-}
-
-function tryInjectKey(type, code, key) {
-  // Try sending keyboard events to the iframe's content window
-  try {
-    $iframe.contentWindow.postMessage({
-      type: 'accel-drive-key',
-      eventType: type,
-      code: code,
-      key: key
-    }, '*');
-  } catch (e) { /* cross-origin, expected */ }
-
-  // Also dispatch on the parent document (might reach iframe if focused)
-  try {
-    $iframe.contentWindow.dispatchEvent(new KeyboardEvent(type, {
-      code: code,
-      key: key,
-      bubbles: true,
-      cancelable: true
-    }));
-  } catch (e) { /* cross-origin */ }
-
-  // Dispatch on parent window as last resort
-  document.dispatchEvent(new KeyboardEvent(type, {
-    code: code,
-    key: key,
-    bubbles: true,
-    cancelable: true
-  }));
-}
 
 </script>
 </body>
