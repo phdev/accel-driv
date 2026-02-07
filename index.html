@@ -145,7 +145,7 @@ let keys = {};
 let gyroGamma = 0;
 let gyroCal = 0;
 let gyroAvailable = false;
-const DEADZONE = 6; // degrees
+const DEADZONE = 8; // degrees
 
 // DOM
 const $loading = document.getElementById('loading');
@@ -642,12 +642,20 @@ function requestGyro() {
 }
 
 function enableGyro() {
+  let samples = 0;
+  let sumAbs = 0;
   window.addEventListener('deviceorientation', e => {
     const g = e.gamma || 0;
     gyroGamma = g;
-    if (!gyroAvailable && Math.abs(g) > 0.5) {
-      gyroAvailable = true;
-      $tiltIndicator.style.display = 'block';
+    // Only mark gyro as available after seeing consistent real tilt data
+    // (avoids false positives from desktop sensors / noise)
+    if (!gyroAvailable) {
+      samples++;
+      sumAbs += Math.abs(g);
+      if (samples >= 10 && (sumAbs / samples) > 2) {
+        gyroAvailable = true;
+        $tiltIndicator.style.display = 'block';
+      }
     }
   });
 }
@@ -819,7 +827,12 @@ function animate(now = 0) {
 
     // Steering
     steerInput = getSteerInput();
-    lateralOffset += steerInput * CFG.steerSpeed * dt * (speed / CFG.maxSpeed + 0.3);
+    if (Math.abs(steerInput) > 0.01) {
+      lateralOffset += steerInput * CFG.steerSpeed * dt * (speed / CFG.maxSpeed + 0.3);
+    } else {
+      // Gently drift back to center when no input
+      lateralOffset *= (1 - 1.5 * dt);
+    }
     lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
 
     // Speed: always accelerating (auto-gas)
