@@ -154,7 +154,7 @@ let keys = {};
 let gyroGamma = 0;
 let gyroCal = 0;
 let gyroAvailable = false;
-const DEADZONE = 8; // degrees
+const DEADZONE = 12; // degrees — wide deadzone to prevent drift
 
 // DOM
 const $loading = document.getElementById('loading');
@@ -849,12 +849,12 @@ function enableGyro() {
   window.addEventListener('deviceorientation', e => {
     const g = e.gamma || 0;
     gyroGamma = g;
-    // Only mark gyro as available after seeing consistent real tilt data
-    // (avoids false positives from desktop sensors / noise)
+    // Only mark gyro as available after seeing strong, consistent real tilt data
+    // Requires 20 samples averaging > 5 degrees to avoid false positives
     if (!gyroAvailable) {
       samples++;
       sumAbs += Math.abs(g);
-      if (samples >= 10 && (sumAbs / samples) > 2) {
+      if (samples >= 20 && (sumAbs / samples) > 5) {
         gyroAvailable = true;
         $tiltIndicator.style.display = 'block';
       }
@@ -863,19 +863,21 @@ function enableGyro() {
 }
 
 function getSteerInput() {
-  // Priority: gyro > keyboard > touch
+  // Keyboard always takes priority (explicit digital input)
+  if (keys['ArrowLeft'] || keys['KeyA']) return -1;
+  if (keys['ArrowRight'] || keys['KeyD']) return 1;
+
+  // Touch takes next priority
+  const ts = window._getTouchSteer ? window._getTouchSteer() : 0;
+  if (Math.abs(ts) > 0.05) return Math.max(-1, Math.min(1, ts));
+
+  // Gyro only used if no keyboard/touch active
   if (gyroAvailable) {
     const adjusted = gyroGamma - gyroCal;
     if (Math.abs(adjusted) < DEADZONE) return 0;
     const raw = (adjusted - Math.sign(adjusted) * DEADZONE) / (45 - DEADZONE);
     return Math.max(-1, Math.min(1, raw));
   }
-
-  if (keys['ArrowLeft'] || keys['KeyA']) return -1;
-  if (keys['ArrowRight'] || keys['KeyD']) return 1;
-
-  const ts = window._getTouchSteer ? window._getTouchSteer() : 0;
-  if (Math.abs(ts) > 0.05) return Math.max(-1, Math.min(1, ts));
 
   return 0;
 }
