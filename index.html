@@ -112,9 +112,9 @@ const CFG = {
   cameraLerp: 0.08,
   fov: 72,
   // Boost pads
-  boostCount: 8,        // number of boost pads on the track
+  boostCount: 40,       // lots of boost pads throughout the track
   boostSpeed: 260,      // speed during boost (km/h)
-  boostDuration: 2.0,   // seconds of boost
+  boostDuration: 1.5,   // seconds of boost (shorter since there are more)
   boostPadWidth: 6,     // pad width on road
   boostPadLength: 4,    // pad length along track
 };
@@ -385,55 +385,71 @@ function buildStartLine() {
 function buildBoostPads() {
   boostPads = [];
   boostMeshes = [];
-  const hw = CFG.boostPadWidth / 2;
-  const hl = CFG.boostPadLength / 2;
+
+  // Shared geometries and materials
+  const baseGeo = new THREE.PlaneGeometry(CFG.boostPadWidth, CFG.boostPadLength);
+  const baseMat = new THREE.MeshBasicMaterial({
+    color: 0x00ff88, transparent: true, opacity: 0.25, side: THREE.DoubleSide,
+  });
+  const arrowMat = new THREE.MeshBasicMaterial({ color: 0x00ff44, side: THREE.DoubleSide });
+
+  // Build arrow shape once
+  const arrowShape = new THREE.Shape();
+  arrowShape.moveTo(0, 0.8);
+  arrowShape.lineTo(-0.5, -0.4);
+  arrowShape.lineTo(0, 0);
+  arrowShape.lineTo(0.5, -0.4);
+  arrowShape.closePath();
+  const arrowGeo = new THREE.ShapeGeometry(arrowShape);
 
   for (let i = 0; i < CFG.boostCount; i++) {
-    // Evenly space pads from 10% to 90% of track (avoid start/finish)
-    const t = 0.1 + (i / CFG.boostCount) * 0.8;
+    // Spread pads from 5% to 95% of track
+    const t = 0.05 + (i / CFG.boostCount) * 0.9;
+
+    // Sample two nearby points to get the true track surface normal
+    const tA = Math.max(0, t - 0.001);
+    const tB = Math.min(0.9999, t + 0.001);
     const point = curve.getPointAt(t);
-    const tangent = curve.getTangentAt(t).normalize();
-    const up = new THREE.Vector3(0, 1, 0);
-    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
-    if (right.length() < 0.1) right.set(1, 0, 0);
+    const pA = curve.getPointAt(tA);
+    const pB = curve.getPointAt(tB);
 
-    // Pad group
+    // Tangent = forward direction along the track
+    const tangent = new THREE.Vector3().subVectors(pB, pA).normalize();
+
+    // Right vector: cross tangent with world up, then normalize
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, worldUp).normalize();
+    if (right.lengthSq() < 0.01) right.set(1, 0, 0);
+
+    // Surface normal: cross right with tangent (gives the actual track-surface up)
+    const normal = new THREE.Vector3().crossVectors(right, tangent).normalize();
+
+    // Build a rotation matrix from the basis vectors:
+    //   X-axis = right, Y-axis = normal (surface up), Z-axis = tangent (forward)
+    const mat4 = new THREE.Matrix4();
+    mat4.makeBasis(right, normal, tangent);
+
     const padGroup = new THREE.Group();
-    padGroup.position.set(point.x, point.y + 0.08, point.z);
-    padGroup.lookAt(point.x + tangent.x, point.y + tangent.y + 0.08, point.z + tangent.z);
+    padGroup.position.copy(point);
+    // Lift slightly along the surface normal so it doesn't z-fight
+    padGroup.position.addScaledVector(normal, 0.06);
+    padGroup.quaternion.setFromRotationMatrix(mat4);
 
-    // Base glow rectangle
-    const baseGeo = new THREE.PlaneGeometry(CFG.boostPadWidth, CFG.boostPadLength);
-    const baseMat = new THREE.MeshBasicMaterial({
-      color: 0x00ff88,
-      transparent: true,
-      opacity: 0.25,
-      side: THREE.DoubleSide,
-    });
-    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-    baseMesh.rotation.x = -Math.PI / 2;
-    padGroup.add(baseMesh);
+    // Base glow rectangle — lies in XZ plane of the group
+    const base = new THREE.Mesh(baseGeo, baseMat.clone());
+    base.rotation.x = -Math.PI / 2;
+    padGroup.add(base);
 
-    // Chevron arrows (3 arrows pointing forward)
-    const arrowMat = new THREE.MeshBasicMaterial({ color: 0x00ff44 });
+    // 3 chevron arrows spread along the forward (Z) direction
     for (let a = -1; a <= 1; a++) {
-      const shape = new THREE.Shape();
-      shape.moveTo(0, 0.8);       // tip
-      shape.lineTo(-0.5, -0.4);   // bottom left
-      shape.lineTo(0, 0);         // inner notch
-      shape.lineTo(0.5, -0.4);    // bottom right
-      shape.closePath();
-
-      const arrowGeo = new THREE.ShapeGeometry(shape);
       const arrow = new THREE.Mesh(arrowGeo, arrowMat);
       arrow.rotation.x = -Math.PI / 2;
-      arrow.position.set(0, 0.02, a * 1.2);
+      arrow.position.set(0, 0.01, a * 1.2);
       arrow.scale.set(1.2, 1.2, 1.2);
       padGroup.add(arrow);
     }
 
     scene.add(padGroup);
-
     boostPads.push({ t: t, group: padGroup, used: false });
     boostMeshes.push(padGroup);
   }
