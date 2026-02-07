@@ -482,8 +482,8 @@ function buildCar() {
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
 
-    // Scale to fit roughly 3.2 units long (car length)
-    const targetLength = 3.2;
+    // Scale to fit roughly 16 units long (car length)
+    const targetLength = 16;
     const maxDim = Math.max(size.x, size.y, size.z);
     const s = targetLength / maxDim;
     model.scale.setScalar(s);
