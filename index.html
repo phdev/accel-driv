@@ -94,6 +94,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
 (function(){
 'use strict';
@@ -471,48 +472,32 @@ function buildBoostPads() {
 function buildCar() {
   carGroup = new THREE.Group();
 
-  // Car body - low poly retrowave style with strong emissive for bloom
-  const bodyGeo = new THREE.BoxGeometry(1.6, 0.5, 3.2);
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0xff3cac,
-    metalness: 0.85,
-    roughness: 0.15,
-    emissive: new THREE.Color(0xff3cac),
-    emissiveIntensity: 0.4,
+  // Load GLB model
+  const loader = new THREE.GLTFLoader();
+  loader.load('base_basic_shaded.glb', (gltf) => {
+    const model = gltf.scene;
+
+    // Auto-center and scale the model
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    // Scale to fit roughly 3.2 units long (car length)
+    const targetLength = 3.2;
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const s = targetLength / maxDim;
+    model.scale.setScalar(s);
+
+    // Re-center after scaling
+    box.setFromObject(model);
+    box.getCenter(center);
+    model.position.sub(center);
+    // Sit on ground plane
+    box.setFromObject(model);
+    model.position.y -= box.min.y;
+
+    carGroup.add(model);
   });
-  carBody = new THREE.Mesh(bodyGeo, bodyMat);
-  carBody.position.y = 0.4;
-  carGroup.add(carBody);
-
-  // Neon trim strip along car sides (blooms brightly)
-  const trimGeo = new THREE.BoxGeometry(1.65, 0.06, 3.25);
-  const trimMat = new THREE.MeshBasicMaterial({ color: 0xff6ec7 });
-  const trim = new THREE.Mesh(trimGeo, trimMat);
-  trim.position.y = 0.2;
-  carGroup.add(trim);
-
-  // Roof/cockpit
-  const roofGeo = new THREE.BoxGeometry(1.2, 0.4, 1.4);
-  const roofMat = new THREE.MeshStandardMaterial({
-    color: 0x200040,
-    metalness: 0.9,
-    roughness: 0.1,
-    emissive: new THREE.Color(0x100020),
-    emissiveIntensity: 0.3,
-  });
-  const roof = new THREE.Mesh(roofGeo, roofMat);
-  roof.position.set(0, 0.85, -0.2);
-  carGroup.add(roof);
-
-  // Headlights - bright white emissive for bloom glow
-  const hlGeo = new THREE.SphereGeometry(0.18, 8, 8);
-  const hlMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const hlL = new THREE.Mesh(hlGeo, hlMat);
-  hlL.position.set(-0.55, 0.4, 1.6);
-  carGroup.add(hlL);
-  const hlR = new THREE.Mesh(hlGeo, hlMat);
-  hlR.position.set(0.55, 0.4, 1.6);
-  carGroup.add(hlR);
 
   // Headlight beams
   const beamLight = new THREE.SpotLight(0xffffff, 2.0, 80, Math.PI/6, 0.5);
@@ -521,43 +506,20 @@ function buildCar() {
   carGroup.add(beamLight);
   carGroup.add(beamLight.target);
 
-  // Tail lights - red emissive glow
-  const tlGeo = new THREE.SphereGeometry(0.15, 8, 8);
-  const tlMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
-  const tlL = new THREE.Mesh(tlGeo, tlMat);
-  tlL.position.set(-0.55, 0.4, -1.6);
-  carGroup.add(tlL);
-  const tlR = new THREE.Mesh(tlGeo, tlMat);
-  tlR.position.set(0.55, 0.4, -1.6);
-  carGroup.add(tlR);
-
-  // Neon underglow - brighter for bloom
+  // Neon underglow
   const underGlow = new THREE.PointLight(0xff6ec7, 2.5, 12);
   underGlow.position.set(0, -0.1, 0);
   carGroup.add(underGlow);
 
-  // Underglow visible mesh (flat plane under car that blooms)
+  // Underglow visible mesh
   const ugGeo = new THREE.PlaneGeometry(1.4, 2.8);
   const ugMat = new THREE.MeshBasicMaterial({
-    color: 0xff6ec7,
-    transparent: true,
-    opacity: 0.4,
-    side: THREE.DoubleSide,
+    color: 0xff6ec7, transparent: true, opacity: 0.4, side: THREE.DoubleSide,
   });
   const ugMesh = new THREE.Mesh(ugGeo, ugMat);
   ugMesh.rotation.x = -Math.PI / 2;
   ugMesh.position.y = 0.02;
   carGroup.add(ugMesh);
-
-  // Wheels
-  const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 8);
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5, roughness: 0.8 });
-  [[-0.8, 0.15, 1], [0.8, 0.15, 1], [-0.8, 0.15, -1], [0.8, 0.15, -1]].forEach(([x,y,z]) => {
-    const w = new THREE.Mesh(wheelGeo, wheelMat);
-    w.position.set(x, y, z);
-    w.rotation.z = Math.PI/2;
-    carGroup.add(w);
-  });
 
   scene.add(carGroup);
 }
