@@ -3,535 +3,335 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Horizon Drive — Accelerometer Controls</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Accel-Drive — Tilt to Steer</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-
   body {
-    background: #0a0014;
+    background: linear-gradient(180deg, #0a0014 0%, #1a0040 50%, #12002a 100%);
     color: #e0d0ff;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     min-height: 100dvh;
-    overflow-x: hidden;
+    padding: 0 1.25rem 3rem;
+    -webkit-text-size-adjust: 100%;
   }
 
-  /* ── Launcher screen ── */
-  #launcher {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 100dvh;
-    padding: 2rem 1.5rem;
+  header {
     text-align: center;
-    background: linear-gradient(180deg, #12002a 0%, #1a0040 40%, #2d0060 100%);
+    padding: 2.5rem 0 1rem;
   }
-
   h1 {
-    font-size: 1.8rem;
-    margin-bottom: .25rem;
+    font-size: 1.6rem;
     background: linear-gradient(135deg, #ff6ec7, #ffd700);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
+  .subtitle { font-size: .8rem; opacity: .5; margin-top: .2rem; }
 
-  .subtitle {
-    font-size: .9rem;
-    opacity: .6;
-    margin-bottom: 2rem;
-  }
-
-  .card {
-    background: rgba(255,255,255,.05);
-    border: 1px solid rgba(255,255,255,.1);
+  /* Steps */
+  .step {
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
     border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 1.25rem;
-    width: 100%;
-    max-width: 420px;
-  }
-
-  .card h2 {
-    font-size: 1.05rem;
-    margin-bottom: .5rem;
-    color: #ffd700;
-  }
-
-  .card p, .card li {
-    font-size: .85rem;
-    line-height: 1.5;
-    opacity: .8;
-  }
-
-  .card ol {
-    padding-left: 1.25rem;
-    text-align: left;
-  }
-
-  .card li { margin-bottom: .35rem; }
-
-  .btn {
-    display: inline-block;
-    padding: .85rem 2rem;
-    border: none;
-    border-radius: 12px;
-    font-size: 1rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition: transform .15s, box-shadow .15s;
-    text-decoration: none;
-  }
-
-  .btn:active { transform: scale(.96); }
-
-  .btn-primary {
-    background: linear-gradient(135deg, #ff6ec7, #ff3cac);
-    color: #fff;
-    box-shadow: 0 4px 20px rgba(255,60,172,.4);
+    padding: 1.25rem;
     margin-bottom: 1rem;
-  }
-
-  .btn-secondary {
-    background: rgba(255,255,255,.08);
-    color: #e0d0ff;
-    border: 1px solid rgba(255,255,255,.15);
-    font-size: .85rem;
-    padding: .65rem 1.5rem;
-  }
-
-  .or-divider {
-    font-size: .8rem;
-    opacity: .4;
-    margin: .75rem 0;
-  }
-
-  /* ── Console snippet view ── */
-  #snippet-screen {
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    min-height: 100dvh;
-    padding: 2rem 1.5rem;
-    background: linear-gradient(180deg, #12002a 0%, #1a0040 100%);
-  }
-
-  #snippet-screen h2 {
-    font-size: 1.2rem;
-    margin-bottom: 1rem;
-    color: #ffd700;
-  }
-
-  .snippet-steps {
-    width: 100%;
-    max-width: 500px;
-    text-align: left;
-  }
-
-  .snippet-steps li {
-    font-size: .85rem;
-    margin-bottom: .75rem;
-    line-height: 1.5;
-    list-style: none;
-    padding-left: 1.75rem;
     position: relative;
   }
-
-  .snippet-steps li::before {
-    content: attr(data-step);
+  .step-num {
     position: absolute;
-    left: 0;
-    color: #ff6ec7;
-    font-weight: 700;
-  }
-
-  pre.snippet-code {
-    width: 100%;
-    max-width: 500px;
-    background: rgba(0,0,0,.4);
-    border: 1px solid rgba(255,255,255,.1);
-    border-radius: 12px;
-    padding: 1rem;
-    margin: 1rem 0;
-    overflow-x: auto;
+    top: -10px; left: 14px;
+    background: #ff3cac;
+    color: #fff;
     font-size: .7rem;
-    line-height: 1.4;
-    color: #c8b8e8;
-    white-space: pre-wrap;
-    word-break: break-all;
+    font-weight: 800;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
   }
+  .step h2 {
+    font-size: .95rem;
+    color: #ffd700;
+    margin-bottom: .4rem;
+  }
+  .step p, .step li {
+    font-size: .82rem;
+    line-height: 1.55;
+    opacity: .8;
+  }
+  .step ol { padding-left: 1.1rem; }
+  .step li { margin-bottom: .25rem; }
 
-  .copy-btn {
+  /* Buttons */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: .9rem;
+    border: none;
+    border-radius: 12px;
+    font-size: .95rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    transition: transform .12s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-pink {
     background: linear-gradient(135deg, #ff6ec7, #ff3cac);
     color: #fff;
-    border: none;
-    border-radius: 10px;
-    padding: .7rem 1.5rem;
-    font-size: .9rem;
-    font-weight: 700;
-    cursor: pointer;
-    margin-bottom: 1rem;
+    box-shadow: 0 4px 18px rgba(255,60,172,.35);
   }
-
-  .back-btn {
-    background: none;
-    border: 1px solid rgba(255,255,255,.15);
+  .btn-outline {
+    background: transparent;
     color: #e0d0ff;
-    border-radius: 10px;
-    padding: .5rem 1.25rem;
-    font-size: .8rem;
-    cursor: pointer;
+    border: 1px solid rgba(255,255,255,.2);
   }
+  .btn-game {
+    background: linear-gradient(135deg, #6e3cff, #3c8cff);
+    color: #fff;
+    box-shadow: 0 4px 18px rgba(60,140,255,.3);
+  }
+  .btn + .btn { margin-top: .6rem; }
 
-  .status-badge {
-    display: inline-block;
-    padding: .25rem .6rem;
-    border-radius: 6px;
-    font-size: .7rem;
-    font-weight: 600;
+  .small-note {
+    font-size: .72rem;
+    opacity: .45;
+    text-align: center;
     margin-top: .5rem;
+    line-height: 1.4;
   }
 
-  .status-badge.found { background: rgba(0,200,0,.2); color: #4f4; }
-  .status-badge.missing { background: rgba(255,60,60,.2); color: #f66; }
+  .copied-toast {
+    position: fixed;
+    bottom: 2rem; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: #1a1a2e;
+    color: #4f4;
+    border: 1px solid rgba(0,255,0,.2);
+    padding: .5rem 1.5rem;
+    border-radius: 10px;
+    font-size: .85rem;
+    font-weight: 600;
+    transition: transform .25s ease-out;
+    z-index: 999;
+    pointer-events: none;
+  }
+  .copied-toast.show { transform: translateX(-50%) translateY(0); }
+
+  .divider {
+    text-align: center;
+    font-size: .7rem;
+    opacity: .3;
+    margin: 1.5rem 0 .75rem;
+  }
+
+  /* Info accordion */
+  details {
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.06);
+    border-radius: 12px;
+    margin-top: 1.25rem;
+    padding: .8rem 1rem;
+  }
+  details summary {
+    font-size: .8rem;
+    font-weight: 600;
+    color: #c0b0e0;
+    cursor: pointer;
+    list-style: none;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: '+ '; color: #ff6ec7; }
+  details[open] summary::before { content: '- '; }
+  details .inner {
+    margin-top: .6rem;
+    font-size: .78rem;
+    line-height: 1.5;
+    opacity: .7;
+  }
 </style>
 </head>
 <body>
 
-<!-- ═══════════════════════ LAUNCHER ═══════════════════════ -->
-<div id="launcher">
-  <h1>Horizon Drive</h1>
-  <p class="subtitle">Accelerometer Steering Controller</p>
+<header>
+  <h1>Accel-Drive</h1>
+  <p class="subtitle">Tilt your phone to steer Horizon Drive</p>
+</header>
 
-  <div class="card">
-    <h2>How it works</h2>
-    <ol>
-      <li>Open the game link below on your phone</li>
-      <li>Paste the controller script into your browser console</li>
-      <li>Tilt your phone left/right to steer</li>
-      <li>Gas pedal button is pressed automatically</li>
-    </ol>
-  </div>
-
-  <div class="card">
-    <h2>Why console injection?</h2>
-    <p>The game runs on Shopify's domain and uses touch buttons for controls.
-       The script runs inside the game page so it can directly press those
-       buttons based on your phone's accelerometer tilt.</p>
-  </div>
-
-  <button class="btn btn-primary" id="btn-show-snippet">
-    Get Controller Script
+<!-- ── STEP 1: Bookmark the controller ── -->
+<div class="step">
+  <div class="step-num">1</div>
+  <h2>Save the controller bookmark</h2>
+  <p>Tap the button below, then <strong>bookmark this page</strong> in your browser (share icon → Add Bookmark). Name it something like "Accel-Drive".</p>
+  <br>
+  <button class="btn btn-pink" id="btn-bookmark">
+    Bookmark This Page
   </button>
-
-  <p class="or-divider" style="margin-top:.5rem;">
-    <a href="https://www.shopify.com/editions/summer2025/drive"
-       target="_blank" rel="noopener"
-       style="color:#ff6ec7;font-size:.85rem;">
-      Open Horizon Drive
-    </a>
+  <p class="small-note">
+    After bookmarking, tap "Copy Controller Code" below,
+    then <strong>edit the bookmark's URL</strong> and paste the code.
   </p>
 </div>
 
-<!-- ═══════════════════════ SNIPPET SCREEN ═══════════════════════ -->
-<div id="snippet-screen">
-  <h2>Controller Script</h2>
-  <ul class="snippet-steps">
-    <li data-step="1.">Open the game:
-      <a href="https://www.shopify.com/editions/summer2025/drive"
-         target="_blank" rel="noopener" style="color:#ff6ec7;">
-        Horizon Drive
-      </a>
-    </li>
-    <li data-step="2.">Open browser DevTools console
-      <br><em style="font-size:.75rem;opacity:.6;">
-        Desktop: F12 → Console.
-        iOS: Settings → Safari → Advanced → Web Inspector, then connect Mac Safari.
-        Android: chrome://inspect from desktop Chrome.
-      </em>
-    </li>
-    <li data-step="3.">Paste the script below and press Enter</li>
-    <li data-step="4.">Allow accelerometer access if prompted (iOS)</li>
-  </ul>
-  <pre class="snippet-code" id="snippet-code"></pre>
-  <button class="copy-btn" id="btn-copy-snippet">Copy Script</button>
-  <button class="back-btn" id="btn-snippet-back">Back</button>
+<!-- ── STEP 2: Copy the bookmarklet code ── -->
+<div class="step">
+  <div class="step-num">2</div>
+  <h2>Copy the controller code</h2>
+  <p>This copies a <code>javascript:</code> URL to your clipboard. Edit the bookmark you just made and <strong>replace its URL</strong> with the copied code.</p>
+  <br>
+  <button class="btn btn-pink" id="btn-copy">
+    Copy Controller Code
+  </button>
+  <p class="small-note">
+    On iOS: Bookmarks → Edit → tap the bookmark → paste over the URL.<br>
+    On Android: Bookmarks → long-press → Edit → paste over the URL.
+  </p>
 </div>
 
+<!-- ── STEP 3: Open the game ── -->
+<div class="step">
+  <div class="step-num">3</div>
+  <h2>Open the game</h2>
+  <a class="btn btn-game" href="https://www.shopify.com/editions/summer2025/drive" target="_blank" rel="noopener">
+    Open Horizon Drive
+  </a>
+</div>
+
+<!-- ── STEP 4: Activate ── -->
+<div class="step">
+  <div class="step-num">4</div>
+  <h2>Activate the controller</h2>
+  <p>While on the game page, open your bookmarks and tap <strong>"Accel-Drive"</strong>. Allow accelerometer access if prompted.</p>
+  <ol>
+    <li>A HUD bar appears at the top of the game</li>
+    <li>Gas is held automatically</li>
+    <li>Tilt left/right to steer</li>
+    <li>Tap <strong>Zero</strong> to recalibrate neutral tilt</li>
+    <li>Tap <strong>Stop</strong> to disable</li>
+  </ol>
+</div>
+
+<div class="divider">— that's it —</div>
+
+<details>
+  <summary>How does it work?</summary>
+  <div class="inner">
+    The bookmarklet injects a script into the game page that reads your
+    phone's accelerometer (DeviceOrientation API). It finds the on-screen
+    touch buttons (◀ ▶ steering and the gas pedal) by scanning the bottom
+    of the viewport, then simulates pointer events on them based on your
+    tilt angle. The gas button is re-pressed every 200ms to stay held.
+  </div>
+</details>
+
+<details>
+  <summary>Doesn't work?</summary>
+  <div class="inner">
+    <strong>Buttons not found:</strong> Tap "Rescan" in the HUD after the game fully loads.<br><br>
+    <strong>No tilt response:</strong> On iOS you must allow motion access. Go to
+    Settings → Safari → Motion & Orientation Access → enable.<br><br>
+    <strong>Bookmarklet won't run:</strong> Some browsers block <code>javascript:</code> bookmarks.
+    Try Safari (iOS) or Chrome/Firefox (Android). As a fallback, open DevTools console and paste the code directly.
+  </div>
+</details>
+
+<!-- Toast -->
+<div class="copied-toast" id="toast">Copied!</div>
+
 <script>
-// ═══════════════════════════════════════════════════════════════════
-// Controller script — runs INSIDE the Horizon Drive game page.
-// Finds the actual touch-control button elements in the DOM, then
-// uses DeviceOrientation (gamma) to simulate pointerdown/pointerup
-// on the left/right steer buttons, and holds gas perpetually.
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// The controller code — injected into the game page via bookmarklet
+// ═══════════════════════════════════════════════════════════
 
-const CONTROLLER_SCRIPT = `(function(){
-if(window.__accelDriveActive){console.log('Accel-Drive already running.');return;}
-window.__accelDriveActive=true;
+const CONTROLLER_CODE = `(function(){
+if(window.__ad){console.log('Accel-Drive already active');return}
+window.__ad=1;
+var DZ=5,SN=12,cal=0,steer='none',gm=0,ctl=null;
 
-/* ═══ Configuration ═══ */
-var DEAD_ZONE=5;
-var SENSITIVITY=12;
-var calibration=0;
+function po(el){var r=el.getBoundingClientRect();return{bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,pointerId:1,pointerType:'touch',isPrimary:true,width:1,height:1,pressure:.5}}
+function pd(el){if(!el)return;var o=po(el);el.dispatchEvent(new PointerEvent('pointerdown',o));try{var t=new Touch({identifier:Date.now(),target:el,clientX:o.clientX,clientY:o.clientY,pageX:o.clientX,pageY:o.clientY,radiusX:1,radiusY:1});el.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true,touches:[t],targetTouches:[t],changedTouches:[t]}))}catch(e){}}
+function pu(el){if(!el)return;var o=po(el);el.dispatchEvent(new PointerEvent('pointerup',o));try{var t=new Touch({identifier:Date.now(),target:el,clientX:o.clientX,clientY:o.clientY,pageX:o.clientX,pageY:o.clientY,radiusX:1,radiusY:1});el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,cancelable:true,touches:[],targetTouches:[],changedTouches:[t]}))}catch(e){}}
 
-/* ═══ State ═══ */
-var currentSteering='none'; /* 'left' | 'right' | 'none' */
-var latestGamma=0;
-var controls=null; /* {left, right, gas} DOM elements */
-
-/* ═══ Pointer-event helpers ═══ */
-function ptrOpts(el){
-  var r=el.getBoundingClientRect();
-  return {
-    bubbles:true,cancelable:true,
-    clientX:r.left+r.width/2,
-    clientY:r.top+r.height/2,
-    pointerId:1,pointerType:'touch',
-    isPrimary:true,width:1,height:1,pressure:0.5
-  };
-}
-function pointerDown(el){
-  if(!el)return;
-  var o=ptrOpts(el);
-  el.dispatchEvent(new PointerEvent('pointerdown',o));
-  /* also fire touch events for frameworks that listen on those */
-  try{
-    var t=new Touch({identifier:Date.now(),target:el,clientX:o.clientX,clientY:o.clientY,
-      pageX:o.clientX,pageY:o.clientY,radiusX:1,radiusY:1});
-    el.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true,touches:[t],targetTouches:[t],changedTouches:[t]}));
-  }catch(e){}
-}
-function pointerUp(el){
-  if(!el)return;
-  var o=ptrOpts(el);
-  el.dispatchEvent(new PointerEvent('pointerup',o));
-  try{
-    var t=new Touch({identifier:Date.now(),target:el,clientX:o.clientX,clientY:o.clientY,
-      pageX:o.clientX,pageY:o.clientY,radiusX:1,radiusY:1});
-    el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,cancelable:true,touches:[],targetTouches:[],changedTouches:[t]}));
-  }catch(e){}
+function scan(){
+  var vh=innerHeight,vw=innerWidth,cut=vh*.65,all=document.querySelectorAll('button,div,span,a,svg,[role=button]'),c=[];
+  for(var i=0;i<all.length;i++){var el=all[i],r=el.getBoundingClientRect();if(r.top>=cut&&r.width>=35&&r.height>=35&&r.width<vw*.35&&r.height<vh*.25)c.push({el:el,r:r,cx:r.left+r.width/2,cy:r.top+r.height/2})}
+  if(!c.length){console.warn('AD: no buttons found');return null}
+  c.sort(function(a,b){return a.r.width*a.r.height-b.r.width*b.r.height});
+  var k=[];for(var i=0;i<c.length;i++){var dup=false;for(var j=0;j<k.length;j++){if(Math.abs(c[i].cx-k[j].cx)<20&&Math.abs(c[i].cy-k[j].cy)<20){dup=true;break}}if(!dup)k.push(c[i])}
+  k.sort(function(a,b){return a.cx-b.cx});
+  var m=vw/2,L=k.filter(function(c){return c.cx<m}),R=k.filter(function(c){return c.cx>=m});
+  L.sort(function(a,b){return a.cx-b.cx});R.sort(function(a,b){return a.cx-b.cx});
+  var res={left:L.length>=1?L[0].el:null,right:L.length>=2?L[1].el:null,gas:R.length>=1?R[R.length-1].el:null};
+  console.log('AD controls:',res);return res
 }
 
-/* ═══ Find game control buttons ═══ */
-function findControls(){
-  var vh=window.innerHeight;
-  var vw=window.innerWidth;
-  var cutoff=vh*0.65; /* buttons are in the bottom ~35% */
+var gi=setInterval(function(){if(!ctl)ctl=scan();if(!ctl||!ctl.gas)return;pu(ctl.gas);pd(ctl.gas)},200);
 
-  /* Gather ALL leaf-ish elements in the bottom zone */
-  var all=document.querySelectorAll('button, div, span, a, svg, [role="button"]');
-  var candidates=[];
-  for(var i=0;i<all.length;i++){
-    var el=all[i];
-    var r=el.getBoundingClientRect();
-    /* Must be visible, in the bottom zone, and button-sized */
-    if(r.top>=cutoff && r.width>=35 && r.height>=35 && r.width<vw*0.35 && r.height<vh*0.25){
-      /* skip elements that contain other candidate-sized children */
-      candidates.push({el:el,r:r,cx:r.left+r.width/2,cy:r.top+r.height/2});
-    }
-  }
-  if(candidates.length===0){console.warn('Accel-Drive: no control buttons found');return null;}
-
-  /* De-duplicate overlapping elements — keep innermost (smallest area) */
-  candidates.sort(function(a,b){return(a.r.width*a.r.height)-(b.r.width*b.r.height);});
-  var kept=[];
-  for(var i=0;i<candidates.length;i++){
-    var dominated=false;
-    for(var j=0;j<kept.length;j++){
-      var dx=Math.abs(candidates[i].cx-kept[j].cx);
-      var dy=Math.abs(candidates[i].cy-kept[j].cy);
-      if(dx<20&&dy<20){dominated=true;break;}
-    }
-    if(!dominated)kept.push(candidates[i]);
-  }
-
-  /* Sort left-to-right by center x */
-  kept.sort(function(a,b){return a.cx-b.cx;});
-
-  /* Expect 4 buttons: [left_steer, right_steer, brake, gas] */
-  /* or at least identify left-half vs right-half */
-  var mid=vw/2;
-  var leftSide=kept.filter(function(c){return c.cx<mid;});
-  var rightSide=kept.filter(function(c){return c.cx>=mid;});
-
-  leftSide.sort(function(a,b){return a.cx-b.cx;});
-  rightSide.sort(function(a,b){return a.cx-b.cx;});
-
-  var result={
-    left: leftSide.length>=1 ? leftSide[0].el : null,
-    right: leftSide.length>=2 ? leftSide[1].el : null,
-    gas: rightSide.length>=1 ? rightSide[rightSide.length-1].el : null
-  };
-
-  console.log('Accel-Drive controls found:',
-    'LEFT=',result.left,
-    'RIGHT=',result.right,
-    'GAS=',result.gas);
-  return result;
+function us(g){
+  var a=g-cal,d='none';if(a<-DZ)d='left';else if(a>DZ)d='right';
+  if(d===steer)return;if(!ctl)ctl=scan();if(!ctl)return;
+  if(steer==='left'&&ctl.left)pu(ctl.left);if(steer==='right'&&ctl.right)pu(ctl.right);
+  if(d==='left'&&ctl.left)pd(ctl.left);if(d==='right'&&ctl.right)pd(ctl.right);
+  steer=d;
+  var de=document.getElementById('ad-d');if(de)de.textContent=d==='left'?'<< LEFT':d==='right'?'RIGHT >>':'STRAIGHT';
+  var ge=document.getElementById('ad-g');if(ge)ge.textContent=Math.round(a)+'°';
 }
 
-/* ═══ Gas: hold the rightmost button perpetually ═══ */
-var gasHeld=false;
-function holdGas(){
-  if(!controls||!controls.gas)return;
-  if(!gasHeld){
-    pointerDown(controls.gas);
-    gasHeld=true;
-  }
-}
-/* Re-press gas periodically to fight any auto-release the game may do */
-var gasInterval=setInterval(function(){
-  if(!controls){controls=findControls();}
-  if(!controls||!controls.gas)return;
-  /* release and re-press to keep it alive */
-  pointerUp(controls.gas);
-  pointerDown(controls.gas);
-  gasHeld=true;
-},200);
+var h=document.createElement('div');
+h.innerHTML='<div id=ad-h style="position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);padding:5px 10px;font:600 11px system-ui;color:#fff"><span id=ad-d style="min-width:55px;text-align:center">STRAIGHT</span><span id=ad-g style="opacity:.6;min-width:28px;text-align:right">0°</span><span style="color:#4f4">GAS</span><input id=ad-s type=range min=3 max=30 value=12 style="width:40px;accent-color:#ff6ec7"><button id=ad-z style="background:rgba(255,255,255,.15);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Zero</button><button id=ad-r style="background:rgba(100,100,255,.3);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Rescan</button><button id=ad-x style="background:rgba(255,60,60,.4);border:0;color:#fff;border-radius:5px;padding:2px 7px;font-size:9px">Stop</button></div>';
+document.body.appendChild(h);
 
-/* ═══ Steering ═══ */
-function updateSteering(gamma){
-  var adjusted=gamma-calibration;
-  var dir='none';
-  if(adjusted<-DEAD_ZONE)dir='left';
-  else if(adjusted>DEAD_ZONE)dir='right';
-
-  if(dir===currentSteering)return;
-
-  if(!controls){controls=findControls();}
-  if(!controls)return;
-
-  /* Release previous */
-  if(currentSteering==='left'&&controls.left) pointerUp(controls.left);
-  if(currentSteering==='right'&&controls.right) pointerUp(controls.right);
-
-  /* Press new */
-  if(dir==='left'&&controls.left) pointerDown(controls.left);
-  if(dir==='right'&&controls.right) pointerDown(controls.right);
-
-  currentSteering=dir;
-  updateHUD(adjusted,dir);
-}
-
-/* ═══ HUD overlay ═══ */
-var hud=document.createElement('div');
-hud.id='accel-hud';
-hud.innerHTML='<div style=\"position:fixed;top:0;left:0;right:0;z-index:99999;'+
-  'display:flex;align-items:center;justify-content:space-between;'+
-  'background:rgba(0,0,0,.55);backdrop-filter:blur(6px);'+
-  'padding:5px 10px;font-family:system-ui;font-size:11px;color:#fff;\">'+
-  '<span id=\"ah-dir\" style=\"min-width:60px;font-weight:700;text-align:center;\">STRAIGHT</span>'+
-  '<span style=\"display:flex;align-items:center;gap:4px;\">'+
-    '<span style=\"font-size:9px;opacity:.5;\">Tilt</span>'+
-    '<span id=\"ah-gamma\" style=\"min-width:32px;text-align:right;\">0\\u00b0</span>'+
-  '</span>'+
-  '<span style=\"color:#4f4;font-weight:700;\">GAS ON</span>'+
-  '<span style=\"display:flex;align-items:center;gap:3px;font-size:9px;\">'+
-    'Sens <input id=\"ah-sens\" type=\"range\" min=\"3\" max=\"30\" value=\"12\" style=\"width:45px;accent-color:#ff6ec7;\">'+
-  '</span>'+
-  '<button id=\"ah-cal\" style=\"background:rgba(255,255,255,.15);border:none;color:#fff;'+
-    'border-radius:5px;padding:2px 7px;font-size:9px;cursor:pointer;\">Zero</button>'+
-  '<button id=\"ah-rescan\" style=\"background:rgba(100,100,255,.3);border:none;color:#fff;'+
-    'border-radius:5px;padding:2px 7px;font-size:9px;cursor:pointer;\">Rescan</button>'+
-  '<button id=\"ah-stop\" style=\"background:rgba(255,60,60,.4);border:none;color:#fff;'+
-    'border-radius:5px;padding:2px 7px;font-size:9px;cursor:pointer;\">Stop</button>'+
-'</div>';
-document.body.appendChild(hud);
-
-function updateHUD(adjusted,dir){
-  var el=document.getElementById('ah-dir');
-  if(el)el.textContent=dir==='left'?'<< LEFT':dir==='right'?'RIGHT >>':'STRAIGHT';
-  var ge=document.getElementById('ah-gamma');
-  if(ge)ge.textContent=Math.round(adjusted)+'\\u00b0';
-}
-
-/* Wire up HUD buttons after DOM append */
 setTimeout(function(){
-  var sl=document.getElementById('ah-sens');
-  if(sl)sl.addEventListener('input',function(){SENSITIVITY=+this.value;DEAD_ZONE=Math.max(2,SENSITIVITY/3);});
-
-  var cal=document.getElementById('ah-cal');
-  if(cal)cal.addEventListener('click',function(){calibration=latestGamma;});
-
-  var rescan=document.getElementById('ah-rescan');
-  if(rescan)rescan.addEventListener('click',function(){
-    controls=findControls();
-    if(controls)console.log('Rescan done. Controls:',controls);
-    else console.warn('Rescan: no controls found');
-  });
-
-  var stop=document.getElementById('ah-stop');
-  if(stop)stop.addEventListener('click',function(){
-    clearInterval(gasInterval);
-    if(controls){
-      if(controls.gas)pointerUp(controls.gas);
-      if(controls.left)pointerUp(controls.left);
-      if(controls.right)pointerUp(controls.right);
-    }
-    window.removeEventListener('deviceorientation',onOrientation);
-    hud.remove();
-    window.__accelDriveActive=false;
-    console.log('Accel-Drive stopped.');
-  });
+  var s=document.getElementById('ad-s');if(s)s.oninput=function(){SN=+this.value;DZ=Math.max(2,SN/3)};
+  var z=document.getElementById('ad-z');if(z)z.onclick=function(){cal=gm};
+  var r=document.getElementById('ad-r');if(r)r.onclick=function(){ctl=scan()};
+  var x=document.getElementById('ad-x');if(x)x.onclick=function(){clearInterval(gi);if(ctl){if(ctl.gas)pu(ctl.gas);if(ctl.left)pu(ctl.left);if(ctl.right)pu(ctl.right)}window.removeEventListener('deviceorientation',oo);h.remove();window.__ad=0}
 },50);
 
-/* ═══ Accelerometer ═══ */
-function onOrientation(e){
-  latestGamma=e.gamma||0;
-  updateSteering(latestGamma);
-}
+function oo(e){gm=e.gamma||0;us(gm)}
+if(typeof DeviceOrientationEvent!='undefined'&&typeof DeviceOrientationEvent.requestPermission=='function'){DeviceOrientationEvent.requestPermission().then(function(s){if(s==='granted')window.addEventListener('deviceorientation',oo)}).catch(console.error)}else{window.addEventListener('deviceorientation',oo)}
 
-/* iOS 13+ requires user-gesture permission request */
-if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
-  DeviceOrientationEvent.requestPermission().then(function(state){
-    if(state==='granted'){
-      window.addEventListener('deviceorientation',onOrientation);
-      console.log('Accelerometer permission granted.');
-    } else {
-      console.warn('Accelerometer permission denied.');
-    }
-  }).catch(function(err){console.error('Accel permission error:',err);});
-} else {
-  window.addEventListener('deviceorientation',onOrientation);
-}
+var sa=0,st=setInterval(function(){ctl=scan();sa++;if(ctl||sa>=10)clearInterval(st)},1000);
+console.log('Accel-Drive active!')
+})()`;
 
-/* ═══ Initial control scan (retry a few times in case game is still loading) ═══ */
-var scanAttempts=0;
-var scanTimer=setInterval(function(){
-  controls=findControls();
-  scanAttempts++;
-  if(controls||scanAttempts>=10)clearInterval(scanTimer);
-},1000);
+const BOOKMARKLET_URL = 'javascript:' + encodeURIComponent(CONTROLLER_CODE);
 
-console.log('Accel-Drive v2 starting — scanning for game buttons...');
-})();`;
-
-// ── Populate snippet display ──
-document.getElementById('snippet-code').textContent = CONTROLLER_SCRIPT;
-
-// ═══════════════════════════════════════════════════════════
-// UI Logic
-// ═══════════════════════════════════════════════════════════
-
-document.getElementById('btn-show-snippet').addEventListener('click', () => {
-  document.getElementById('launcher').style.display = 'none';
-  document.getElementById('snippet-screen').style.display = 'flex';
+// ── Step 1: Prompt native bookmark dialog ──
+document.getElementById('btn-bookmark').addEventListener('click', () => {
+  // Can't programmatically trigger bookmark on mobile, so guide the user
+  alert(
+    'Now bookmark this page using your browser\\'s Share menu:\\n\\n' +
+    'iOS: Tap the Share icon (box+arrow) → Add Bookmark\\n' +
+    'Android: Tap ⋮ menu → Bookmark\\n\\n' +
+    'Name it "Accel-Drive", then come back here for Step 2.'
+  );
 });
 
-document.getElementById('btn-snippet-back').addEventListener('click', () => {
-  document.getElementById('snippet-screen').style.display = 'none';
-  document.getElementById('launcher').style.display = 'flex';
-});
-
-document.getElementById('btn-copy-snippet').addEventListener('click', () => {
-  navigator.clipboard.writeText(CONTROLLER_SCRIPT).then(() => {
-    const btn = document.getElementById('btn-copy-snippet');
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = 'Copy Script'; }, 1500);
+// ── Step 2: Copy bookmarklet code ──
+document.getElementById('btn-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText(BOOKMARKLET_URL).then(() => {
+    showToast('Copied! Now edit your bookmark\\'s URL and paste.');
+  }).catch(() => {
+    // Fallback: select a temporary textarea
+    const ta = document.createElement('textarea');
+    ta.value = BOOKMARKLET_URL;
+    ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    showToast('Copied! Now edit your bookmark\\'s URL and paste.');
   });
 });
 
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
 </script>
 </body>
 </html>
