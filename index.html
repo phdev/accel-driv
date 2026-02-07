@@ -102,10 +102,10 @@ canvas{display:block;width:100%;height:100%}
 
 // ── CONFIG ──
 const CFG = {
-  maxSpeed: 540,       // max km/h (3x)
-  accel: 135,          // km/h per second acceleration (3x)
-  brake: 240,          // km/h per second braking (3x)
-  friction: 24,        // passive decel km/h/s (3x)
+  maxSpeed: 270,       // max km/h
+  accel: 67,           // km/h per second acceleration
+  brake: 120,          // km/h per second braking
+  friction: 12,        // passive decel km/h/s
   steerSpeed: 2.8,     // lateral offset speed
   maxLateral: 9,        // max lateral offset from center
   roadWidth: 20,       // road visual width
@@ -115,14 +115,14 @@ const CFG = {
   fov: 72,
   // Boost pads
   boostCount: 40,       // lots of boost pads throughout the track
-  boostSpeed: 780,      // speed during boost (km/h) (3x)
+  boostSpeed: 390,      // speed during boost (km/h)
   boostDuration: 1.5,   // seconds of boost (shorter since there are more)
   boostPadWidth: 6,     // pad width on road
   boostPadLength: 4,    // pad length along track
   // AI opponents
   aiCount: 5,           // number of AI cars
-  aiMinSpeed: 330,      // slowest AI base speed (km/h) (3x)
-  aiMaxSpeed: 495,      // fastest AI base speed (km/h) (3x)
+  aiMinSpeed: 165,      // slowest AI base speed (km/h)
+  aiMaxSpeed: 248,      // fastest AI base speed (km/h)
   aiWeaveAmp: 2.5,      // lateral weave amplitude
   aiWeaveFreq: 0.3,     // weave frequency (Hz)
 };
@@ -542,58 +542,64 @@ function buildAICars() {
   aiCars = [];
   const aiColors = [0xff3333, 0x33aaff, 0xffaa00, 0xaa33ff, 0x33ff88];
 
-  for (let i = 0; i < CFG.aiCount; i++) {
-    const group = new THREE.Group();
+  // Load the same GLB model used by the player
+  const loader = new THREE.GLTFLoader();
+  loader.load('base_basic_shaded.glb', (gltf) => {
+    for (let i = 0; i < CFG.aiCount; i++) {
+      const group = new THREE.Group();
+      const model = gltf.scene.clone(true);
 
-    // Simple box car body
-    const bodyGeo = new THREE.BoxGeometry(2.2, 1.0, 4.5);
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: aiColors[i % aiColors.length],
-      emissive: new THREE.Color(aiColors[i % aiColors.length]),
-      emissiveIntensity: 0.4,
-      metalness: 0.7,
-      roughness: 0.3,
-    });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = 0.7;
-    group.add(body);
+      // Tint the model with AI color
+      const aiColor = new THREE.Color(aiColors[i % aiColors.length]);
+      model.traverse((child) => {
+        if (child.isMesh) {
+          child.material = child.material.clone();
+          child.material.color.copy(aiColor);
+          child.material.emissive = aiColor.clone().multiplyScalar(0.3);
+          child.material.emissiveIntensity = 0.6;
+        }
+      });
 
-    // Roof
-    const roofGeo = new THREE.BoxGeometry(1.8, 0.6, 2.2);
-    const roof = new THREE.Mesh(roofGeo, bodyMat);
-    roof.position.set(0, 1.35, -0.3);
-    group.add(roof);
+      // Auto-center and scale (same as player car)
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const targetLength = 8;
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const s = targetLength / maxDim;
+      model.scale.setScalar(s);
+      box.setFromObject(model);
+      box.getCenter(center);
+      model.position.sub(center);
+      box.setFromObject(model);
+      model.position.y -= box.min.y;
 
-    // Tail lights (red glow)
-    const tailGeo = new THREE.BoxGeometry(1.8, 0.2, 0.1);
-    const tailMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
-    const tail = new THREE.Mesh(tailGeo, tailMat);
-    tail.position.set(0, 0.7, -2.3);
-    group.add(tail);
+      group.add(model);
 
-    // Neon underglow matching car color
-    const ugLight = new THREE.PointLight(aiColors[i % aiColors.length], 1.5, 8);
-    ugLight.position.set(0, -0.1, 0);
-    group.add(ugLight);
+      // Neon underglow matching car color
+      const ugLight = new THREE.PointLight(aiColors[i % aiColors.length], 1.5, 8);
+      ugLight.position.set(0, -0.1, 0);
+      group.add(ugLight);
 
-    scene.add(group);
+      scene.add(group);
 
-    // Stagger starting positions: AI cars start slightly behind player
-    const startProgress = -0.002 * (i + 1);
-    // Each AI has a different base speed
-    const baseSpeed = CFG.aiMinSpeed + (CFG.aiMaxSpeed - CFG.aiMinSpeed) * (i / Math.max(1, CFG.aiCount - 1));
+      // Stagger starting positions: AI cars start AHEAD of player (player is last)
+      const startProgress = 0.005 * (i + 1);
+      // Each AI has a different base speed
+      const baseSpeed = CFG.aiMinSpeed + (CFG.aiMaxSpeed - CFG.aiMinSpeed) * (i / Math.max(1, CFG.aiCount - 1));
 
-    aiCars.push({
-      group: group,
-      progress: startProgress,
-      speed: 0,
-      baseSpeed: baseSpeed,
-      lateral: (i - 2) * 3,  // spread across the road
-      weavePhase: Math.random() * Math.PI * 2,
-      boostTimer: 0,
-      finished: false,
-    });
-  }
+      aiCars.push({
+        group: group,
+        progress: startProgress,
+        speed: 0,
+        baseSpeed: baseSpeed,
+        lateral: (i - 2) * 3,  // spread across the road
+        weavePhase: Math.random() * Math.PI * 2,
+        boostTimer: 0,
+        finished: false,
+      });
+    }
+  });
 }
 
 function updateAICar(ai, dt) {
@@ -898,7 +904,7 @@ function restartRace() {
   for (let bp of boostPads) { bp.active = false; }
   // Reset AI cars
   for (let i = 0; i < aiCars.length; i++) {
-    aiCars[i].progress = -0.002 * (i + 1);
+    aiCars[i].progress = 0.005 * (i + 1);
     aiCars[i].speed = 0;
     aiCars[i].boostTimer = 0;
     aiCars[i].finished = false;
