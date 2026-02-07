@@ -73,25 +73,59 @@ const iframe = document.getElementById('gf');
 
 let active = false, cal = 0, gm = 0, DZ = 3.3, steer = 'none', gasIv;
 
-function kev(type, code) {
-  const opts = {code, key: code, bubbles: true, cancelable: true, repeat: type === 'keydown'};
-  // Fire on every target we can reach
-  document.dispatchEvent(new KeyboardEvent(type, opts));
-  window.dispatchEvent(new KeyboardEvent(type, opts));
-  try { iframe.contentWindow.postMessage({_ad: type, code}, '*'); } catch(e) {}
-  try { iframe.contentWindow.dispatchEvent(new KeyboardEvent(type, opts)); } catch(e) {}
-  // Also try dispatching directly on the iframe element
-  iframe.dispatchEvent(new KeyboardEvent(type, opts));
+/*
+ * Button positions from screenshot (% of viewport)
+ *   ◀ left steer:  12% x, 86% y
+ *   ▶ right steer: 33% x, 86% y
+ *   gas (dots):    90% x, 86% y
+ */
+const BTN = { left: [0.12, 0.86], right: [0.33, 0.86], gas: [0.90, 0.86] };
+
+/* Unique pointer IDs per button so multi-touch works */
+const PID = { left: 2, right: 3, gas: 4 };
+
+function btnXY(name) {
+  return [BTN[name][0] * window.innerWidth, BTN[name][1] * window.innerHeight];
+}
+
+function touchDown(name) {
+  const [x, y] = btnXY(name);
+  const id = PID[name];
+  iframe.dispatchEvent(new PointerEvent('pointerdown', {
+    clientX: x, clientY: y, pointerId: id, pointerType: 'touch',
+    isPrimary: id === 2, bubbles: true, cancelable: true, pressure: 0.5
+  }));
+  try {
+    const t = new Touch({identifier: id, target: iframe, clientX: x, clientY: y, pageX: x, pageY: y});
+    iframe.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true, touches: [t], targetTouches: [t], changedTouches: [t]
+    }));
+  } catch(e) {}
+}
+
+function touchUp(name) {
+  const [x, y] = btnXY(name);
+  const id = PID[name];
+  iframe.dispatchEvent(new PointerEvent('pointerup', {
+    clientX: x, clientY: y, pointerId: id, pointerType: 'touch',
+    isPrimary: id === 2, bubbles: true, cancelable: true
+  }));
+  try {
+    const t = new Touch({identifier: id, target: iframe, clientX: x, clientY: y, pageX: x, pageY: y});
+    iframe.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [t]
+    }));
+  } catch(e) {}
 }
 
 function startGas() {
-  kev('keydown', 'ArrowUp');
-  gasIv = setInterval(() => kev('keydown', 'ArrowUp'), 100);
+  touchDown('gas');
+  gasIv = setInterval(() => { touchUp('gas'); touchDown('gas'); }, 200);
 }
 
 function stopGas() {
   clearInterval(gasIv);
-  kev('keyup', 'ArrowUp');
+  touchUp('gas');
 }
 
 function updateSteer(gamma) {
@@ -105,17 +139,16 @@ function updateSteer(gamma) {
     d === 'left' ? '\u25C0 LEFT' : d === 'right' ? 'RIGHT \u25B6' : 'STRAIGHT';
 
   if (d === steer) return;
-  if (steer === 'left') kev('keyup', 'ArrowLeft');
-  if (steer === 'right') kev('keyup', 'ArrowRight');
-  if (d === 'left') kev('keydown', 'ArrowLeft');
-  if (d === 'right') kev('keydown', 'ArrowRight');
+  if (steer === 'left') touchUp('left');
+  if (steer === 'right') touchUp('right');
+  if (d === 'left') touchDown('left');
+  if (d === 'right') touchDown('right');
   steer = d;
 }
 
 function onOrient(e) { gm = e.gamma || 0; updateSteer(gm); }
 
 async function launch() {
-  // Request accelerometer (iOS)
   if (typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission === 'function') {
     try {
@@ -131,8 +164,8 @@ async function launch() {
 
   window.addEventListener('deviceorientation', onOrient);
 
-  // Start gas after a delay to let game load
-  setTimeout(startGas, 3000);
+  // Start gas after delay for game to load
+  setTimeout(startGas, 4000);
 }
 
 document.getElementById('btn-play').addEventListener('click', launch);
@@ -143,8 +176,8 @@ document.getElementById('hsens').oninput = function() {
 document.getElementById('hzero').onclick = function() { cal = gm; };
 document.getElementById('hstop').onclick = function() {
   stopGas();
-  kev('keyup', 'ArrowLeft');
-  kev('keyup', 'ArrowRight');
+  touchUp('left');
+  touchUp('right');
   window.removeEventListener('deviceorientation', onOrient);
   document.getElementById('hud').classList.remove('on');
   active = false;
