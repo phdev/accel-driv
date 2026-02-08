@@ -63,6 +63,10 @@ canvas{display:block;width:100%;height:100%}
     <h1>HORIZON DRIVE</h1>
     <p class="sub">Accelerometer Racing</p>
     <button id="start-btn">START</button>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:1.2rem;font:400 .8rem system-ui;color:#c0a0e0;cursor:pointer">
+      <input type="checkbox" id="direct-steer-cb" style="width:18px;height:18px;accent-color:#ff6ec7;cursor:pointer">
+      Direct gyro steering (tilt = position)
+    </label>
     <p class="controls-hint">Tilt phone to steer &bull; Auto-gas<br>Or use arrow keys on desktop</p>
   </div>
 
@@ -177,6 +181,8 @@ let lateralOffset = 0;
 let steerInput = 0;
 // smoothed Y-axis rotation for car
 let smoothYaw = 0;
+// when true, gyro tilt maps directly to lateral position instead of accumulating offset
+let directSteer = false;
 
 // Input
 let keys = {};
@@ -937,6 +943,7 @@ function setupUI() {
 function startRace() {
   requestGyro();
   gyroCal = gyroGamma;
+  directSteer = document.getElementById('direct-steer-cb').checked;
   $startScreen.style.display = 'none';
   gameState = 'countdown';
   doCountdown();
@@ -1099,10 +1106,16 @@ function animate(now = 0) {
     raceTime = (performance.now() - raceStartTime) / 1000;
     $timeVal.textContent = formatTime(raceTime);
 
-    // Steering — purely player input, no auto-centering
+    // Steering
     steerInput = getSteerInput();
-    lateralOffset += steerInput * CFG.steerSpeed * dt * (speed / CFG.maxSpeed + 0.3);
-    lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
+    if (directSteer) {
+      // Direct mode: gyro tilt maps directly to lateral position
+      lateralOffset = steerInput * CFG.maxLateral;
+    } else {
+      // Offset mode: input accumulates lateral offset over time
+      lateralOffset += steerInput * CFG.steerSpeed * dt * (speed / CFG.maxSpeed + 0.3);
+      lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
+    }
 
     // Speed: always accelerating (auto-gas)
     const braking = getBrakeInput();
