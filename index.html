@@ -148,6 +148,7 @@ let speed = 0;         // km/h
 let trackProgress = 0; // 0..1
 let lateralOffset = 0; // left/right offset from track center
 let steerInput = 0;    // -1 to 1
+let smoothYaw = 0;     // smoothed Y-axis rotation for car
 
 // Input
 let keys = {};
@@ -994,8 +995,10 @@ function updateCarPosition(progress, lateral) {
   );
   carGroup.lookAt(lookTarget);
 
-  // Rotate car into the steering direction (Y-axis yaw)
-  carGroup.rotateY(-steerInput * (10 * Math.PI / 180));
+  // Smoothly lerp car yaw into the steering direction
+  const targetYaw = -steerInput * (10 * Math.PI / 180);
+  smoothYaw += (targetYaw - smoothYaw) * 0.08;
+  carGroup.rotateY(smoothYaw);
 }
 
 // ── CAMERA ──
