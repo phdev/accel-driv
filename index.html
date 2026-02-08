@@ -1375,7 +1375,7 @@ function updateCamera(instant) {
     camTarget.copy(idealTarget);
   } else {
     camPos.lerp(idealPos, CFG.cameraLerp);
-    camTarget.lerp(idealTarget, CFG.cameraLerp);
+    camTarget.lerp(idealTarget, 0.25);
   }
 
   camera.position.copy(camPos);
