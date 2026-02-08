@@ -605,13 +605,10 @@ function buildCar() {
 }
 
 // ── SKID MARKS ──
-const skidMarks = [];
-const SKID_MAX = 600;
-const SKID_FADE_TIME = 3.0;
-const skidMat = new THREE.MeshBasicMaterial({
-  color: 0x222222, transparent: true, opacity: 0.7,
-  side: THREE.DoubleSide, depthWrite: false,
-});
+const skidStrips = [];
+const SKID_MAX_STRIPS = 200;
+const SKID_FADE_TIME = 4.0;
+const SKID_WIDTH = 0.25;
 // Car-local wheel offsets (x = lateral, z = front/back) — scaled to the 8-unit car
 const WHEEL_OFFSETS = [
   { x: -0.9, z: -1.6 },
@@ -619,19 +616,15 @@ const WHEEL_OFFSETS = [
   { x: -0.9, z:  1.4 },
   { x:  0.9, z:  1.4 },
 ];
-let lastSkidTime = 0;
+// Previous frame wheel world positions (one per wheel)
+const prevWheelPos = [null, null, null, null];
 
 function spawnSkidMarks(trackPoint, rightVec, lateral) {
   const now = performance.now() * 0.001;
-  // Spawn every ~16ms (60fps)
-  if (now - lastSkidTime < 0.016) return;
-  lastSkidTime = now;
 
   const tangent = curve.getTangentAt(Math.max(0, Math.min(0.9999, trackProgress))).normalize();
-  // Build car's world-space forward and right using smoothYaw
   const cosY = Math.cos(smoothYaw);
   const sinY = Math.sin(smoothYaw);
-  // Car forward = tangent rotated by smoothYaw around up axis
   const fwdX = tangent.x * cosY + tangent.z * sinY;
   const fwdZ = -tangent.x * sinY + tangent.z * cosY;
   const rgtX = rightVec.x * cosY + rightVec.z * sinY;
@@ -641,41 +634,73 @@ function spawnSkidMarks(trackPoint, rightVec, lateral) {
   const baseY = trackPoint.y + 0.03;
   const baseZ = trackPoint.z + rightVec.z * lateral;
 
-  for (const w of WHEEL_OFFSETS) {
+  // Perpendicular to car forward direction (for strip width)
+  const perpX = -fwdZ;
+  const perpZ = fwdX;
+  const pLen = Math.sqrt(perpX * perpX + perpZ * perpZ) || 1;
+  const nPerpX = (perpX / pLen) * SKID_WIDTH * 0.5;
+  const nPerpZ = (perpZ / pLen) * SKID_WIDTH * 0.5;
+
+  for (let wi = 0; wi < WHEEL_OFFSETS.length; wi++) {
+    const w = WHEEL_OFFSETS[wi];
     const wx = baseX + rgtX * w.x + fwdX * w.z;
     const wz = baseZ + rgtZ * w.x + fwdZ * w.z;
+    const cur = { x: wx, y: baseY, z: wz };
 
-    const geo = new THREE.PlaneGeometry(0.3, 0.6);
-    const mesh = new THREE.Mesh(geo, skidMat.clone());
-    mesh.rotation.x = -Math.PI / 2;
-    // Align the mark with car heading
-    mesh.rotation.z = -Math.atan2(fwdX, fwdZ) + Math.PI / 2;
-    mesh.position.set(wx, baseY, wz);
+    const prev = prevWheelPos[wi];
+    prevWheelPos[wi] = cur;
+
+    if (!prev) continue;
+
+    // Build a quad from prev to cur
+    const verts = new Float32Array([
+      prev.x - nPerpX, prev.y, prev.z - nPerpZ,
+      prev.x + nPerpX, prev.y, prev.z + nPerpZ,
+      cur.x + nPerpX, cur.y, cur.z + nPerpZ,
+      prev.x - nPerpX, prev.y, prev.z - nPerpZ,
+      cur.x + nPerpX, cur.y, cur.z + nPerpZ,
+      cur.x - nPerpX, cur.y, cur.z - nPerpZ,
+    ]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x111111, transparent: true, opacity: 0.8,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
     scene.add(mesh);
-    skidMarks.push({ mesh, born: now });
+    skidStrips.push({ mesh, born: now });
   }
 
-  // Remove oldest marks if over limit
-  while (skidMarks.length > SKID_MAX) {
-    const old = skidMarks.shift();
+  // Remove oldest strips if over limit
+  while (skidStrips.length > SKID_MAX_STRIPS) {
+    const old = skidStrips.shift();
     scene.remove(old.mesh);
     old.mesh.geometry.dispose();
     old.mesh.material.dispose();
   }
 }
 
+function clearPrevWheelPos() {
+  for (let i = 0; i < prevWheelPos.length; i++) prevWheelPos[i] = null;
+}
+
 function updateSkidMarks() {
   const now = performance.now() * 0.001;
-  for (let i = skidMarks.length - 1; i >= 0; i--) {
-    const mark = skidMarks[i];
-    const age = now - mark.born;
+  // Clear prev positions if not drifting so next drift starts fresh
+  if (driftState !== 'drift') clearPrevWheelPos();
+
+  for (let i = skidStrips.length - 1; i >= 0; i--) {
+    const strip = skidStrips[i];
+    const age = now - strip.born;
     if (age > SKID_FADE_TIME) {
-      scene.remove(mark.mesh);
-      mark.mesh.geometry.dispose();
-      mark.mesh.material.dispose();
-      skidMarks.splice(i, 1);
+      scene.remove(strip.mesh);
+      strip.mesh.geometry.dispose();
+      strip.mesh.material.dispose();
+      skidStrips.splice(i, 1);
     } else {
-      mark.mesh.material.opacity = 0.7 * (1 - age / SKID_FADE_TIME);
+      strip.mesh.material.opacity = 0.8 * (1 - age / SKID_FADE_TIME);
     }
   }
 }
@@ -1128,12 +1153,13 @@ function restartRace() {
   freeSmoothY = 0;
   freePos.set(0, 0, 0);
   // Clear skid marks
-  for (const mark of skidMarks) {
-    scene.remove(mark.mesh);
-    mark.mesh.geometry.dispose();
-    mark.mesh.material.dispose();
+  for (const strip of skidStrips) {
+    scene.remove(strip.mesh);
+    strip.mesh.geometry.dispose();
+    strip.mesh.material.dispose();
   }
-  skidMarks.length = 0;
+  skidStrips.length = 0;
+  clearPrevWheelPos();
   for (let bp of boostPads) { bp.active = false; }
   // Reset AI cars
   for (let i = 0; i < aiCars.length; i++) {
@@ -1335,10 +1361,12 @@ function updateCamera(instant) {
       point.z - tangent.z * CFG.cameraDist + right.z * lateralOffset * 0.5
     );
 
+    // Look at the car position (slightly above), not far ahead along tangent
+    // This prevents the camera looking through the ground on downhill
     idealTarget = new THREE.Vector3(
-      point.x + tangent.x * 10 + right.x * lateralOffset,
-      point.y + 1,
-      point.z + tangent.z * 10 + right.z * lateralOffset
+      point.x + right.x * lateralOffset,
+      point.y + 0.5,
+      point.z + right.z * lateralOffset
     );
   }
 
