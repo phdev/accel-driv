@@ -1024,8 +1024,11 @@ function getSteerInput() {
   // Gyro only used if no keyboard/touch active
   if (gyroAvailable) {
     const adjusted = gyroGamma - gyroCal;
-    if (Math.abs(adjusted) < DEADZONE) return 0;
-    const raw = (adjusted - Math.sign(adjusted) * DEADZONE) / (15 - DEADZONE);
+    // Widen deadzone and full-steer angle in free-roam for less twitchy turning
+    const dz = freeRoam ? 8 : DEADZONE;
+    const fullAngle = freeRoam ? 35 : 15;
+    if (Math.abs(adjusted) < dz) return 0;
+    const raw = (adjusted - Math.sign(adjusted) * dz) / (fullAngle - dz);
     return Math.max(-1, Math.min(1, raw));
   }
 
@@ -1290,18 +1293,24 @@ function updateCamera(instant) {
   let idealPos, idealTarget;
 
   if (freeRoam) {
-    // Free-roam camera: behind car along its heading
+    // Free-roam camera: behind and above car along its heading
     const behindX = -Math.sin(freeHeading) * CFG.cameraDist;
     const behindZ = -Math.cos(freeHeading) * CFG.cameraDist;
+    // Sample ground height at camera's behind-position using freeNearestT
+    const camBehindT = Math.max(0, Math.min(0.9999, freeNearestT - (CFG.cameraDist / trackLength)));
+    const camBehindPt = curve.getPointAt(camBehindT);
+    // Use higher of car Y or behind-point Y so camera doesn't dip below track on downhill
+    const camBaseY = Math.max(freePos.y, camBehindPt.y);
     idealPos = new THREE.Vector3(
       freePos.x + behindX,
-      Math.max(freePos.y + CFG.cameraHeight, 0),
+      Math.max(camBaseY + CFG.cameraHeight, 0),
       freePos.z + behindZ
     );
+    // Look at the car, not ahead of it
     idealTarget = new THREE.Vector3(
-      freePos.x + Math.sin(freeHeading) * 10,
-      freePos.y + 1,
-      freePos.z + Math.cos(freeHeading) * 10
+      freePos.x,
+      freePos.y + 0.5,
+      freePos.z
     );
   } else {
     const t = Math.max(0, Math.min(0.9999, trackProgress));
