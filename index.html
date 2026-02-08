@@ -1200,15 +1200,11 @@ function updateCarPosition(progress, lateral) {
     const halfW = CFG.roadWidth / 2;
 
     if (Math.abs(lateralDist) > halfW) {
-      // Push back to edge and kill speed slightly
+      // Push back to edge and slow down — no heading change
       const clampedLat = Math.sign(lateralDist) * halfW;
-      const pushX = bestPt.x + bestRight.x * clampedLat;
-      const pushZ = bestPt.z + bestRight.z * clampedLat;
-      freePos.x = pushX;
-      freePos.z = pushZ;
-      // Bounce heading inward
-      freeHeading -= Math.sign(lateralDist) * 0.15;
-      speed *= 0.7;
+      freePos.x = bestPt.x + bestRight.x * clampedLat;
+      freePos.z = bestPt.z + bestRight.z * clampedLat;
+      speed *= 0.85;
     } else {
       freePos.x = newX;
       freePos.z = newZ;
