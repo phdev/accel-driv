@@ -993,6 +993,9 @@ function updateCarPosition(progress, lateral) {
     point.z + tangent.z * 5 + right.z * lateral
   );
   carGroup.lookAt(lookTarget);
+
+  // Rotate car into the steering direction (Y-axis yaw)
+  carGroup.rotateY(-steerInput * 0.35);
 }
 
 // ── CAMERA ──
