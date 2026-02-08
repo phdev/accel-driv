@@ -154,7 +154,7 @@ let keys = {};
 let gyroGamma = 0;
 let gyroCal = 0;
 let gyroAvailable = false;
-const DEADZONE = 12; // degrees — wide deadzone to prevent drift
+const DEADZONE = 3; // degrees — minimal deadzone for high sensitivity
 
 // DOM
 const $loading = document.getElementById('loading');
@@ -875,7 +875,7 @@ function getSteerInput() {
   if (gyroAvailable) {
     const adjusted = gyroGamma - gyroCal;
     if (Math.abs(adjusted) < DEADZONE) return 0;
-    const raw = (adjusted - Math.sign(adjusted) * DEADZONE) / (45 - DEADZONE);
+    const raw = (adjusted - Math.sign(adjusted) * DEADZONE) / (15 - DEADZONE);
     return Math.max(-1, Math.min(1, raw));
   }
 
