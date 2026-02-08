@@ -1168,23 +1168,52 @@ function updateCarPosition(progress, lateral) {
     const mps = effectiveSpeed / 3.6;
     const dx = Math.sin(freeHeading) * mps * frameDt;
     const dz = Math.cos(freeHeading) * mps * frameDt;
-    freePos.x += dx;
-    freePos.z += dz;
+    const newX = freePos.x + dx;
+    const newZ = freePos.z + dz;
 
     // Sample track height at nearest point for ground following
     // Search nearby t values on the spline to find closest XZ match
     let bestY = point.y;
-    let bestDist = (freePos.x - point.x) ** 2 + (freePos.z - point.z) ** 2;
+    let bestDist = (newX - point.x) ** 2 + (newZ - point.z) ** 2;
+    let bestT = t;
+    let bestPt = point;
     const searchStep = 0.001;
     for (let i = -30; i <= 30; i++) {
       const st = Math.max(0, Math.min(0.9999, t + i * searchStep));
       const sp = curve.getPointAt(st);
-      const d = (freePos.x - sp.x) ** 2 + (freePos.z - sp.z) ** 2;
+      const d = (newX - sp.x) ** 2 + (newZ - sp.z) ** 2;
       if (d < bestDist) {
         bestDist = d;
         bestY = sp.y;
+        bestT = st;
+        bestPt = sp;
       }
     }
+
+    // Track-edge collision: project car position onto track cross-section
+    const bestTangent = curve.getTangentAt(bestT).normalize();
+    const bestRight = new THREE.Vector3().crossVectors(bestTangent, up).normalize();
+    if (bestRight.length() < 0.1) bestRight.set(1, 0, 0);
+    const toCarX = newX - bestPt.x;
+    const toCarZ = newZ - bestPt.z;
+    const lateralDist = toCarX * bestRight.x + toCarZ * bestRight.z;
+    const halfW = CFG.roadWidth / 2;
+
+    if (Math.abs(lateralDist) > halfW) {
+      // Push back to edge and kill speed slightly
+      const clampedLat = Math.sign(lateralDist) * halfW;
+      const pushX = bestPt.x + bestRight.x * clampedLat;
+      const pushZ = bestPt.z + bestRight.z * clampedLat;
+      freePos.x = pushX;
+      freePos.z = pushZ;
+      // Bounce heading inward
+      freeHeading -= Math.sign(lateralDist) * 0.15;
+      speed *= 0.7;
+    } else {
+      freePos.x = newX;
+      freePos.z = newZ;
+    }
+
     freePos.y = bestY + 0.15;
 
     carGroup.position.copy(freePos);
