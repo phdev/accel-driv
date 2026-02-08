@@ -87,9 +87,9 @@ canvas{display:block;width:100%;height:100%}
     <div id="tilt-dot"></div>
   </div>
 
-  <label id="direct-steer-label" style="position:absolute;bottom:50px;left:16px;display:flex;align-items:center;gap:6px;font:400 .75rem system-ui;color:rgba(192,160,224,.7);cursor:pointer;z-index:30">
-    <input type="checkbox" id="direct-steer-cb" style="width:16px;height:16px;accent-color:#ff6ec7;cursor:pointer">
-    Direct gyro
+  <label id="free-roam-label" style="position:absolute;bottom:50px;left:16px;display:flex;align-items:center;gap:6px;font:400 .75rem system-ui;color:rgba(192,160,224,.7);cursor:pointer;z-index:30">
+    <input type="checkbox" id="free-roam-cb" style="width:16px;height:16px;accent-color:#ff6ec7;cursor:pointer">
+    Disable rail
   </label>
 
   <button id="drift-btn" style="position:absolute;bottom:16px;right:16px;width:80px;height:80px;border-radius:50%;border:3px solid #ff6ec7;background:rgba(255,110,199,.15);color:#ff6ec7;font:900 14px system-ui;text-transform:uppercase;letter-spacing:1px;cursor:pointer;z-index:30;display:none;-webkit-tap-highlight-color:transparent;touch-action:none;text-shadow:0 0 8px #ff6ec7;box-shadow:0 0 16px rgba(255,110,199,.3)">DRIFT</button>
@@ -198,8 +198,10 @@ let lateralOffset = 0;
 let steerInput = 0;
 // smoothed Y-axis rotation for car
 let smoothYaw = 0;
-// when true, gyro tilt maps directly to lateral position instead of accumulating offset
-let directSteer = false;
+// free-roam: car moves in its own direction, not on the rail
+let freeRoam = false;
+let freePos = new THREE.Vector3();
+let freeHeading = 0;
 // Drift state
 let driftState = 'grip';
 let driftSign = 0;
@@ -1115,6 +1117,9 @@ function restartRace() {
   driftSign = 0;
   driftAngle = 0;
   driftBtnHeld = false;
+  freeRoam = false;
+  freeHeading = 0;
+  freePos.set(0, 0, 0);
   // Clear skid marks
   for (const mark of skidMarks) {
     scene.remove(mark.mesh);
@@ -1152,33 +1157,78 @@ function updateCarPosition(progress, lateral) {
   const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
   if (right.length() < 0.1) right.set(1, 0, 0);
 
-  carGroup.position.set(
-    point.x + right.x * lateral,
-    point.y + 0.15,
-    point.z + right.z * lateral
-  );
+  if (freeRoam) {
+    // ── FREE-ROAM MODE ──
+    // Steer heading with gyro/input
+    const turnRate = 2.5;
+    freeHeading += -steerInput * turnRate * frameDt;
 
-  // Orient car along track direction
-  const lookTarget = new THREE.Vector3(
-    point.x + tangent.x * 5 + right.x * lateral,
-    point.y + tangent.y * 5,
-    point.z + tangent.z * 5 + right.z * lateral
-  );
-  carGroup.lookAt(lookTarget);
+    // Move forward along current heading
+    const effectiveSpeed = boostTimer > 0 ? Math.max(speed, CFG.boostSpeed) : speed;
+    const mps = effectiveSpeed / 3.6;
+    const dx = Math.sin(freeHeading) * mps * frameDt;
+    const dz = Math.cos(freeHeading) * mps * frameDt;
+    freePos.x += dx;
+    freePos.z += dz;
 
-  // Smoothly lerp car yaw — clamp to 15° normally, full driftAngle (up to 45°) when drifting
-  let targetYaw;
-  if (driftState === 'drift') {
-    targetYaw = -driftAngle * (Math.PI / 180);
+    // Sample track height at nearest point for ground following
+    // Use the rail point Y as approximate ground
+    freePos.y = point.y + 0.15;
+
+    carGroup.position.copy(freePos);
+
+    // Orient car along heading
+    const lookAhead = new THREE.Vector3(
+      freePos.x + Math.sin(freeHeading) * 5,
+      freePos.y,
+      freePos.z + Math.cos(freeHeading) * 5
+    );
+    carGroup.lookAt(lookAhead);
+
+    // Apply yaw (drift or steer visual rotation)
+    let targetYaw;
+    if (driftState === 'drift') {
+      targetYaw = -driftAngle * (Math.PI / 180);
+    } else {
+      targetYaw = -steerInput * (15 * Math.PI / 180);
+    }
+    smoothYaw += (targetYaw - smoothYaw) * 0.08;
+    carGroup.rotateY(smoothYaw);
+
+    // Spawn skid marks during drift
+    if (driftState === 'drift') {
+      spawnSkidMarks(freePos, right, 0);
+    }
   } else {
-    targetYaw = -steerInput * (15 * Math.PI / 180);
-  }
-  smoothYaw += (targetYaw - smoothYaw) * 0.08;
-  carGroup.rotateY(smoothYaw);
+    // ── RAIL MODE ──
+    carGroup.position.set(
+      point.x + right.x * lateral,
+      point.y + 0.15,
+      point.z + right.z * lateral
+    );
 
-  // Spawn skid marks during drift
-  if (driftState === 'drift') {
-    spawnSkidMarks(point, right, lateral);
+    // Orient car along track direction
+    const lookTarget = new THREE.Vector3(
+      point.x + tangent.x * 5 + right.x * lateral,
+      point.y + tangent.y * 5,
+      point.z + tangent.z * 5 + right.z * lateral
+    );
+    carGroup.lookAt(lookTarget);
+
+    // Smoothly lerp car yaw — clamp to 15° normally, full driftAngle (up to 45°) when drifting
+    let targetYaw;
+    if (driftState === 'drift') {
+      targetYaw = -driftAngle * (Math.PI / 180);
+    } else {
+      targetYaw = -steerInput * (15 * Math.PI / 180);
+    }
+    smoothYaw += (targetYaw - smoothYaw) * 0.08;
+    carGroup.rotateY(smoothYaw);
+
+    // Spawn skid marks during drift
+    if (driftState === 'drift') {
+      spawnSkidMarks(point, right, lateral);
+    }
   }
 }
 
@@ -1187,33 +1237,51 @@ const camPos = new THREE.Vector3();
 const camTarget = new THREE.Vector3();
 
 function updateCamera(instant) {
-  const t = Math.max(0, Math.min(0.9999, trackProgress));
-  const point = curve.getPointAt(t);
-  const tangent = curve.getTangentAt(t).normalize();
-  const up = new THREE.Vector3(0, 1, 0);
-  const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
-  if (right.length() < 0.1) right.set(1, 0, 0);
+  let idealPos, idealTarget;
 
-  // Camera behind and above car
-  // Sample the track point where the camera would be (behind the car)
-  // to get the correct elevation for downhill sections
-  const camT = Math.max(0, Math.min(0.9999, t - (CFG.cameraDist / trackLength)));
-  const camTrackPoint = curve.getPointAt(camT);
-  // Use the higher of: car's point or the behind-point, so camera doesn't dip below track
-  const camBaseY = Math.max(point.y, camTrackPoint.y);
+  if (freeRoam) {
+    // Free-roam camera: behind car along its heading
+    const behindX = -Math.sin(freeHeading) * CFG.cameraDist;
+    const behindZ = -Math.cos(freeHeading) * CFG.cameraDist;
+    idealPos = new THREE.Vector3(
+      freePos.x + behindX,
+      Math.max(freePos.y + CFG.cameraHeight, 0),
+      freePos.z + behindZ
+    );
+    idealTarget = new THREE.Vector3(
+      freePos.x + Math.sin(freeHeading) * 10,
+      freePos.y + 1,
+      freePos.z + Math.cos(freeHeading) * 10
+    );
+  } else {
+    const t = Math.max(0, Math.min(0.9999, trackProgress));
+    const point = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (right.length() < 0.1) right.set(1, 0, 0);
 
-  const idealPos = new THREE.Vector3(
-    point.x - tangent.x * CFG.cameraDist + right.x * lateralOffset * 0.5,
-    // Ensure camera never goes below ground plane (-2) + minimum clearance
-    Math.max(camBaseY + CFG.cameraHeight, -2 + 2),
-    point.z - tangent.z * CFG.cameraDist + right.z * lateralOffset * 0.5
-  );
+    // Camera behind and above car
+    // Sample the track point where the camera would be (behind the car)
+    // to get the correct elevation for downhill sections
+    const camT = Math.max(0, Math.min(0.9999, t - (CFG.cameraDist / trackLength)));
+    const camTrackPoint = curve.getPointAt(camT);
+    // Use the higher of: car's point or the behind-point, so camera doesn't dip below track
+    const camBaseY = Math.max(point.y, camTrackPoint.y);
 
-  const idealTarget = new THREE.Vector3(
-    point.x + tangent.x * 10 + right.x * lateralOffset,
-    point.y + 1,
-    point.z + tangent.z * 10 + right.z * lateralOffset
-  );
+    idealPos = new THREE.Vector3(
+      point.x - tangent.x * CFG.cameraDist + right.x * lateralOffset * 0.5,
+      // Ensure camera never goes below ground plane (-2) + minimum clearance
+      Math.max(camBaseY + CFG.cameraHeight, -2 + 2),
+      point.z - tangent.z * CFG.cameraDist + right.z * lateralOffset * 0.5
+    );
+
+    idealTarget = new THREE.Vector3(
+      point.x + tangent.x * 10 + right.x * lateralOffset,
+      point.y + 1,
+      point.z + tangent.z * 10 + right.z * lateralOffset
+    );
+  }
 
   if (instant) {
     camPos.copy(idealPos);
@@ -1229,9 +1297,11 @@ function updateCamera(instant) {
 
 // ── GAME LOOP ──
 let lastTime = 0;
+let frameDt = 0;
 function animate(now = 0) {
   requestAnimationFrame(animate);
   const dt = Math.min((now - lastTime) / 1000, 0.05);
+  frameDt = dt;
   lastTime = now;
 
   if (gameState === 'racing') {
@@ -1267,7 +1337,14 @@ function animate(now = 0) {
     }
 
     // ── APPLY STEERING ──
-    directSteer = document.getElementById('direct-steer-cb').checked;
+    const wasFreeRoam = freeRoam;
+    freeRoam = document.getElementById('free-roam-cb').checked;
+    // On transition to free-roam, snapshot current world position & heading
+    if (freeRoam && !wasFreeRoam) {
+      freePos.copy(carGroup.position);
+      const tang = curve.getTangentAt(Math.max(0, Math.min(0.9999, trackProgress))).normalize();
+      freeHeading = Math.atan2(tang.x, tang.z);
+    }
     if (driftState === 'drift') {
       // Update drift direction to follow gyro/steer input in real-time
       if (Math.abs(steerInput) > 0.1) {
@@ -1282,13 +1359,13 @@ function animate(now = 0) {
       const yawAssist = Math.max(-CFG.driftMaxAssist, Math.min(CFG.driftMaxAssist, slipErr * CFG.driftAssistGain));
       driftAngle += yawAssist * dt * 60;
 
-      // Reduced lateral grip during drift
-      const driftLateralMove = steerInput * CFG.steerSpeed * CFG.driftLateralGrip * dt * (speed / CFG.maxSpeed + 0.3);
-      lateralOffset += driftLateralMove;
-      lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
-    } else if (directSteer) {
-      lateralOffset = steerInput * CFG.maxLateral;
-    } else {
+      if (!freeRoam) {
+        // Reduced lateral grip during drift
+        const driftLateralMove = steerInput * CFG.steerSpeed * CFG.driftLateralGrip * dt * (speed / CFG.maxSpeed + 0.3);
+        lateralOffset += driftLateralMove;
+        lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
+      }
+    } else if (!freeRoam) {
       lateralOffset += steerInput * CFG.steerSpeed * dt * (speed / CFG.maxSpeed + 0.3);
       lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
     }
