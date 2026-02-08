@@ -1055,9 +1055,17 @@ function updateCamera(instant) {
   if (right.length() < 0.1) right.set(1, 0, 0);
 
   // Camera behind and above car
+  // Sample the track point where the camera would be (behind the car)
+  // to get the correct elevation for downhill sections
+  const camT = Math.max(0, Math.min(0.9999, t - (CFG.cameraDist / trackLength)));
+  const camTrackPoint = curve.getPointAt(camT);
+  // Use the higher of: car's point or the behind-point, so camera doesn't dip below track
+  const camBaseY = Math.max(point.y, camTrackPoint.y);
+
   const idealPos = new THREE.Vector3(
     point.x - tangent.x * CFG.cameraDist + right.x * lateralOffset * 0.5,
-    point.y + CFG.cameraHeight,
+    // Ensure camera never goes below ground plane (-2) + minimum clearance
+    Math.max(camBaseY + CFG.cameraHeight, -2 + 2),
     point.z - tangent.z * CFG.cameraDist + right.z * lateralOffset * 0.5
   );
 
