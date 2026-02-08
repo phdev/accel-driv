@@ -1181,6 +1181,10 @@ function animate(now = 0) {
     // ── APPLY STEERING ──
     directSteer = document.getElementById('direct-steer-cb').checked;
     if (driftState === 'drift') {
+      // Update drift direction to follow gyro/steer input in real-time
+      if (Math.abs(steerInput) > 0.1) {
+        driftSign = Math.sign(steerInput);
+      }
       // Desired slip angle: base + steer influence
       const desiredSlip = driftSign * (CFG.driftBaseSlip + CFG.driftKSteer * Math.abs(steerInput));
       const clampedDesired = Math.max(-CFG.driftMaxSlip, Math.min(CFG.driftMaxSlip, desiredSlip));
