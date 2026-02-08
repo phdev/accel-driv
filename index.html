@@ -102,29 +102,46 @@ canvas{display:block;width:100%;height:100%}
 
 // ── CONFIG ──
 const CFG = {
-  maxSpeed: 270,       // max km/h
-  accel: 67,           // km/h per second acceleration
-  brake: 120,          // km/h per second braking
-  friction: 12,        // passive decel km/h/s
-  steerSpeed: 14,      // lateral offset speed
-  maxLateral: 19,       // max lateral offset from center
-  roadWidth: 40,        // road visual width
+  // max km/h
+  maxSpeed: 270,
+  // km/h per second acceleration
+  accel: 67,
+  // km/h per second braking
+  brake: 120,
+  // passive decel km/h/s
+  friction: 12,
+  // lateral offset speed
+  steerSpeed: 14,
+  // max lateral offset from center
+  maxLateral: 19,
+  // road visual width
+  roadWidth: 40,
   cameraHeight: 4.5,
   cameraDist: 12,
   cameraLerp: 0.08,
   fov: 72,
   // Boost pads
-  boostCount: 40,       // lots of boost pads throughout the track
-  boostSpeed: 390,      // speed during boost (km/h)
-  boostDuration: 1.5,   // seconds of boost (shorter since there are more)
-  boostPadWidth: 6,     // pad width on road
-  boostPadLength: 4,    // pad length along track
+  // lots of boost pads throughout the track
+  boostCount: 40,
+  // speed during boost (km/h)
+  boostSpeed: 390,
+  // seconds of boost (shorter since there are more)
+  boostDuration: 1.5,
+  // pad width on road
+  boostPadWidth: 6,
+  // pad length along track
+  boostPadLength: 4,
   // AI opponents
-  aiCount: 5,           // number of AI cars
-  aiMinSpeed: 165,      // slowest AI base speed (km/h)
-  aiMaxSpeed: 248,      // fastest AI base speed (km/h)
-  aiWeaveAmp: 2.5,      // lateral weave amplitude
-  aiWeaveFreq: 0.3,     // weave frequency (Hz)
+  // number of AI cars
+  aiCount: 5,
+  // slowest AI base speed (km/h)
+  aiMinSpeed: 165,
+  // fastest AI base speed (km/h)
+  aiMaxSpeed: 248,
+  // lateral weave amplitude
+  aiWeaveAmp: 2.5,
+  // weave frequency (Hz)
+  aiWeaveFreq: 0.3,
 };
 
 // ── STATE ──
@@ -135,27 +152,39 @@ let scene, camera, renderer, composer, bloomPass;
 let roadMesh, groundMesh;
 let carGroup, carBody;
 let barrierLeft, barrierRight;
-let boostPads = [];     // [{t: 0..1, mesh, used: false}]
-let boostTimer = 0;     // remaining boost seconds
-let boostMeshes = [];   // for animation
-let aiCars = [];        // [{group, progress, speed, baseSpeed, lateral, weavePhase}]
-let playerPosition = 1; // 1-based position among all racers
+// [{t: 0..1, mesh, used: false}]
+let boostPads = [];
+// remaining boost seconds
+let boostTimer = 0;
+// for animation
+let boostMeshes = [];
+// [{group, progress, speed, baseSpeed, lateral, weavePhase}]
+let aiCars = [];
+// 1-based position among all racers
+let playerPosition = 1;
 
-let gameState = 'loading'; // loading, ready, countdown, racing, finished
+// loading, ready, countdown, racing, finished
+let gameState = 'loading';
 let raceStartTime = 0;
 let raceTime = 0;
-let speed = 0;         // km/h
-let trackProgress = 0; // 0..1
-let lateralOffset = 0; // left/right offset from track center
-let steerInput = 0;    // -1 to 1
-let smoothYaw = 0;     // smoothed Y-axis rotation for car
+// km/h
+let speed = 0;
+// 0..1
+let trackProgress = 0;
+// left/right offset from track center
+let lateralOffset = 0;
+// -1 to 1
+let steerInput = 0;
+// smoothed Y-axis rotation for car
+let smoothYaw = 0;
 
 // Input
 let keys = {};
 let gyroGamma = 0;
 let gyroCal = 0;
 let gyroAvailable = false;
-const DEADZONE = 3; // degrees — minimal deadzone for high sensitivity
+// degrees — minimal deadzone for high sensitivity
+const DEADZONE = 3;
 
 // DOM
 const $loading = document.getElementById('loading');
@@ -248,9 +277,12 @@ function setupScene() {
   const renderPass = new THREE.RenderPass(scene, camera);
   bloomPass = new THREE.UnrealBloomPass(
     new THREE.Vector2(innerWidth, innerHeight),
-    1.4,   // bloom strength (Horizon Drive uses heavy bloom)
-    0.6,   // bloom radius (how far glow spreads)
-    0.15   // bloom threshold (low = more things glow)
+    // bloom strength (Horizon Drive uses heavy bloom)
+    1.4,
+    // bloom radius (how far glow spreads)
+    0.6,
+    // bloom threshold (low = more things glow)
+    0.15
   );
   composer = new THREE.EffectComposer(renderer);
   composer.addPass(renderPass);
@@ -300,8 +332,10 @@ function buildTrack() {
     const stripe = (i % 40 < 2) ? 1.0 : 0.15;
     const edgeGlow = 0.5;
     // Left edge: pink, Right edge: cyan, Center: dark
-    colors.push(stripe * 0.8, stripe * 0.1, stripe * 0.5, 1); // left - pink
-    colors.push(stripe * 0.1, stripe * 0.5, stripe * 0.8, 1); // right - cyan
+    // left - pink
+    colors.push(stripe * 0.8, stripe * 0.1, stripe * 0.5, 1);
+    // right - cyan
+    colors.push(stripe * 0.1, stripe * 0.5, stripe * 0.8, 1);
 
     if (i < divisions) {
       const base = i * 2;
@@ -594,7 +628,8 @@ function buildAICars() {
         progress: startProgress,
         speed: 0,
         baseSpeed: baseSpeed,
-        lateral: (i - 2) * 3,  // spread across the road
+        // spread across the road
+        lateral: (i - 2) * 3,
         weavePhase: Math.random() * Math.PI * 2,
         boostTimer: 0,
         finished: false,
@@ -618,7 +653,8 @@ function updateAICar(ai, dt) {
   const padHitZone = (CFG.boostPadLength / trackLength) / 2;
   for (let bp of boostPads) {
     if (Math.abs(ai.progress - bp.t) < padHitZone && ai.boostTimer <= 0) {
-      ai.boostTimer = CFG.boostDuration * 0.8; // slightly shorter AI boost
+      // slightly shorter AI boost
+      ai.boostTimer = CFG.boostDuration * 0.8;
     }
   }
   if (ai.boostTimer > 0) {
@@ -681,19 +717,23 @@ function positionSuffix(n) {
 }
 
 function checkCollisions(dt) {
-  const carLength = 8;   // car length in world units
-  const carWidth = 2.5;  // car width in world units
+  // car length in world units
+  const carLength = 8;
+  // car width in world units
+  const carWidth = 2.5;
   // Convert car length to track-progress units
   const halfLenT = (carLength / trackLength) / 2;
 
   for (let ai of aiCars) {
     // Check longitudinal overlap (track progress)
     const dProgress = Math.abs(trackProgress - ai.progress);
-    if (dProgress > halfLenT * 2) continue; // too far apart along track
+    // too far apart along track
+    if (dProgress > halfLenT * 2) continue;
 
     // Check lateral overlap
     const dLateral = Math.abs(lateralOffset - ai.lateral);
-    if (dLateral > carWidth * 2) continue; // too far apart sideways
+    // too far apart sideways
+    if (dLateral > carWidth * 2) continue;
 
     // Collision! Apply effects
     // Determine who is ahead
@@ -826,7 +866,8 @@ function setupInput() {
     const touch = e.touches[0];
     if (!touch) { touchSteer = 0; return; }
     const x = touch.clientX / innerWidth;
-    touchSteer = (x - 0.5) * 2; // -1 to 1
+    // -1 to 1
+    touchSteer = (x - 0.5) * 2;
   }
 
   // Update steer input each frame
