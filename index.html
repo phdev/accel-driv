@@ -91,6 +91,9 @@ canvas{display:block;width:100%;height:100%}
     <input type="checkbox" id="direct-steer-cb" style="width:16px;height:16px;accent-color:#ff6ec7;cursor:pointer">
     Direct gyro
   </label>
+
+  <button id="drift-btn" style="position:absolute;bottom:16px;right:16px;width:80px;height:80px;border-radius:50%;border:3px solid #ff6ec7;background:rgba(255,110,199,.15);color:#ff6ec7;font:900 14px system-ui;text-transform:uppercase;letter-spacing:1px;cursor:pointer;z-index:30;display:none;-webkit-tap-highlight-color:transparent;touch-action:none;text-shadow:0 0 8px #ff6ec7;box-shadow:0 0 16px rgba(255,110,199,.3)">DRIFT</button>
+  <div id="drift-hud" style="position:absolute;top:50px;left:16px;font:900 18px system-ui;color:#ff6ec7;text-shadow:0 0 12px rgba(255,110,199,.8);display:none">DRIFT!</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -147,6 +150,19 @@ const CFG = {
   aiWeaveAmp: 2.5,
   // weave frequency (Hz)
   aiWeaveFreq: 0.3,
+  // Drift
+  driftMinSpeed: 60,
+  driftLateralGrip: 0.55,
+  driftLongGrip: 0.95,
+  driftSpeedBleed: 0.15,
+  driftAssistGain: 0.8,
+  driftMaxAssist: 1.0,
+  driftBaseSlip: 15,
+  driftMaxSlip: 45,
+  driftKSteer: 20,
+  driftExitSnap: 0.05,
+  driftEnterSteer: 0.3,
+  driftExitSteer: 0.2,
 };
 
 // ── STATE ──
@@ -184,6 +200,11 @@ let steerInput = 0;
 let smoothYaw = 0;
 // when true, gyro tilt maps directly to lateral position instead of accumulating offset
 let directSteer = false;
+// Drift state
+let driftState = 'grip';
+let driftSign = 0;
+let driftAngle = 0;
+let driftBtnHeld = false;
 
 // Input
 let keys = {};
@@ -939,6 +960,16 @@ function getBrakeInput() {
 function setupUI() {
   $startBtn.addEventListener('click', startRace);
   $restartBtn.addEventListener('click', restartRace);
+
+  // Drift button — hold to engage
+  const $driftBtn = document.getElementById('drift-btn');
+  $driftBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    driftBtnHeld = true;
+  });
+  $driftBtn.addEventListener('pointerup', () => { driftBtnHeld = false; });
+  $driftBtn.addEventListener('pointercancel', () => { driftBtnHeld = false; });
+  $driftBtn.addEventListener('pointerleave', () => { driftBtnHeld = false; });
 }
 
 function startRace() {
@@ -969,6 +1000,7 @@ function doCountdown() {
       raceStartTime = performance.now();
       $hud.style.display = 'flex';
       $positionHud.style.display = '';
+      document.getElementById('drift-btn').style.display = '';
       if (gyroAvailable) $tiltIndicator.style.display = 'block';
     }
   }, 800);
@@ -979,6 +1011,10 @@ function finishRace() {
   $hud.style.display = 'none';
   $positionHud.style.display = 'none';
   $tiltIndicator.style.display = 'none';
+  document.getElementById('drift-btn').style.display = 'none';
+  document.getElementById('drift-hud').style.display = 'none';
+  driftState = 'grip';
+  driftAngle = 0;
   const t = raceTime;
   const min = Math.floor(t / 60);
   const sec = (t % 60).toFixed(2);
@@ -999,6 +1035,10 @@ function restartRace() {
   raceTime = 0;
   boostTimer = 0;
   playerPosition = 1;
+  driftState = 'grip';
+  driftSign = 0;
+  driftAngle = 0;
+  driftBtnHeld = false;
   for (let bp of boostPads) { bp.active = false; }
   // Reset AI cars
   for (let i = 0; i < aiCars.length; i++) {
@@ -1043,8 +1083,13 @@ function updateCarPosition(progress, lateral) {
   );
   carGroup.lookAt(lookTarget);
 
-  // Smoothly lerp car yaw into the steering direction
-  const targetYaw = -steerInput * (10 * Math.PI / 180);
+  // Smoothly lerp car yaw — use driftAngle when drifting for big sideways rotation
+  let targetYaw;
+  if (driftState === 'drift') {
+    targetYaw = -driftAngle * (Math.PI / 180);
+  } else {
+    targetYaw = -steerInput * (10 * Math.PI / 180);
+  }
   smoothYaw += (targetYaw - smoothYaw) * 0.08;
   carGroup.rotateY(smoothYaw);
 }
@@ -1108,24 +1153,70 @@ function animate(now = 0) {
 
     // Steering
     steerInput = getSteerInput();
+    const braking = getBrakeInput();
+
+    // ── DRIFT STATE MACHINE ──
+    const $driftHud = document.getElementById('drift-hud');
+    if (driftState === 'grip') {
+      // Enter drift: drift button held + steering + enough speed
+      if (driftBtnHeld && Math.abs(steerInput) > CFG.driftEnterSteer && speed > CFG.driftMinSpeed) {
+        driftState = 'drift';
+        driftSign = Math.sign(steerInput);
+        $driftHud.style.display = '';
+      }
+    } else {
+      // Exit drift: release drift button or straighten steering at low slip
+      if (!driftBtnHeld || (Math.abs(driftAngle) < 4 && Math.abs(steerInput) < CFG.driftExitSteer)) {
+        // Exit snap: small speed boost on clean exit
+        if (speed > CFG.driftMinSpeed) {
+          speed += CFG.driftExitSnap * speed;
+        }
+        driftState = 'grip';
+        driftAngle = 0;
+        driftSign = 0;
+        $driftHud.style.display = 'none';
+      }
+    }
+
+    // ── APPLY STEERING ──
     directSteer = document.getElementById('direct-steer-cb').checked;
-    if (directSteer) {
-      // Direct mode: gyro tilt maps directly to lateral position
+    if (driftState === 'drift') {
+      // Desired slip angle: base + steer influence
+      const desiredSlip = driftSign * (CFG.driftBaseSlip + CFG.driftKSteer * Math.abs(steerInput));
+      const clampedDesired = Math.max(-CFG.driftMaxSlip, Math.min(CFG.driftMaxSlip, desiredSlip));
+
+      // Assist: nudge drift angle toward desired (prevents spinout)
+      const slipErr = clampedDesired - driftAngle;
+      const yawAssist = Math.max(-CFG.driftMaxAssist, Math.min(CFG.driftMaxAssist, slipErr * CFG.driftAssistGain));
+      driftAngle += yawAssist * dt * 60;
+
+      // Reduced lateral grip during drift
+      const driftLateralMove = steerInput * CFG.steerSpeed * CFG.driftLateralGrip * dt * (speed / CFG.maxSpeed + 0.3);
+      lateralOffset += driftLateralMove;
+      lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
+    } else if (directSteer) {
       lateralOffset = steerInput * CFG.maxLateral;
     } else {
-      // Offset mode: input accumulates lateral offset over time
       lateralOffset += steerInput * CFG.steerSpeed * dt * (speed / CFG.maxSpeed + 0.3);
       lateralOffset = Math.max(-CFG.maxLateral, Math.min(CFG.maxLateral, lateralOffset));
     }
 
     // Speed: always accelerating (auto-gas)
-    const braking = getBrakeInput();
     if (braking) {
       speed -= CFG.brake * dt;
     } else {
       speed += CFG.accel * dt;
     }
     speed -= CFG.friction * dt;
+
+    // Drift speed bleed: mild drag while sliding (arcade — keeps most speed)
+    if (driftState === 'drift') {
+      const slipFactor = Math.abs(driftAngle) / CFG.driftMaxSlip;
+      speed -= CFG.driftSpeedBleed * slipFactor * speed * dt;
+      // Protect forward speed (arcade): apply longitudinal grip preservation
+      speed = Math.max(speed, speed * CFG.driftLongGrip);
+    }
+
     speed = Math.max(0, Math.min(CFG.maxSpeed, speed));
 
     // Boost pad detection — hit zone matches the visual pad length
