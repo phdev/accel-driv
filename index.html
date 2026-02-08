@@ -1172,8 +1172,20 @@ function updateCarPosition(progress, lateral) {
     freePos.z += dz;
 
     // Sample track height at nearest point for ground following
-    // Use the rail point Y as approximate ground
-    freePos.y = point.y + 0.15;
+    // Search nearby t values on the spline to find closest XZ match
+    let bestY = point.y;
+    let bestDist = (freePos.x - point.x) ** 2 + (freePos.z - point.z) ** 2;
+    const searchStep = 0.001;
+    for (let i = -30; i <= 30; i++) {
+      const st = Math.max(0, Math.min(0.9999, t + i * searchStep));
+      const sp = curve.getPointAt(st);
+      const d = (freePos.x - sp.x) ** 2 + (freePos.z - sp.z) ** 2;
+      if (d < bestDist) {
+        bestDist = d;
+        bestY = sp.y;
+      }
+    }
+    freePos.y = bestY + 0.15;
 
     carGroup.position.copy(freePos);
 
