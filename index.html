@@ -600,6 +600,82 @@ function buildCar() {
   scene.add(carGroup);
 }
 
+// ── SKID MARKS ──
+const skidMarks = [];
+const SKID_MAX = 600;
+const SKID_FADE_TIME = 3.0;
+const skidMat = new THREE.MeshBasicMaterial({
+  color: 0x222222, transparent: true, opacity: 0.7,
+  side: THREE.DoubleSide, depthWrite: false,
+});
+// Car-local wheel offsets (x = lateral, z = front/back) — scaled to the 8-unit car
+const WHEEL_OFFSETS = [
+  { x: -0.9, z: -1.6 },
+  { x:  0.9, z: -1.6 },
+  { x: -0.9, z:  1.4 },
+  { x:  0.9, z:  1.4 },
+];
+let lastSkidTime = 0;
+
+function spawnSkidMarks(trackPoint, rightVec, lateral) {
+  const now = performance.now() * 0.001;
+  // Spawn every ~16ms (60fps)
+  if (now - lastSkidTime < 0.016) return;
+  lastSkidTime = now;
+
+  const tangent = curve.getTangentAt(Math.max(0, Math.min(0.9999, trackProgress))).normalize();
+  // Build car's world-space forward and right using smoothYaw
+  const cosY = Math.cos(smoothYaw);
+  const sinY = Math.sin(smoothYaw);
+  // Car forward = tangent rotated by smoothYaw around up axis
+  const fwdX = tangent.x * cosY + tangent.z * sinY;
+  const fwdZ = -tangent.x * sinY + tangent.z * cosY;
+  const rgtX = rightVec.x * cosY + rightVec.z * sinY;
+  const rgtZ = -rightVec.x * sinY + rightVec.z * cosY;
+
+  const baseX = trackPoint.x + rightVec.x * lateral;
+  const baseY = trackPoint.y + 0.03;
+  const baseZ = trackPoint.z + rightVec.z * lateral;
+
+  for (const w of WHEEL_OFFSETS) {
+    const wx = baseX + rgtX * w.x + fwdX * w.z;
+    const wz = baseZ + rgtZ * w.x + fwdZ * w.z;
+
+    const geo = new THREE.PlaneGeometry(0.3, 0.6);
+    const mesh = new THREE.Mesh(geo, skidMat.clone());
+    mesh.rotation.x = -Math.PI / 2;
+    // Align the mark with car heading
+    mesh.rotation.z = -Math.atan2(fwdX, fwdZ) + Math.PI / 2;
+    mesh.position.set(wx, baseY, wz);
+    scene.add(mesh);
+    skidMarks.push({ mesh, born: now });
+  }
+
+  // Remove oldest marks if over limit
+  while (skidMarks.length > SKID_MAX) {
+    const old = skidMarks.shift();
+    scene.remove(old.mesh);
+    old.mesh.geometry.dispose();
+    old.mesh.material.dispose();
+  }
+}
+
+function updateSkidMarks() {
+  const now = performance.now() * 0.001;
+  for (let i = skidMarks.length - 1; i >= 0; i--) {
+    const mark = skidMarks[i];
+    const age = now - mark.born;
+    if (age > SKID_FADE_TIME) {
+      scene.remove(mark.mesh);
+      mark.mesh.geometry.dispose();
+      mark.mesh.material.dispose();
+      skidMarks.splice(i, 1);
+    } else {
+      mark.mesh.material.opacity = 0.7 * (1 - age / SKID_FADE_TIME);
+    }
+  }
+}
+
 // ── AI CARS ──
 function buildAICars() {
   aiCars = [];
@@ -1039,6 +1115,13 @@ function restartRace() {
   driftSign = 0;
   driftAngle = 0;
   driftBtnHeld = false;
+  // Clear skid marks
+  for (const mark of skidMarks) {
+    scene.remove(mark.mesh);
+    mark.mesh.geometry.dispose();
+    mark.mesh.material.dispose();
+  }
+  skidMarks.length = 0;
   for (let bp of boostPads) { bp.active = false; }
   // Reset AI cars
   for (let i = 0; i < aiCars.length; i++) {
@@ -1083,15 +1166,20 @@ function updateCarPosition(progress, lateral) {
   );
   carGroup.lookAt(lookTarget);
 
-  // Smoothly lerp car yaw — use driftAngle when drifting for big sideways rotation
+  // Smoothly lerp car yaw — clamp to 15° normally, full driftAngle (up to 45°) when drifting
   let targetYaw;
   if (driftState === 'drift') {
     targetYaw = -driftAngle * (Math.PI / 180);
   } else {
-    targetYaw = -steerInput * (10 * Math.PI / 180);
+    targetYaw = -steerInput * (15 * Math.PI / 180);
   }
   smoothYaw += (targetYaw - smoothYaw) * 0.08;
   carGroup.rotateY(smoothYaw);
+
+  // Spawn skid marks during drift
+  if (driftState === 'drift') {
+    spawnSkidMarks(point, right, lateral);
+  }
 }
 
 // ── CAMERA ──
@@ -1290,6 +1378,7 @@ function animate(now = 0) {
     updateCarPosition(trackProgress, lateralOffset);
   }
 
+  updateSkidMarks();
   updateCamera(false);
 
   // Move ground to follow camera loosely
