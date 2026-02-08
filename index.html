@@ -202,6 +202,8 @@ let smoothYaw = 0;
 let freeRoam = false;
 let freePos = new THREE.Vector3();
 let freeHeading = 0;
+let freeNearestT = 0;
+let freeSmoothY = 0;
 // Drift state
 let driftState = 'grip';
 let driftSign = 0;
@@ -1119,6 +1121,8 @@ function restartRace() {
   driftBtnHeld = false;
   freeRoam = false;
   freeHeading = 0;
+  freeNearestT = 0;
+  freeSmoothY = 0;
   freePos.set(0, 0, 0);
   // Clear skid marks
   for (const mark of skidMarks) {
@@ -1171,46 +1175,55 @@ function updateCarPosition(progress, lateral) {
     const newX = freePos.x + dx;
     const newZ = freePos.z + dz;
 
-    // Sample track height at nearest point for ground following
-    // Search nearby t values on the spline to find closest XZ match
-    let bestY = point.y;
-    let bestDist = (newX - point.x) ** 2 + (newZ - point.z) ** 2;
-    let bestT = t;
-    let bestPt = point;
-    const searchStep = 0.001;
-    for (let i = -30; i <= 30; i++) {
-      const st = Math.max(0, Math.min(0.9999, t + i * searchStep));
+    // Find nearest spline t to car's XZ using warm-start from last frame
+    // Coarse pass: search around freeNearestT
+    let bestDist = Infinity;
+    let bestT = freeNearestT;
+    const coarseStep = 0.002;
+    for (let i = -20; i <= 20; i++) {
+      const st = Math.max(0, Math.min(0.9999, freeNearestT + i * coarseStep));
       const sp = curve.getPointAt(st);
       const d = (newX - sp.x) ** 2 + (newZ - sp.z) ** 2;
-      if (d < bestDist) {
-        bestDist = d;
-        bestY = sp.y;
-        bestT = st;
-        bestPt = sp;
-      }
+      if (d < bestDist) { bestDist = d; bestT = st; }
     }
+    // Fine pass: narrow down within the coarse winner's neighborhood
+    const fineStep = 0.0002;
+    for (let i = -10; i <= 10; i++) {
+      const st = Math.max(0, Math.min(0.9999, bestT + i * fineStep));
+      const sp = curve.getPointAt(st);
+      const d = (newX - sp.x) ** 2 + (newZ - sp.z) ** 2;
+      if (d < bestDist) { bestDist = d; bestT = st; }
+    }
+    freeNearestT = bestT;
 
-    // Track-edge collision: project car position onto track cross-section
+    const bestPt = curve.getPointAt(bestT);
     const bestTangent = curve.getTangentAt(bestT).normalize();
     const bestRight = new THREE.Vector3().crossVectors(bestTangent, up).normalize();
     if (bestRight.length() < 0.1) bestRight.set(1, 0, 0);
+
+    // Track-edge collision: project onto cross-section
     const toCarX = newX - bestPt.x;
     const toCarZ = newZ - bestPt.z;
     const lateralDist = toCarX * bestRight.x + toCarZ * bestRight.z;
+    const forwardDist = toCarX * bestTangent.x + toCarZ * bestTangent.z;
     const halfW = CFG.roadWidth / 2;
 
     if (Math.abs(lateralDist) > halfW) {
-      // Push back to edge and slow down — no heading change
       const clampedLat = Math.sign(lateralDist) * halfW;
-      freePos.x = bestPt.x + bestRight.x * clampedLat;
-      freePos.z = bestPt.z + bestRight.z * clampedLat;
+      freePos.x = bestPt.x + bestRight.x * clampedLat + bestTangent.x * forwardDist;
+      freePos.z = bestPt.z + bestRight.z * clampedLat + bestTangent.z * forwardDist;
       speed *= 0.85;
     } else {
       freePos.x = newX;
       freePos.z = newZ;
     }
 
-    freePos.y = bestY + 0.15;
+    // Ground height: use tangent slope to interpolate Y from nearest spline point
+    // This gives smooth height instead of snapping to discrete samples
+    const groundY = bestPt.y + bestTangent.y * forwardDist;
+    // Smooth Y to eliminate any remaining jitter
+    freeSmoothY += (groundY - freeSmoothY) * 0.25;
+    freePos.y = freeSmoothY + 0.15;
 
     carGroup.position.copy(freePos);
 
@@ -1379,7 +1392,9 @@ function animate(now = 0) {
     // On transition to free-roam, snapshot current world position & heading
     if (freeRoam && !wasFreeRoam) {
       freePos.copy(carGroup.position);
-      const tang = curve.getTangentAt(Math.max(0, Math.min(0.9999, trackProgress))).normalize();
+      freeSmoothY = carGroup.position.y;
+      freeNearestT = Math.max(0, Math.min(0.9999, trackProgress));
+      const tang = curve.getTangentAt(freeNearestT).normalize();
       freeHeading = Math.atan2(tang.x, tang.z);
     }
     if (driftState === 'drift') {
