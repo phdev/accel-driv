@@ -212,6 +212,11 @@ let driftBtnHeld = false;
 
 // Input
 let keys = {};
+
+// External API input overrides (set via window.AccelDriv)
+let extSteer = null;
+let extBrake = null;
+let extDrift = null;
 let gyroGamma = 0;
 let gyroCal = 0;
 let gyroAvailable = false;
@@ -1038,6 +1043,9 @@ function enableGyro() {
 }
 
 function getSteerInput() {
+  // External API takes highest priority
+  if (extSteer !== null) return Math.max(-1, Math.min(1, extSteer));
+
   // Keyboard always takes priority (explicit digital input)
   if (keys['ArrowLeft'] || keys['KeyA']) return -1;
   if (keys['ArrowRight'] || keys['KeyD']) return 1;
@@ -1061,6 +1069,8 @@ function getSteerInput() {
 }
 
 function getBrakeInput() {
+  // External API takes highest priority
+  if (extBrake !== null) return extBrake ? 1 : 0;
   return (keys['ArrowDown'] || keys['KeyS'] || keys['Space']) ? 1 : 0;
 }
 
@@ -1399,6 +1409,8 @@ function animate(now = 0) {
     // Steering
     steerInput = getSteerInput();
     const braking = getBrakeInput();
+    // External drift override
+    if (extDrift !== null) driftBtnHeld = !!extDrift;
 
     // ── DRIFT STATE MACHINE ──
     const $driftHud = document.getElementById('drift-hud');
@@ -1555,6 +1567,48 @@ function animate(now = 0) {
 
   composer.render();
 }
+
+// ── EXTERNAL API ──
+// Allows a web wrapper or injected script to control the game.
+// Usage: window.AccelDriv.setSteer(-0.5)  // steer left 50%
+//        window.AccelDriv.getState()       // read game state
+window.AccelDriv = {
+  // ── Input setters ──
+  // steer: -1 (full left) to 1 (full right), or null to release
+  setSteer(v)  { extSteer = (v === null || v === undefined) ? null : Math.max(-1, Math.min(1, +v)); },
+  // brake: true/false, or null to release
+  setBrake(v)  { extBrake = (v === null || v === undefined) ? null : !!v; },
+  // drift: true/false, or null to release
+  setDrift(v)  { extDrift = (v === null || v === undefined) ? null : !!v; },
+  // Release all external overrides (return to device inputs)
+  releaseAll() { extSteer = null; extBrake = null; extDrift = null; },
+
+  // ── Game control ──
+  start()   { if (gameState === 'ready') startRace(); },
+  restart() { if (gameState === 'finished') restartRace(); },
+
+  // ── State getters ──
+  getState() {
+    return {
+      gameState,
+      speed: Math.round(speed),
+      trackProgress,
+      lateralOffset,
+      steerInput,
+      driftState,
+      driftAngle,
+      playerPosition,
+      raceTime,
+      freeRoam,
+    };
+  },
+
+  // ── Config ──
+  setFreeRoam(v) {
+    document.getElementById('free-roam-cb').checked = !!v;
+  },
+  getCFG() { return Object.assign({}, CFG); },
+};
 
 })();
 </script>
