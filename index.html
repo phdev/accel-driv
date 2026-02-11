@@ -20,18 +20,6 @@ canvas{display:block;width:100%;height:100%}
 #hud .time{font-size:18px;color:#ffd700;text-shadow:0 0 8px rgba(255,215,0,.5)}
 #hud .progress{font-size:12px;opacity:.7}
 
-/* Start screen */
-#start-screen{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 60%,#1a0040,#0a001a);z-index:20}
-#start-screen h1{font:900 2.8rem/1 system-ui;background:linear-gradient(135deg,#ff6ec7,#ffd700);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.3rem}
-#start-screen .sub{font:400 .85rem/1 system-ui;color:#a080d0;margin-bottom:2.5rem}
-#start-btn{
-  background:linear-gradient(135deg,#ff6ec7,#ff3cac);color:#fff;border:none;
-  padding:16px 48px;border-radius:14px;font:700 1.1rem system-ui;cursor:pointer;
-  box-shadow:0 4px 24px rgba(255,60,172,.4);-webkit-tap-highlight-color:transparent;
-}
-#start-btn:active{transform:scale(.96)}
-.controls-hint{font:400 .7rem/1.5 system-ui;color:#8060b0;margin-top:1.5rem;text-align:center}
-
 /* Countdown */
 #countdown{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font:900 6rem system-ui;color:#fff;text-shadow:0 0 40px #ff6ec7,0 0 80px #ff3cac;display:none;z-index:15}
 
@@ -59,12 +47,7 @@ canvas{display:block;width:100%;height:100%}
 <div id="ui-overlay">
   <div id="loading">Loading track...</div>
 
-  <div id="start-screen" style="display:none">
-    <h1>HORIZON DRIVE</h1>
-    <p class="sub">Accelerometer Racing</p>
-    <button id="start-btn">START</button>
-    <p class="controls-hint">Tilt phone to steer &bull; Auto-gas<br>Or use arrow keys on desktop</p>
-  </div>
+  <div id="start-screen" style="display:none"></div>
 
   <div id="hud">
     <div><span class="speed" id="speed-val">0</span> <span style="font-size:11px;opacity:.5">km/h</span></div>
@@ -327,7 +310,6 @@ function init() {
   setupUI();
 
   $loading.style.display = 'none';
-  $startScreen.style.display = 'flex';
   gameState = 'ready';
 
   // Position camera at start
@@ -335,6 +317,9 @@ function init() {
   updateCamera(true);
 
   animate();
+
+  // Auto-start the race (skip title screen)
+  startRace();
 }
 
 // ── SCENE SETUP ──
@@ -779,6 +764,15 @@ function buildCar() {
   const loader = new THREE.GLTFLoader();
   loader.load('base_basic_shaded.glb', (gltf) => {
     const model = gltf.scene;
+
+    // Ensure player car materials have emissive for visibility on all devices
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.material = child.material.clone();
+        child.material.emissive = new THREE.Color(0x3388ff);
+        child.material.emissiveIntensity = 0.4;
+      }
+    });
 
     // Auto-center and scale the model
     const box = new THREE.Box3().setFromObject(model);
@@ -1322,7 +1316,17 @@ function setupUI() {
 }
 
 function startRace() {
-  requestGyro();
+  // On iOS, gyro permission requires a user gesture — defer to first tap
+  if (isIOS) {
+    const iosGyroHandler = () => {
+      requestGyro();
+      gyroCal = gyroGamma;
+      document.removeEventListener('touchstart', iosGyroHandler);
+    };
+    document.addEventListener('touchstart', iosGyroHandler, { once: true });
+  } else {
+    requestGyro();
+  }
   gyroCal = gyroGamma;
   $startScreen.style.display = 'none';
   gameState = 'countdown';
@@ -1650,15 +1654,15 @@ function storeCameraMatrix() {
 
 function renderRealFrame(now) {
   storeCameraMatrix();
-  // Render scene with bloom to screen
-  composer.render();
-  // Copy the screen result to the frame gen target for later reprojection
+  // Capture scene to FG target FIRST (before bloom, avoids Android framebuffer rebind issues)
   if (FG_MODE !== 'off' && fgTargetA) {
     const target = fgWhichReal === 0 ? fgTargetA : fgTargetB;
     renderer.setRenderTarget(target);
     renderer.render(scene, camera);
     renderer.setRenderTarget(null);
   }
+  // Render scene with bloom to screen (this is the final screen output)
+  composer.render();
   fgRealCount++;
 }
 
