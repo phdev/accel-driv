@@ -294,7 +294,7 @@ function setupScene() {
   renderer.setSize(innerWidth, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.2;
+  renderer.toneMappingExposure = 1.0;
   document.body.appendChild(renderer.domElement);
 
   // Lighting
@@ -314,12 +314,12 @@ function setupScene() {
   const renderPass = new THREE.RenderPass(scene, camera);
   bloomPass = new THREE.UnrealBloomPass(
     new THREE.Vector2(innerWidth, innerHeight),
-    // bloom strength (Horizon Drive uses heavy bloom)
-    1.4,
-    // bloom radius (how far glow spreads)
-    0.6,
-    // bloom threshold (low = more things glow)
-    0.15
+    // bloom strength
+    1.0,
+    // bloom radius
+    0.1,
+    // bloom threshold
+    0.0
   );
   composer = new THREE.EffectComposer(renderer);
   composer.addPass(renderPass);
