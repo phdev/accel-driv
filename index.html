@@ -1233,9 +1233,13 @@ function setupInput() {
 function requestGyro() {
   if (typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission === 'function') {
+    // iOS 13+ requires user-gesture-triggered permission request
     DeviceOrientationEvent.requestPermission().then(state => {
       if (state === 'granted') enableGyro();
-    }).catch(() => {});
+    }).catch(err => {
+      console.warn('Gyro permission denied:', err);
+      enableGyro();
+    });
   } else {
     enableGyro();
   }
@@ -1247,14 +1251,23 @@ function enableGyro() {
   window.addEventListener('deviceorientation', e => {
     const g = e.gamma || 0;
     gyroGamma = g;
-    // Only mark gyro as available after seeing strong, consistent real tilt data
-    // Requires 20 samples averaging > 5 degrees to avoid false positives
+    // On iOS, trust the gyro immediately after permission is granted
+    // On Android, require a few samples to confirm real hardware
     if (!gyroAvailable) {
       samples++;
       sumAbs += Math.abs(g);
-      if (samples >= 20 && (sumAbs / samples) > 5) {
-        gyroAvailable = true;
-        $tiltIndicator.style.display = 'block';
+      if (isIOS) {
+        // iOS: activate after just 3 samples (permission already granted)
+        if (samples >= 3) {
+          gyroAvailable = true;
+          $tiltIndicator.style.display = 'block';
+        }
+      } else {
+        // Android: require 20 samples averaging > 5° to avoid false positives
+        if (samples >= 20 && (sumAbs / samples) > 5) {
+          gyroAvailable = true;
+          $tiltIndicator.style.display = 'block';
+        }
       }
     }
   });
