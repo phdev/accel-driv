@@ -110,6 +110,15 @@ canvas{display:block;width:100%;height:100%}
     <label style="display:flex;align-items:center;justify-content:space-between;gap:8px">
       Exposure <span style="display:flex;align-items:center;gap:4px"><input type="range" id="dbg-exposure" min="0" max="3" step="0.05" value="1" style="width:80px;accent-color:#ff6ec7;touch-action:auto"><span id="dbg-exposure-val" style="min-width:28px;text-align:right">1</span></span>
     </label>
+    <div style="border-top:1px solid rgba(255,110,199,.2);margin:2px 0"></div>
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      DPR <span style="display:flex;align-items:center;gap:4px"><input type="range" id="dbg-dpr" min="0.5" max="3" step="0.25" value="2" style="width:80px;accent-color:#ff6ec7;touch-action:auto"><span id="dbg-dpr-val" style="min-width:28px;text-align:right">2</span></span>
+    </label>
+    <div style="border-top:1px solid rgba(255,110,199,.2);margin:2px 0"></div>
+    <div style="display:flex;justify-content:space-between"><span>Real FPS</span><span id="dbg-real-fps" style="color:#33ff88">--</span></div>
+    <div style="display:flex;justify-content:space-between"><span>Display FPS</span><span id="dbg-display-fps" style="color:#33aaff">--</span></div>
+    <div style="display:flex;justify-content:space-between"><span>Synth</span><span id="dbg-synth-pct" style="color:#ff6ec7">--</span></div>
+    <div style="display:flex;justify-content:space-between"><span>Mode</span><span id="dbg-fg-mode" style="color:#ffaa00">--</span></div>
   </div>
 </div>
 
@@ -234,6 +243,34 @@ let keys = {};
 let extSteer = null;
 let extBrake = null;
 let extDrift = null;
+
+// ── FRAME GENERATION ──
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/i.test(navigator.userAgent);
+// Android: interpolate between two real frames to hit 30fps
+// iOS: extrapolate from last real frame to push toward 120fps
+const FG_MODE = isIOS ? 'extrapolate' : (isAndroid ? 'interpolate' : 'off');
+const FG_TARGET_FPS = isIOS ? 120 : 30;
+const FG_TARGET_INTERVAL = 1000 / FG_TARGET_FPS;
+
+// Frame generation render targets (created in setupScene)
+let fgTargetA = null, fgTargetB = null;
+let fgWhichReal = 0;
+// Previous camera matrices for reprojection
+let fgPrevProjView = new THREE.Matrix4();
+let fgCurrProjView = new THREE.Matrix4();
+let fgPrevProjViewB = new THREE.Matrix4();
+// Timestamps of last two real frames
+let fgRealTimeA = 0, fgRealTimeB = 0;
+// Reprojection shader + mesh (fullscreen quad)
+let fgReprojMat = null, fgQuad = null, fgScene = null, fgCamera = null;
+// FPS tracking
+let fgRealCount = 0, fgDisplayCount = 0, fgSynthCount = 0;
+let fgRealFPS = 0, fgDisplayFPS = 0, fgSynthPct = 0;
+let fgLastFPSTime = 0;
+// Last real frame render cost (ms)
+let fgLastRealCost = 16;
+
 let gyroGamma = 0;
 let gyroCal = 0;
 let gyroAvailable = false;
@@ -357,6 +394,141 @@ function setupScene() {
   wireSlider('dbg-radius',    v => { bloomPass.radius = v; });
   wireSlider('dbg-exposure',  v => { renderer.toneMappingExposure = v; });
 
+  // DPR slider
+  const dprSlider = document.getElementById('dbg-dpr');
+  const dprVal = document.getElementById('dbg-dpr-val');
+  const initDPR = Math.min(devicePixelRatio, 2);
+  dprSlider.value = initDPR;
+  dprVal.textContent = initDPR;
+  dprSlider.addEventListener('input', () => {
+    const v = parseFloat(dprSlider.value);
+    dprVal.textContent = v;
+    renderer.setPixelRatio(v);
+    renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
+    if (fgTargetA) {
+      const w = Math.round(innerWidth * v);
+      const h = Math.round(innerHeight * v);
+      fgTargetA.setSize(w, h);
+      fgTargetB.setSize(w, h);
+    }
+  });
+
+  // ── FRAME GENERATION SETUP ──
+  if (FG_MODE !== 'off') {
+    const pxr = renderer.getPixelRatio();
+    const w = Math.round(innerWidth * pxr);
+    const h = Math.round(innerHeight * pxr);
+
+    fgTargetA = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+    });
+    fgTargetB = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+    });
+
+    // Reprojection shader — warps previous frame using camera matrix delta
+    fgReprojMat = new THREE.ShaderMaterial({
+      uniforms: {
+        frameA:  { value: null },
+        frameB:  { value: null },
+        blend:   { value: 0.5 },
+        // For extrapolation: warp single frame
+        prevFrame: { value: null },
+        resolution: { value: new THREE.Vector2(w, h) },
+        // Camera reprojection matrices
+        prevProjView:  { value: new THREE.Matrix4() },
+        currProjView:  { value: new THREE.Matrix4() },
+        invPrevProjView: { value: new THREE.Matrix4() },
+        invCurrProjView: { value: new THREE.Matrix4() },
+        cameraNear: { value: camera.near },
+        cameraFar:  { value: camera.far },
+        mode: { value: FG_MODE === 'interpolate' ? 0 : 1 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        uniform sampler2D frameA;
+        uniform sampler2D frameB;
+        uniform sampler2D prevFrame;
+        uniform float blend;
+        uniform vec2 resolution;
+        uniform mat4 prevProjView;
+        uniform mat4 currProjView;
+        uniform mat4 invPrevProjView;
+        uniform mat4 invCurrProjView;
+        uniform float cameraNear;
+        uniform float cameraFar;
+        uniform int mode;
+        varying vec2 vUv;
+
+        // Reconstruct view-space Z from depth buffer value
+        float linearDepth(float d) {
+          return cameraNear * cameraFar / (cameraFar - d * (cameraFar - cameraNear));
+        }
+
+        void main() {
+          vec2 uv = vUv;
+
+          if (mode == 0) {
+            // ── INTERPOLATION (Android) ──
+            // Simple cross-fade with slight UV shift based on camera motion
+            // Compute screen-space shift from camera matrices
+            vec4 clipCenter = currProjView * invPrevProjView * vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+            vec2 uvShift = (clipCenter.xy / clipCenter.w) * 0.5 + 0.5;
+            vec2 motion = uvShift - uv;
+
+            vec2 uvFromA = uv - motion * blend;
+            vec2 uvFromB = uv + motion * (1.0 - blend);
+
+            // Clamp to valid UV range
+            uvFromA = clamp(uvFromA, 0.0, 1.0);
+            uvFromB = clamp(uvFromB, 0.0, 1.0);
+
+            vec4 colorA = texture2D(frameA, uvFromA);
+            vec4 colorB = texture2D(frameB, uvFromB);
+            gl_FragColor = mix(colorA, colorB, blend);
+          } else {
+            // ── EXTRAPOLATION (iOS) ──
+            // Warp last frame forward using camera motion
+            vec4 clipCenter = currProjView * invPrevProjView * vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+            vec2 uvWarped = (clipCenter.xy / clipCenter.w) * 0.5 + 0.5;
+            vec2 motion = uvWarped - uv;
+
+            // Extrapolate forward by blend factor
+            vec2 uvExtrap = uv + motion * blend;
+            uvExtrap = clamp(uvExtrap, 0.0, 1.0);
+
+            gl_FragColor = texture2D(prevFrame, uvExtrap);
+          }
+        }
+      `,
+      depthTest: false,
+      depthWrite: false,
+    });
+
+    const quadGeo = new THREE.PlaneGeometry(2, 2);
+    fgQuad = new THREE.Mesh(quadGeo, fgReprojMat);
+    fgScene = new THREE.Scene();
+    fgScene.add(fgQuad);
+    fgCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    document.getElementById('dbg-fg-mode').textContent =
+      FG_MODE === 'interpolate' ? 'Interp→30' : 'Extrap→120';
+  } else {
+    document.getElementById('dbg-fg-mode').textContent = 'Off (desktop)';
+  }
+
   // Prevent debug panel touches from reaching game controls
   const dbgPanel = document.getElementById('debug-panel');
   ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'pointerup'].forEach(evt => {
@@ -368,6 +540,14 @@ function setupScene() {
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
     composer.setSize(innerWidth, innerHeight);
+    if (fgTargetA) {
+      const pxr = renderer.getPixelRatio();
+      const w = Math.round(innerWidth * pxr);
+      const h = Math.round(innerHeight * pxr);
+      fgTargetA.setSize(w, h);
+      fgTargetB.setSize(w, h);
+      fgReprojMat.uniforms.resolution.value.set(w, h);
+    }
   });
 }
 
@@ -1433,22 +1613,117 @@ function updateCamera(instant) {
 // ── GAME LOOP ──
 let lastTime = 0;
 let frameDt = 0;
+let fgLastRealTime = 0;
+
+function updateFPSCounters(now) {
+  if (now - fgLastFPSTime >= 1000) {
+    fgRealFPS = fgRealCount;
+    fgDisplayFPS = fgDisplayCount;
+    fgSynthPct = fgDisplayCount > 0 ? Math.round((fgSynthCount / fgDisplayCount) * 100) : 0;
+    fgRealCount = 0;
+    fgDisplayCount = 0;
+    fgSynthCount = 0;
+    fgLastFPSTime = now;
+    document.getElementById('dbg-real-fps').textContent = fgRealFPS;
+    document.getElementById('dbg-display-fps').textContent = fgDisplayFPS;
+    document.getElementById('dbg-synth-pct').textContent = fgSynthPct + '%';
+  }
+}
+
+function storeCameraMatrix() {
+  fgPrevProjView.copy(fgCurrProjView);
+  fgCurrProjView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+}
+
+function renderRealFrame(now) {
+  storeCameraMatrix();
+  // Render scene with bloom to screen
+  composer.render();
+  // Copy the screen result to the frame gen target for later reprojection
+  if (FG_MODE !== 'off' && fgTargetA) {
+    const target = fgWhichReal === 0 ? fgTargetA : fgTargetB;
+    renderer.setRenderTarget(target);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+  }
+  fgRealCount++;
+}
+
+function renderSynthFrame(now) {
+  const u = fgReprojMat.uniforms;
+
+  if (FG_MODE === 'interpolate') {
+    // Interpolation: blend between frame A and B
+    const realA = fgWhichReal === 0 ? fgTargetB : fgTargetA;
+    const realB = fgWhichReal === 0 ? fgTargetA : fgTargetB;
+    u.frameA.value = realA.texture;
+    u.frameB.value = realB.texture;
+    // Compute blend factor based on timing
+    const span = fgRealTimeB - fgRealTimeA;
+    u.blend.value = span > 0 ? Math.min(1, (now - fgRealTimeA) / span) : 0.5;
+    u.prevProjView.value.copy(fgPrevProjViewB);
+    u.currProjView.value.copy(fgCurrProjView);
+    u.invPrevProjView.value.copy(fgPrevProjViewB).invert();
+    u.invCurrProjView.value.copy(fgCurrProjView).invert();
+  } else {
+    // Extrapolation: warp last real frame forward
+    const lastReal = fgWhichReal === 0 ? fgTargetA : fgTargetB;
+    u.prevFrame.value = lastReal.texture;
+    const timeSinceReal = now - fgRealTimeB;
+    const realInterval = fgRealTimeB - fgRealTimeA;
+    u.blend.value = realInterval > 0 ? Math.min(2, timeSinceReal / realInterval) : 1.0;
+    u.prevProjView.value.copy(fgPrevProjView);
+    u.currProjView.value.copy(fgCurrProjView);
+    u.invPrevProjView.value.copy(fgPrevProjView).invert();
+    u.invCurrProjView.value.copy(fgCurrProjView).invert();
+  }
+
+  u.mode.value = FG_MODE === 'interpolate' ? 0 : 1;
+  renderer.setRenderTarget(null);
+  renderer.render(fgScene, fgCamera);
+  fgSynthCount++;
+}
+
 function animate(now = 0) {
   requestAnimationFrame(animate);
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   frameDt = dt;
   lastTime = now;
 
-  if (gameState === 'racing') {
-    // Timing
-    raceTime = (performance.now() - raceStartTime) / 1000;
-    $timeVal.textContent = formatTime(raceTime);
+  fgDisplayCount++;
+  updateFPSCounters(now);
 
-    // Steering
-    steerInput = getSteerInput();
-    const braking = getBrakeInput();
-    // External drift override
-    if (extDrift !== null) driftBtnHeld = !!extDrift;
+  // Decide: real frame or synth frame
+  const timeSinceReal = now - fgLastRealTime;
+  let doReal = true;
+
+  if (FG_MODE === 'interpolate') {
+    // Android: render real if we have budget, or if we've never rendered two frames
+    // Target: real frames at 15-30fps, synth fills gaps to 30fps
+    const needsReal = timeSinceReal >= (fgLastRealCost * 1.1 + 2) || fgRealTimeA === 0 || fgRealTimeB === 0;
+    const synthPossible = fgRealTimeA > 0 && fgRealTimeB > 0 && timeSinceReal < 80;
+    doReal = needsReal || !synthPossible;
+  } else if (FG_MODE === 'extrapolate') {
+    // iOS: render real frames as fast as the scene allows, synth fills to 120fps
+    // If last real frame was expensive, don't render another one too soon
+    const minRealGap = Math.max(fgLastRealCost * 1.05, 8); // at least 8ms between reals
+    doReal = timeSinceReal >= minRealGap || fgRealTimeB === 0;
+  }
+
+  if (doReal || FG_MODE === 'off') {
+    // ── REAL FRAME ──
+    const t0 = performance.now();
+
+    if (gameState === 'racing') {
+      // Timing
+      raceTime = (performance.now() - raceStartTime) / 1000;
+      $timeVal.textContent = formatTime(raceTime);
+
+      // Steering
+      steerInput = getSteerInput();
+      const braking = getBrakeInput();
+      // External drift override
+      if (extDrift !== null) driftBtnHeld = !!extDrift;
 
     // ── DRIFT STATE MACHINE ──
     const $driftHud = document.getElementById('drift-hud');
@@ -1594,16 +1869,46 @@ function animate(now = 0) {
     updateCarPosition(trackProgress, lateralOffset);
   }
 
-  updateSkidMarks();
-  updateCamera(false);
+    updateSkidMarks();
+    updateCamera(false);
 
-  // Move ground to follow camera loosely
-  if (groundMesh) {
-    groundMesh.position.x = camera.position.x;
-    groundMesh.position.z = camera.position.z;
+    // Move ground to follow camera loosely
+    if (groundMesh) {
+      groundMesh.position.x = camera.position.x;
+      groundMesh.position.z = camera.position.z;
+    }
+
+    // Render the real frame
+    renderRealFrame(now);
+
+    // Update frame gen bookkeeping
+    fgPrevProjViewB.copy(fgPrevProjView);
+    fgRealTimeA = fgRealTimeB;
+    fgRealTimeB = now;
+    fgWhichReal = 1 - fgWhichReal;
+    fgLastRealTime = now;
+    fgLastRealCost = performance.now() - t0;
+
+  } else {
+    // ── SYNTHESIZED FRAME ──
+    // Still update camera for extrapolation (predict where camera will be)
+    if (FG_MODE === 'extrapolate' && gameState === 'racing') {
+      // Micro-step game state forward for camera prediction
+      const microDt = dt;
+      const effectiveSpeed = boostTimer > 0 ? Math.max(speed, CFG.boostSpeed) : speed;
+      const microProgress = (effectiveSpeed / 3.6 * microDt) / trackLength;
+      const predProgress = Math.min(0.9999, trackProgress + microProgress);
+      updateCarPosition(predProgress, lateralOffset);
+      updateCamera(false);
+      if (groundMesh) {
+        groundMesh.position.x = camera.position.x;
+        groundMesh.position.z = camera.position.z;
+      }
+      storeCameraMatrix();
+    }
+
+    renderSynthFrame(now);
   }
-
-  composer.render();
 }
 
 // ── EXTERNAL API ──
@@ -1638,6 +1943,7 @@ window.AccelDriv = {
       playerPosition,
       raceTime,
       freeRoam,
+      frameGen: { mode: FG_MODE, realFPS: fgRealFPS, displayFPS: fgDisplayFPS, synthPct: fgSynthPct },
     };
   },
 
