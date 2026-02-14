@@ -57,6 +57,12 @@ canvas{display:block;width:100%;height:100%}
   </div>
   <div id="position-hud" style="position:absolute;top:50px;right:16px;font:900 28px system-ui;color:#ffd700;text-shadow:0 0 12px rgba(255,215,0,.6);display:none"><span id="pos-num">1</span><span id="pos-suffix" style="font-size:14px;opacity:.7">st</span><span style="font-size:12px;opacity:.5;margin-left:4px">/ 6</span></div>
 
+  <div id="xp-hud" style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);text-align:center;font:900 system-ui;display:none;pointer-events:none">
+    <div id="xp-multi" style="font-size:14px;color:#ff6ec7;text-shadow:0 0 8px rgba(255,110,199,.6);margin-bottom:2px">x1</div>
+    <div id="xp-val" style="font-size:22px;color:#fff;text-shadow:0 0 12px rgba(255,255,255,.4)">0 <span style="font-size:12px;opacity:.6">XP</span></div>
+    <div id="xp-popup" style="font-size:16px;color:#ffd700;text-shadow:0 0 10px rgba(255,215,0,.6);opacity:0;transition:opacity .15s"></div>
+  </div>
+
   <div id="countdown"></div>
 
   <div id="finish-screen">
@@ -218,6 +224,12 @@ let driftState = 'grip';
 let driftSign = 0;
 let driftAngle = 0;
 let driftBtnHeld = false;
+
+// XP system
+let xpTotal = 0;
+let xpMultiplier = 1;
+let xpLastActionTime = 0;
+const XP_MULTI_TIMEOUT = 3.0;
 
 // Input
 let keys = {};
@@ -1086,6 +1098,7 @@ function checkCollisions(dt) {
     if (dLateral > carWidth * 2) continue;
 
     // Collision! Apply effects
+    resetMultiplier();
     // Determine who is ahead
     if (trackProgress > ai.progress) {
       // Player is ahead — slow AI, slight push forward for player
@@ -1299,6 +1312,55 @@ function getBrakeInput() {
   return (keys['ArrowDown'] || keys['KeyS'] || keys['Space']) ? 1 : 0;
 }
 
+// ── XP SYSTEM ──
+let xpPopupTimer = 0;
+const $xpHud = document.getElementById('xp-hud');
+const $xpVal = document.getElementById('xp-val');
+const $xpMulti = document.getElementById('xp-multi');
+const $xpPopup = document.getElementById('xp-popup');
+
+function awardXP(amount, label) {
+  const now = performance.now() / 1000;
+  const earned = Math.round(amount * xpMultiplier);
+  xpTotal += earned;
+  xpLastActionTime = now;
+  // Only bump multiplier for discrete events (not continuous drift)
+  if (label) {
+    xpMultiplier++;
+    // Show popup for discrete events
+    $xpPopup.textContent = '+' + earned + ' ' + label;
+    $xpPopup.style.opacity = '1';
+    xpPopupTimer = 0.8;
+  }
+  updateXPHud();
+}
+
+function resetMultiplier() {
+  xpMultiplier = 1;
+  updateXPHud();
+}
+
+function updateXPHud() {
+  $xpVal.innerHTML = Math.round(xpTotal) + ' <span style="font-size:12px;opacity:.6">XP</span>';
+  $xpMulti.textContent = 'x' + xpMultiplier;
+  $xpMulti.style.color = xpMultiplier >= 5 ? '#ffd700' : xpMultiplier >= 3 ? '#ff6ec7' : 'rgba(255,110,199,.7)';
+}
+
+function updateXPTimers(dt) {
+  const now = performance.now() / 1000;
+  // Multiplier timeout
+  if (xpMultiplier > 1 && (now - xpLastActionTime) >= XP_MULTI_TIMEOUT) {
+    resetMultiplier();
+  }
+  // Popup fade
+  if (xpPopupTimer > 0) {
+    xpPopupTimer -= dt;
+    if (xpPopupTimer <= 0) {
+      $xpPopup.style.opacity = '0';
+    }
+  }
+}
+
 // ── UI ──
 function setupUI() {
   $startBtn.addEventListener('click', startRace);
@@ -1353,6 +1415,7 @@ function doCountdown() {
       raceStartTime = performance.now();
       $hud.style.display = 'flex';
       $positionHud.style.display = '';
+      $xpHud.style.display = '';
       document.getElementById('drift-btn').style.display = '';
       if (gyroAvailable) $tiltIndicator.style.display = 'block';
     }
@@ -1363,6 +1426,7 @@ function finishRace() {
   gameState = 'finished';
   $hud.style.display = 'none';
   $positionHud.style.display = 'none';
+  $xpHud.style.display = 'none';
   $tiltIndicator.style.display = 'none';
   document.getElementById('drift-btn').style.display = 'none';
   document.getElementById('drift-hud').style.display = 'none';
@@ -1372,10 +1436,11 @@ function finishRace() {
   const min = Math.floor(t / 60);
   const sec = (t % 60).toFixed(2);
   $finalTime.textContent = min + ':' + (sec < 10 ? '0' : '') + sec;
-  // Show final position
+  // Show final position + XP
   const pos = calcPosition();
   document.querySelector('#finish-screen .label').textContent =
-    'You finished ' + pos + positionSuffix(pos) + ' out of ' + (CFG.aiCount + 1);
+    'You finished ' + pos + positionSuffix(pos) + ' out of ' + (CFG.aiCount + 1) +
+    '  —  ' + Math.round(xpTotal) + ' XP';
   $finishScreen.style.display = 'flex';
 }
 
@@ -1397,6 +1462,11 @@ function restartRace() {
   freeNearestT = 0;
   freeSmoothY = 0;
   freePos.set(0, 0, 0);
+  // Reset XP
+  xpTotal = 0;
+  xpMultiplier = 1;
+  xpLastActionTime = 0;
+  updateXPHud();
   // Clear skid marks
   for (const strip of skidStrips) {
     scene.remove(strip.mesh);
@@ -1487,6 +1557,7 @@ function updateCarPosition(progress, lateral) {
       freePos.x = bestPt.x + bestRight.x * clampedLat + bestTangent.x * forwardDist;
       freePos.z = bestPt.z + bestRight.z * clampedLat + bestTangent.z * forwardDist;
       speed *= 0.85;
+      resetMultiplier();
     } else {
       freePos.x = newX;
       freePos.z = newZ;
@@ -1815,6 +1886,9 @@ function animate(now = 0) {
       speed -= CFG.driftSpeedBleed * slipFactor * speed * dt;
       // Protect forward speed (arcade): apply longitudinal grip preservation
       speed = Math.max(speed, speed * CFG.driftLongGrip);
+      // XP: accumulate during drift (scales with slip angle and speed)
+      const driftXPRate = 30 * slipFactor * (speed / CFG.maxSpeed + 0.2);
+      awardXP(driftXPRate * dt, '');
     }
 
     speed = Math.max(0, Math.min(CFG.maxSpeed, speed));
@@ -1825,6 +1899,7 @@ function animate(now = 0) {
       if (Math.abs(trackProgress - bp.t) < padHitZone && !bp.active) {
         bp.active = true;
         boostTimer = CFG.boostDuration;
+        awardXP(200, 'BOOST');
       }
     }
     // Reset active flag once car passes through
@@ -1854,6 +1929,9 @@ function animate(now = 0) {
     const metersPerSec = effectiveSpeed / 3.6;
     trackProgress += (metersPerSec * dt) / trackLength;
 
+    // Snapshot which AI cars are ahead (for overtake XP)
+    const wasAhead = aiCars.map(ai => ai.progress > trackProgress);
+
     // Update AI cars
     for (let ai of aiCars) {
       updateAICar(ai, dt);
@@ -1861,6 +1939,13 @@ function animate(now = 0) {
 
     // Check collisions between player and AI
     checkCollisions(dt);
+
+    // XP: detect overtakes (AI was ahead, now behind)
+    for (let i = 0; i < aiCars.length; i++) {
+      if (wasAhead[i] && aiCars[i].progress <= trackProgress) {
+        awardXP(200, 'PASS');
+      }
+    }
 
     // Update position
     playerPosition = calcPosition();
@@ -1870,6 +1955,9 @@ function animate(now = 0) {
     // Update HUD
     $speedVal.textContent = Math.round(speed);
     $progressVal.textContent = Math.round(trackProgress * 100) + '%';
+
+    // Update XP system
+    updateXPTimers(dt);
 
     // Update tilt indicator
     if (gyroAvailable) {
@@ -1960,6 +2048,7 @@ window.AccelDriv = {
       playerPosition,
       raceTime,
       freeRoam,
+      xp: { total: Math.round(xpTotal), multiplier: xpMultiplier },
       frameGen: { mode: FG_MODE, realFPS: fgRealFPS, displayFPS: fgDisplayFPS, synthPct: fgSynthPct },
     };
   },
