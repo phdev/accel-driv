@@ -47,8 +47,6 @@ canvas{display:block;width:100%;height:100%}
 <div id="ui-overlay">
   <div id="loading">Loading track...</div>
 
-  <div id="start-screen" style="display:none"></div>
-
   <div id="hud">
     <div><span class="speed" id="speed-val">0</span> <span style="font-size:11px;opacity:.5">km/h</span></div>
     <div class="time" id="time-val">0:00.0</div>
@@ -274,8 +272,6 @@ const DEADZONE = 3;
 
 // DOM
 const $loading = document.getElementById('loading');
-const $startScreen = document.getElementById('start-screen');
-const $startBtn = document.getElementById('start-btn');
 const $hud = document.getElementById('hud');
 const $speedVal = document.getElementById('speed-val');
 const $timeVal = document.getElementById('time-val');
@@ -1363,7 +1359,6 @@ function updateXPTimers(dt) {
 
 // ── UI ──
 function setupUI() {
-  $startBtn.addEventListener('click', startRace);
   $restartBtn.addEventListener('click', restartRace);
 
   // Drift button — hold to engage
@@ -1390,7 +1385,6 @@ function startRace() {
     requestGyro();
   }
   gyroCal = gyroGamma;
-  $startScreen.style.display = 'none';
   gameState = 'countdown';
   doCountdown();
 }
