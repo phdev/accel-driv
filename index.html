@@ -55,10 +55,10 @@ canvas{display:block;width:100%;height:100%}
   </div>
   <div id="position-hud" style="position:absolute;top:50px;right:16px;font:900 28px system-ui;color:#ffd700;text-shadow:0 0 12px rgba(255,215,0,.6);display:none"><span id="pos-num">1</span><span id="pos-suffix" style="font-size:14px;opacity:.7">st</span><span style="font-size:12px;opacity:.5;margin-left:4px">/ 6</span></div>
 
-  <div id="xp-hud" style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);text-align:center;font:900 system-ui;display:none;pointer-events:none">
-    <div id="xp-multi" style="font-size:14px;color:#ff6ec7;text-shadow:0 0 8px rgba(255,110,199,.6);margin-bottom:2px">x1</div>
-    <div id="xp-val" style="font-size:22px;color:#fff;text-shadow:0 0 12px rgba(255,255,255,.4)">0 <span style="font-size:12px;opacity:.6">XP</span></div>
-    <div id="xp-popup" style="font-size:16px;color:#ffd700;text-shadow:0 0 10px rgba(255,215,0,.6);opacity:0;transition:opacity .15s"></div>
+  <div id="xp-hud" style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);text-align:center;font:900 14px/1 system-ui,sans-serif;display:none;pointer-events:none">
+    <div id="xp-multi" style="font:900 14px/1 system-ui,sans-serif;color:#ff6ec7;text-shadow:0 0 8px rgba(255,110,199,.6);margin-bottom:2px">x1</div>
+    <div id="xp-val" style="font:900 22px/1 system-ui,sans-serif;color:#fff;text-shadow:0 0 12px rgba(255,255,255,.4)">0 <span style="font-size:12px;opacity:.6">XP</span></div>
+    <div id="xp-popup" style="font:700 16px/1 system-ui,sans-serif;color:#ffd700;text-shadow:0 0 10px rgba(255,215,0,.6);opacity:0;transition:opacity .15s"></div>
   </div>
 
   <div id="countdown"></div>
@@ -257,6 +257,8 @@ let fgPrevProjViewB = new THREE.Matrix4();
 let fgRealTimeA = 0, fgRealTimeB = 0;
 // Reprojection shader + mesh (fullscreen quad)
 let fgReprojMat = null, fgQuad = null, fgScene = null, fgCamera = null;
+// Copy shader for blitting bloomed frames to FG targets
+let fgCopyMat = null;
 // FPS tracking
 let fgRealCount = 0, fgDisplayCount = 0, fgSynthCount = 0;
 let fgRealFPS = 0, fgDisplayFPS = 0, fgSynthPct = 0;
@@ -508,6 +510,14 @@ function setupScene() {
       `,
       depthTest: false,
       depthWrite: false,
+    });
+
+    // Simple copy shader for blitting bloomed frames to FG targets
+    fgCopyMat = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main() { gl_FragColor = texture2D(tDiffuse, vUv); }',
+      depthTest: false, depthWrite: false,
     });
 
     const quadGeo = new THREE.PlaneGeometry(2, 2);
@@ -1719,15 +1729,27 @@ function storeCameraMatrix() {
 
 function renderRealFrame(now) {
   storeCameraMatrix();
-  // Capture scene to FG target FIRST (before bloom, avoids Android framebuffer rebind issues)
+
   if (FG_MODE !== 'off' && fgTargetA) {
     const target = fgWhichReal === 0 ? fgTargetA : fgTargetB;
+    // Render bloom to composer's internal buffer (not screen)
+    const lastPass = composer.passes[composer.passes.length - 1];
+    lastPass.renderToScreen = false;
+    composer.render();
+    lastPass.renderToScreen = true;
+    // Blit bloomed result to FG target
+    fgCopyMat.uniforms.tDiffuse.value = composer.readBuffer.texture;
+    fgQuad.material = fgCopyMat;
     renderer.setRenderTarget(target);
-    renderer.render(scene, camera);
+    renderer.render(fgScene, fgCamera);
+    // Blit bloomed result to screen
     renderer.setRenderTarget(null);
+    renderer.render(fgScene, fgCamera);
+    // Restore reprojection material for synth frames
+    fgQuad.material = fgReprojMat;
+  } else {
+    composer.render();
   }
-  // Render scene with bloom to screen (this is the final screen output)
-  composer.render();
   fgRealCount++;
 }
 
