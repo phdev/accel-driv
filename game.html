@@ -106,15 +106,14 @@ canvas{display:block;width:100%;height:100%}
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+THREE.ColorManagement.enabled = false;
 (function(){
 'use strict';
 
@@ -314,26 +313,27 @@ function setupScene() {
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setSize(innerWidth, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   document.body.appendChild(renderer.domElement);
 
   // Lighting
-  const ambient = new THREE.AmbientLight(0x4040a0, 0.4);
+  const ambient = new THREE.AmbientLight(0x4040a0, 1.26);
   scene.add(ambient);
 
-  const dirLight = new THREE.DirectionalLight(0xffeedd, 0.8);
+  const dirLight = new THREE.DirectionalLight(0xffeedd, 2.51);
   dirLight.position.set(50, 100, 50);
   scene.add(dirLight);
 
   // Neon glow from below
-  const underLight = new THREE.PointLight(0xff6ec7, 0.6, 100);
+  const underLight = new THREE.PointLight(0xff6ec7, 1.88, 100, 1);
   underLight.position.set(0, -5, 0);
   scene.add(underLight);
 
   // ── BLOOM POST-PROCESSING ──
-  const renderPass = new THREE.RenderPass(scene, camera);
-  bloomPass = new THREE.UnrealBloomPass(
+  const renderPass = new RenderPass(scene, camera);
+  bloomPass = new UnrealBloomPass(
     new THREE.Vector2(innerWidth, innerHeight),
     // bloom strength
     1.0,
@@ -342,7 +342,7 @@ function setupScene() {
     // bloom threshold
     0.0
   );
-  composer = new THREE.EffectComposer(renderer);
+  composer = new EffectComposer(renderer);
   composer.addPass(renderPass);
   composer.addPass(bloomPass);
 
@@ -614,7 +614,7 @@ function buildCar() {
   carGroup = new THREE.Group();
 
   // Load GLB model
-  const loader = new THREE.GLTFLoader();
+  const loader = new GLTFLoader();
   loader.load('base_basic_shaded.glb', (gltf) => {
     const model = gltf.scene;
 
@@ -650,14 +650,14 @@ function buildCar() {
   });
 
   // Headlight beams
-  const beamLight = new THREE.SpotLight(0xffffff, 2.0, 80, Math.PI/6, 0.5);
+  const beamLight = new THREE.SpotLight(0xffffff, 6.28, 80, Math.PI/6, 0.5, 1);
   beamLight.position.set(0, 0.5, 2);
   beamLight.target.position.set(0, 0, 20);
   carGroup.add(beamLight);
   carGroup.add(beamLight.target);
 
   // Neon underglow
-  const underGlow = new THREE.PointLight(0xff6ec7, 2.5, 12);
+  const underGlow = new THREE.PointLight(0xff6ec7, 7.85, 12, 1);
   underGlow.position.set(0, -0.1, 0);
   carGroup.add(underGlow);
 
@@ -781,7 +781,7 @@ function buildAICars() {
   const aiColors = [0xff3333, 0x33aaff, 0xffaa00, 0xaa33ff, 0x33ff88];
 
   // Load the same GLB model used by the player
-  const loader = new THREE.GLTFLoader();
+  const loader = new GLTFLoader();
   loader.load('base_basic_shaded.glb', (gltf) => {
     for (let i = 0; i < CFG.aiCount; i++) {
       const group = new THREE.Group();
@@ -815,7 +815,7 @@ function buildAICars() {
       group.add(model);
 
       // Neon underglow matching car color
-      const ugLight = new THREE.PointLight(aiColors[i % aiColors.length], 1.5, 8);
+      const ugLight = new THREE.PointLight(aiColors[i % aiColors.length], 4.71, 8, 1);
       ugLight.position.set(0, -0.1, 0);
       group.add(ugLight);
 
