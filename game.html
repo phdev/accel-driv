@@ -293,8 +293,13 @@ function init() {
   const points = [];
   for (let i = 0; i < trackData.length; i += 3) {
     const p = trackData[i][0];
-    // Swap Y/Z for Three.js coordinate system (Y up)
-    points.push(new THREE.Vector3(p[0], p[2], -p[1]));
+    if (inIframe) {
+      // Editor already uses Three.js Y-up coordinates — use as-is
+      points.push(new THREE.Vector3(p[0], p[1], p[2]));
+    } else {
+      // Standalone: track.json uses Z-up convention — swap Y/Z
+      points.push(new THREE.Vector3(p[0], p[2], -p[1]));
+    }
   }
   curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
   trackLength = curve.getLength();
@@ -306,15 +311,6 @@ function init() {
   buildEnvironment();
   setupInput();
   setupUI();
-
-  // Iframe debug: show diagnostic info
-  if (inIframe) {
-    const dbg = document.createElement('div');
-    dbg.style.cssText = 'position:fixed;bottom:60px;right:8px;background:rgba(0,0,0,.85);color:#0f0;font:11px monospace;padding:6px 10px;z-index:999;border-radius:4px;pointer-events:none';
-    const pt0 = curve.getPointAt(0);
-    dbg.textContent = 'pts:'+points.length+' len:'+Math.round(trackLength)+' cam:'+Math.round(camera.position.x)+','+Math.round(camera.position.y)+','+Math.round(camera.position.z)+' t0:'+Math.round(pt0.x)+','+Math.round(pt0.y)+','+Math.round(pt0.z)+' canvas:'+renderer.domElement.width+'x'+renderer.domElement.height+' children:'+scene.children.length;
-    document.body.appendChild(dbg);
-  }
 
   $loading.style.display = 'none';
   gameState = 'ready';
@@ -1010,7 +1006,9 @@ function buildEnvironment() {
   });
   groundMesh = new THREE.Mesh(groundGeo, groundMat);
   groundMesh.rotation.x = -Math.PI/2;
-  groundMesh.position.y = -2;
+  // Position ground below the track start
+  const groundY = curve.getPointAt(0).y - 2;
+  groundMesh.position.y = groundY;
   scene.add(groundMesh);
 
   // Grid lines on ground
@@ -1514,7 +1512,7 @@ function updateCamera(instant) {
     const camBaseY = Math.max(freePos.y, camBehindPt.y);
     idealPos = new THREE.Vector3(
       freePos.x + behindX,
-      Math.max(camBaseY + CFG.cameraHeight, 0),
+      camBaseY + CFG.cameraHeight,
       freePos.z + behindZ
     );
     // Look at the car, not ahead of it
@@ -1541,8 +1539,7 @@ function updateCamera(instant) {
 
     idealPos = new THREE.Vector3(
       point.x - tangent.x * CFG.cameraDist + right.x * lateralOffset * 0.5,
-      // Ensure camera never goes below ground plane (-2) + minimum clearance
-      Math.max(camBaseY + CFG.cameraHeight, -2 + 2),
+      camBaseY + CFG.cameraHeight,
       point.z - tangent.z * CFG.cameraDist + right.z * lateralOffset * 0.5
     );
 
@@ -1767,7 +1764,10 @@ function animate(now = 0) {
 
   // Move ground to follow camera loosely
   if (groundMesh) {
+    const t = Math.max(0, Math.min(0.9999, trackProgress));
+    const gPt = curve.getPointAt(t);
     groundMesh.position.x = camera.position.x;
+    groundMesh.position.y = gPt.y - 2;
     groundMesh.position.z = camera.position.z;
   }
 
