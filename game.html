@@ -260,15 +260,28 @@ const $posNum = document.getElementById('pos-num');
 const $posSuffix = document.getElementById('pos-suffix');
 
 // ── LOAD TRACK ──
-fetch('track.json')
-  .then(r => r.json())
-  .then(data => {
-    trackData = data;
-    init();
-  })
-  .catch(e => {
-    $loading.textContent = 'Failed to load track: ' + e.message;
+if (window.parent !== window) {
+  // Running inside editor iframe — receive track data via postMessage
+  window.addEventListener('message', function onMsg(e) {
+    if (e.data && e.data.type === 'trackData') {
+      window.removeEventListener('message', onMsg);
+      trackData = e.data.track;
+      init();
+    }
   });
+  // Forward ESC to parent so editor can close the overlay
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') window.parent.postMessage({ type: 'gameExit' }, '*');
+  });
+  // Tell parent we're ready to receive track data
+  window.parent.postMessage({ type: 'gameReady' }, '*');
+} else {
+  // Running standalone — fetch track.json
+  fetch('track.json')
+    .then(r => r.json())
+    .then(data => { trackData = data; init(); })
+    .catch(e => { $loading.textContent = 'Failed to load track: ' + e.message; });
+}
 
 function init() {
   // Build Three.js curve from track data
