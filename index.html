@@ -12,8 +12,9 @@
   #app{display:flex;height:100dvh;width:100vw}
   #sidebar{width:330px;min-width:330px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:10;overflow-y:auto;overflow-x:hidden}
   #sidebar::-webkit-scrollbar{width:4px}#sidebar::-webkit-scrollbar-track{background:transparent}#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-  .drawer-handle{display:none;width:100%;padding:10px 0 6px;text-align:center;cursor:grab;flex-shrink:0}
-  .drawer-handle .bar{width:40px;height:4px;background:var(--text-dim);border-radius:2px;margin:0 auto}
+  .drawer-toggle{display:none;width:100%;padding:8px 0;text-align:center;cursor:pointer;flex-shrink:0;-webkit-user-select:none;user-select:none}
+  .drawer-toggle span{display:inline-block;font-size:18px;color:var(--text-dim);transition:transform .3s}
+  #sidebar.open .drawer-toggle span{transform:rotate(180deg)}
   .sidebar-header{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
   .sidebar-header h1{font-size:15px;font-weight:700;letter-spacing:-0.5px;color:var(--accent);font-family:'JetBrains Mono',monospace}
   .sidebar-header .subtitle{font-size:10px;color:var(--text-dim);font-family:'JetBrains Mono',monospace}
@@ -63,7 +64,7 @@
     #app{flex-direction:column}
     #sidebar{position:fixed;bottom:0;left:0;right:0;width:100%;min-width:100%;height:var(--drawer-height);border-right:none;border-top:1px solid var(--border);border-radius:16px 16px 0 0;z-index:50;transform:translateY(calc(var(--drawer-height) - 48px));transition:transform .35s cubic-bezier(.4,0,.2,1);will-change:transform}
     #sidebar.open{transform:translateY(0)}
-    .drawer-handle{display:block}
+    .drawer-toggle{display:block}
     #viewport{height:100dvh;width:100vw;padding-bottom:48px}
     #mobile-toolbar{display:flex}#help-overlay{display:none}
     .btn{padding:9px 10px;font-size:12px;min-height:38px}.mode-tab{padding:8px 4px;font-size:12px;min-height:36px}
@@ -76,7 +77,7 @@
 <body>
 <div id="app">
   <div id="sidebar">
-    <div class="drawer-handle" id="drawer-handle"><div class="bar"></div></div>
+    <div class="drawer-toggle" onclick="toggleDrawer()"><span>&#9650;</span></div>
     <div class="sidebar-header"><div><h1>ACCEL-DRIV</h1><div class="subtitle">track suite</div></div></div>
     <div class="top-tabs">
       <button class="top-tab active" data-tab="track" onclick="switchTab('track')">Track</button>
@@ -1148,13 +1149,7 @@ if (ssc) ssc.addEventListener('input', applySplatSettings);
 // ============================================================
 // DRAWER (mobile)
 // ============================================================
-function setupDrawer(){
-var handle=document.getElementById('drawer-handle');if(!handle)return;
-var startY=0,startTranslate=0;var sb=document.getElementById('sidebar');
-handle.addEventListener('touchstart',function(e){e.preventDefault();startY=e.touches[0].clientY;var st=getComputedStyle(sb).transform;var m=st.match(/matrix.*\((.+)\)/);startTranslate=m?parseFloat(m[1].split(',').pop()):0},{passive:false});
-handle.addEventListener('touchmove',function(e){e.preventDefault();var dy=e.touches[0].clientY-startY;var h=sb.offsetHeight;var newT=Math.max(0,Math.min(h-48,startTranslate+dy));sb.style.transition='none';sb.style.transform='translateY('+newT+'px)'},{passive:false});
-handle.addEventListener('touchend',function(e){e.preventDefault();sb.style.transition='';var h=sb.offsetHeight;var curr=parseFloat((sb.style.transform.match(/translateY\((.+)px\)/)||['','0'])[1]);if(curr<(h-48)*.6){sb.classList.add('open');drawerOpen=true}else{sb.classList.remove('open');drawerOpen=false}sb.style.transform=''},{passive:false});
-}
+function setupDrawer(){}
 function toggleDrawer(){var sb=document.getElementById('sidebar');drawerOpen=!drawerOpen;sb.classList.toggle('open',drawerOpen)}
 
 // ============================================================
