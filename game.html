@@ -54,6 +54,8 @@ canvas{display:block;width:100%;height:100%}
     <div id="boost-hud" style="display:none;color:#0f0;font-size:16px;font-weight:900;text-shadow:0 0 12px #0f0,0 0 24px #0f0">BOOST!</div>
   </div>
   <div id="position-hud" style="position:absolute;top:50px;right:16px;font:900 28px system-ui;color:#ffd700;text-shadow:0 0 12px rgba(255,215,0,.6);display:none"><span id="pos-num">1</span><span id="pos-suffix" style="font-size:14px;opacity:.7">st</span><span style="font-size:12px;opacity:.5;margin-left:4px">/ 6</span></div>
+  <div id="lap-hud" style="position:absolute;top:82px;right:16px;font:700 16px system-ui;color:#fff;text-shadow:0 0 8px rgba(255,255,255,.4);display:none">Lap <span id="lap-num">1</span><span style="opacity:.5"> / 3</span></div>
+  <canvas id="minimap" width="140" height="140" style="position:absolute;top:106px;right:16px;width:140px;height:140px;border:1px solid rgba(255,110,199,.35);border-radius:8px;background:rgba(0,0,0,.55);display:none"></canvas>
 
   <div id="xp-hud" style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);text-align:center;font:900 14px/1 system-ui,sans-serif;display:none;pointer-events:none">
     <div id="xp-multi" style="font:900 14px/1 system-ui,sans-serif;color:#ff6ec7;text-shadow:0 0 8px rgba(255,110,199,.6);margin-bottom:2px">x1</div>
@@ -193,6 +195,10 @@ let boostMeshes = [];
 let aiCars = [];
 // 1-based position among all racers
 let playerPosition = 1;
+// Lap tracking
+const TOTAL_LAPS = 3;
+let currentLap = 1;
+let lastProgressForLap = 0;
 
 // loading, ready, countdown, racing, finished
 let gameState = 'loading';
@@ -259,6 +265,10 @@ const $tiltDot = document.getElementById('tilt-dot');
 const $positionHud = document.getElementById('position-hud');
 const $posNum = document.getElementById('pos-num');
 const $posSuffix = document.getElementById('pos-suffix');
+const $lapHud = document.getElementById('lap-hud');
+const $lapNum = document.getElementById('lap-num');
+const $minimap = document.getElementById('minimap');
+const minimapCtx = $minimap.getContext('2d');
 
 // ── LOAD TRACK ──
 if (window.parent !== window) {
@@ -301,7 +311,7 @@ function init() {
       points.push(new THREE.Vector3(p[0], p[2], -p[1]));
     }
   }
-  curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
+  curve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.5);
   trackLength = curve.getLength();
 
   setupScene();
@@ -311,6 +321,7 @@ function init() {
   buildEnvironment();
   setupInput();
   setupUI();
+  buildMinimapData();
 
   $loading.style.display = 'none';
   gameState = 'ready';
@@ -514,8 +525,8 @@ function buildBarriers(divisions, halfWidth) {
   }
 
   // Glowing tube barriers using TubeGeometry on CatmullRomCurve3
-  const leftCurve = new THREE.CatmullRomCurve3(leftPts, false, 'catmullrom', 0.5);
-  const rightCurve = new THREE.CatmullRomCurve3(rightPts, false, 'catmullrom', 0.5);
+  const leftCurve = new THREE.CatmullRomCurve3(leftPts, true, 'catmullrom', 0.5);
+  const rightCurve = new THREE.CatmullRomCurve3(rightPts, true, 'catmullrom', 0.5);
 
   // Left barrier - hot pink neon glow
   const leftGeo = new THREE.TubeGeometry(leftCurve, divisions / step, 0.12, 6, false);
@@ -860,6 +871,7 @@ function buildAICars() {
         weavePhase: Math.random() * Math.PI * 2,
         boostTimer: 0,
         finished: false,
+        lap: 1,
       });
     }
   });
@@ -900,10 +912,14 @@ function updateAICar(ai, dt) {
   // Lateral weaving
   ai.lateral = Math.sin(performance.now() * 0.001 * CFG.aiWeaveFreq + ai.weavePhase) * CFG.aiWeaveAmp;
 
-  // Finish check
+  // Lap wrap for AI
   if (ai.progress >= 1) {
-    ai.progress = 1;
-    ai.finished = true;
+    ai.progress -= 1;
+    ai.lap++;
+    if (ai.lap > TOTAL_LAPS) {
+      ai.progress = 0.999;
+      ai.finished = true;
+    }
   }
 
   // Position the car on track
@@ -930,8 +946,10 @@ function updateAICar(ai, dt) {
 
 function calcPosition() {
   let pos = 1;
+  const playerTotal = (currentLap - 1) + trackProgress;
   for (let ai of aiCars) {
-    if (ai.progress > trackProgress) pos++;
+    const aiTotal = (ai.lap - 1) + ai.progress;
+    if (aiTotal > playerTotal) pos++;
   }
   return pos;
 }
@@ -1076,6 +1094,94 @@ function buildTrackDecorations() {
     orb.position.set(pillar.position.x, pillar.position.y + 4.3, pillar.position.z);
     scene.add(orb);
   }
+}
+
+// ── MINIMAP ──
+let minimapTrackPoints = null;
+let minimapBounds = null;
+
+function buildMinimapData() {
+  const steps = 200;
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const p = curve.getPointAt(i / steps);
+    pts.push({ x: p.x, z: p.z });
+  }
+  // Compute bounds
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z;
+    if (p.z > maxZ) maxZ = p.z;
+  }
+  const pad = 10;
+  minimapBounds = { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad };
+  minimapTrackPoints = pts;
+}
+
+function drawMinimap() {
+  if (!minimapTrackPoints) return;
+  const w = $minimap.width;
+  const h = $minimap.height;
+  const b = minimapBounds;
+  const rangeX = b.maxX - b.minX;
+  const rangeZ = b.maxZ - b.minZ;
+  const scale = Math.min((w - 16) / rangeX, (h - 16) / rangeZ);
+  const offX = (w - rangeX * scale) / 2;
+  const offZ = (h - rangeZ * scale) / 2;
+
+  function toMap(x, z) {
+    return { mx: offX + (x - b.minX) * scale, my: offZ + (z - b.minZ) * scale };
+  }
+
+  const ctx = minimapCtx;
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw track outline
+  ctx.beginPath();
+  for (let i = 0; i < minimapTrackPoints.length; i++) {
+    const m = toMap(minimapTrackPoints[i].x, minimapTrackPoints[i].z);
+    if (i === 0) ctx.moveTo(m.mx, m.my);
+    else ctx.lineTo(m.mx, m.my);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(255,110,199,0.5)';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Start/finish marker
+  const s = toMap(minimapTrackPoints[0].x, minimapTrackPoints[0].z);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(s.mx - 3, s.my - 3, 6, 6);
+
+  // AI car dots
+  for (const ai of aiCars) {
+    const at = ((ai.progress % 1) + 1) % 1;
+    const ap = curve.getPointAt(Math.min(at, 0.9999));
+    const am = toMap(ap.x, ap.z);
+    ctx.beginPath();
+    ctx.arc(am.mx, am.my, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,80,80,0.8)';
+    ctx.fill();
+  }
+
+  // Player dot
+  let playerT;
+  if (freeRoam) {
+    playerT = freeNearestT;
+  } else {
+    playerT = ((trackProgress % 1) + 1) % 1;
+  }
+  const pp = freeRoam ? freePos : curve.getPointAt(Math.min(playerT, 0.9999));
+  const pm = toMap(pp.x, pp.z);
+  ctx.beginPath();
+  ctx.arc(pm.mx, pm.my, 4.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#0ff';
+  ctx.shadowColor = '#0ff';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
 }
 
 // ── INPUT ──
@@ -1282,6 +1388,8 @@ function doCountdown() {
       raceStartTime = performance.now();
       $hud.style.display = 'flex';
       $positionHud.style.display = '';
+      $lapHud.style.display = '';
+      $minimap.style.display = '';
       $xpHud.style.display = '';
       document.getElementById('drift-btn').style.display = '';
       if (gyroAvailable) $tiltIndicator.style.display = 'block';
@@ -1293,6 +1401,8 @@ function finishRace() {
   gameState = 'finished';
   $hud.style.display = 'none';
   $positionHud.style.display = 'none';
+  $lapHud.style.display = 'none';
+  $minimap.style.display = 'none';
   $xpHud.style.display = 'none';
   $tiltIndicator.style.display = 'none';
   document.getElementById('drift-btn').style.display = 'none';
@@ -1306,8 +1416,8 @@ function finishRace() {
   // Show final position + XP
   const pos = calcPosition();
   document.querySelector('#finish-screen .label').textContent =
-    'You finished ' + pos + positionSuffix(pos) + ' out of ' + (CFG.aiCount + 1) +
-    '  —  ' + Math.round(xpTotal) + ' XP';
+    pos + positionSuffix(pos) + ' of ' + (CFG.aiCount + 1) +
+    '  •  ' + TOTAL_LAPS + ' laps  •  ' + Math.round(xpTotal) + ' XP';
   $finishScreen.style.display = 'flex';
 }
 
@@ -1329,6 +1439,10 @@ function restartRace() {
   freeNearestT = 0;
   freeSmoothY = 0;
   freePos.set(0, 0, 0);
+  // Reset laps
+  currentLap = 1;
+  lastProgressForLap = 0;
+  $lapNum.textContent = '1';
   // Reset XP
   xpTotal = 0;
   xpMultiplier = 1;
@@ -1349,6 +1463,7 @@ function restartRace() {
     aiCars[i].speed = 0;
     aiCars[i].boostTimer = 0;
     aiCars[i].finished = false;
+    aiCars[i].lap = 1;
     aiCars[i].lateral = (i - 2) * 3;
   }
   updateCarPosition(0, 0);
@@ -1714,8 +1829,9 @@ function animate(now = 0) {
     const metersPerSec = effectiveSpeed / 3.6;
     trackProgress += (metersPerSec * dt) / trackLength;
 
-    // Snapshot which AI cars are ahead (for overtake XP)
-    const wasAhead = aiCars.map(ai => ai.progress > trackProgress);
+    // Snapshot which AI cars are ahead (for overtake XP) — account for laps
+    const playerTotal = (currentLap - 1) + trackProgress;
+    const wasAhead = aiCars.map(ai => ((ai.lap - 1) + ai.progress) > playerTotal);
 
     // Update AI cars
     for (let ai of aiCars) {
@@ -1726,8 +1842,9 @@ function animate(now = 0) {
     checkCollisions(dt);
 
     // XP: detect overtakes (AI was ahead, now behind)
+    const playerTotalNow = (currentLap - 1) + trackProgress;
     for (let i = 0; i < aiCars.length; i++) {
-      if (wasAhead[i] && aiCars[i].progress <= trackProgress) {
+      if (wasAhead[i] && ((aiCars[i].lap - 1) + aiCars[i].progress) <= playerTotalNow) {
         awardXP(200, 'PASS');
       }
     }
@@ -1739,7 +1856,8 @@ function animate(now = 0) {
 
     // Update HUD
     $speedVal.textContent = Math.round(speed);
-    $progressVal.textContent = Math.round(trackProgress * 100) + '%';
+    const totalProgress = ((currentLap - 1) + trackProgress) / TOTAL_LAPS;
+    $progressVal.textContent = Math.round(totalProgress * 100) + '%';
 
     // Update XP system
     updateXPTimers(dt);
@@ -1750,10 +1868,16 @@ function animate(now = 0) {
       $tiltDot.style.left = pct + '%';
     }
 
-    // Check finish
+    // Lap detection: progress wraps at 1.0
     if (trackProgress >= 1) {
-      trackProgress = 1;
-      finishRace();
+      trackProgress -= 1;
+      lastProgressForLap = trackProgress;
+      currentLap++;
+      $lapNum.textContent = currentLap;
+      if (currentLap > TOTAL_LAPS) {
+        trackProgress = 0.999;
+        finishRace();
+      }
     }
 
     updateCarPosition(trackProgress, lateralOffset);
@@ -1770,6 +1894,9 @@ function animate(now = 0) {
     groundMesh.position.y = gPt.y - 2;
     groundMesh.position.z = camera.position.z;
   }
+
+  // Minimap
+  if (gameState === 'racing') drawMinimap();
 
   // Render
   if (composer) composer.render();
@@ -1808,6 +1935,8 @@ window.AccelDriv = {
       playerPosition,
       raceTime,
       freeRoam,
+      currentLap,
+      totalLaps: TOTAL_LAPS,
       xp: { total: Math.round(xpTotal), multiplier: xpMultiplier },
     };
   },
