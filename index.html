@@ -196,8 +196,7 @@
     <div class="slider-group" style="margin-bottom:6px">
       <div class="slider-label"><span>Environment Prompt</span></div>
       <textarea id="marble-prompt" rows="3" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">neon-lit cyberpunk racing track through a mountain valley at night, futuristic buildings with holographic signs, glowing bioluminescent vegetation, dramatic clouds, volumetric lighting</textarea>
-      <button class="btn" style="margin-top:4px;font-size:10px" onclick="suggestTrackPrompts()">Suggest 3 Track-Aware Prompts</button>
-      <div id="marble-suggestions" style="display:none;margin-top:6px"></div>
+      <button class="btn" style="margin-top:4px;font-size:10px" onclick="suggestTrackPrompt()">Generate Track-Aware Prompt</button>
     </div>
     <div class="slider-group" style="margin-bottom:6px">
       <div class="slider-label"><span>Input mode</span></div>
@@ -936,62 +935,25 @@ tight: avgCurv > 0.06, flowing: avgCurv <= 0.03, compact: footprint < 150, spraw
 elRange: elRange, avgCurv: avgCurv, footprint: footprint, hasLoop: hasLoop };
 }
 
-function suggestTrackPrompts() {
+function suggestTrackPrompt() {
 if (trackData.length < 20) { toast('Load a track first'); return; }
 var t = analyzeTrack();
-var themes = [];
-// Theme 1: Cyberpunk / urban
-var p1 = 'futuristic neon-lit city at night';
-if (t.tight) p1 += ', narrow streets between towering skyscrapers';
-else if (t.flowing) p1 += ', wide elevated highway weaving through skyscrapers';
-else p1 += ', racing highway through dense urban blocks';
-if (t.mountainous || t.hasLoop) p1 += ', multi-level overpasses and vertical loops';
-else if (t.hilly) p1 += ', sloping roads on hillside districts';
-p1 += ', holographic billboards, rain-slick reflective asphalt, volumetric fog, cyberpunk atmosphere';
-themes.push({ label: 'Cyberpunk City', prompt: p1 });
-// Theme 2: Nature / canyon
-var p2 = t.mountainous ? 'dramatic alpine mountain pass' : t.hilly ? 'winding canyon road through red rock formations' : 'sweeping coastal highway along ocean cliffs';
-if (t.tight) p2 += ', sharp switchbacks carved into rock faces';
-else if (t.flowing) p2 += ', long graceful curves hugging the terrain';
-if (t.sprawling) p2 += ', vast open landscape stretching to the horizon';
-else if (t.compact) p2 += ', enclosed valley with towering walls';
-p2 += ', golden hour lighting, dramatic clouds, photorealistic environment, cinematic depth of field';
-themes.push({ label: 'Natural Landscape', prompt: p2 });
-// Theme 3: Sci-fi / space
-var p3 = 'alien planet racing circuit floating in space';
-if (t.hasLoop || t.mountainous) p3 += ', gravity-defying loops and vertical sections above a nebula';
-else if (t.hilly) p3 += ', undulating track segments suspended between asteroids';
-else p3 += ', smooth translucent road surface over a gas giant';
-if (t.tight) p3 += ', tight technical sections through crystalline structures';
-else p3 += ', sweeping high-speed sections with energy barriers';
-if (t.compact) p3 += ', dense space station arena with spectator platforms';
-else p3 += ', expansive star field backdrop with distant galaxies';
-p3 += ', glowing energy trails, bioluminescent alien flora, sci-fi atmosphere';
-themes.push({ label: 'Sci-Fi Space', prompt: p3 });
-// Render suggestions
-var container = document.getElementById('marble-suggestions');
-container.style.display = 'block';
-container.innerHTML = '';
-var info = '<div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Track: ' +
-(t.flat?'flat':t.hilly?'hilly':'mountainous') + ', ' +
-(t.tight?'tight curves':t.flowing?'flowing curves':'mixed curves') + ', ' +
-(t.compact?'compact':'sprawling') + ' layout (' + Math.round(t.footprint) + 'u span, ' + Math.round(t.elRange) + 'u elevation)</div>';
-container.innerHTML = info;
-themes.forEach(function(th, i) {
-var div = document.createElement('div');
-div.style.cssText = 'padding:6px 8px;margin-top:4px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;cursor:pointer;transition:border-color .2s';
-div.innerHTML = '<div style="font-size:10px;color:var(--accent);font-weight:600;margin-bottom:2px">' + (i+1) + '. ' + th.label + '</div><div style="font-size:10px;color:var(--text-dim);line-height:1.4">' + th.prompt + '</div>';
-div.onmouseenter = function() { div.style.borderColor = 'var(--accent)'; };
-div.onmouseleave = function() { div.style.borderColor = 'var(--border)'; };
-div.onclick = function() {
-document.getElementById('marble-prompt').value = th.prompt;
-container.querySelectorAll('div[data-sel]').forEach(function(d) { d.style.borderColor = 'var(--border)'; });
-div.style.borderColor = 'var(--accent2)';
-div.setAttribute('data-sel', '1');
-toast('Prompt set: ' + th.label);
-};
-container.appendChild(div);
-});
+var p = 'racing track environment';
+// terrain
+if (t.mountainous || t.hasLoop) p = 'dramatic mountain racing road with steep elevation changes and vertical sections';
+else if (t.hilly) p = 'hillside racing road winding through varied terrain';
+else p = 'wide racing highway on mostly flat ground';
+// curves
+if (t.tight) p += ', tight technical corners and sharp switchbacks';
+else if (t.flowing) p += ', long sweeping high-speed curves';
+else p += ', a mix of fast straights and medium-speed bends';
+// scale
+if (t.sprawling) p += ', vast open landscape stretching to the horizon';
+else if (t.compact) p += ', enclosed arena-style layout surrounded by structures';
+// scenery + atmosphere
+p += ', futuristic roadside barriers and signage, dramatic sky, volumetric lighting, photorealistic detail';
+document.getElementById('marble-prompt').value = p;
+toast('Track-aware prompt generated');
 }
 
 function saveMarblePending(opId, apiKey, quality) {
@@ -1319,7 +1281,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,exportAll,startGame,stopGame,generateMarbleWorld,suggestTrackPrompts,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,exportAll,startGame,stopGame,generateMarbleWorld,suggestTrackPrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending});
 init();fitView();showMarblePending();
 </script>
 
