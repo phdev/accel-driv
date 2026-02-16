@@ -278,19 +278,36 @@
     <div id="splat-info" style="font-size:10px;color:var(--text-dim);margin-top:4px"></div>
   </div>
 
-  <div class="panel"><div class="panel-title">3. Export and Convert</div>
+  <div class="panel"><div class="panel-title">3. Export Training Views</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
+      Render multi-view images of the current scene for <span style="color:var(--accent2)">3D Gaussian Splatting</span> training via Google Colab.
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>Views</span><span id="v-trainviews">72</span></div>
+      <input type="range" id="s-trainviews" min="24" max="200" step="4" value="72">
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>Resolution</span><span id="v-trainres">1024</span></div>
+      <input type="range" id="s-trainres" min="512" max="2048" step="256" value="1024">
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-accent2" onclick="exportTrainingViews()" id="btn-export-views">Export Views ZIP</button>
+    </div>
+    <div id="export-views-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
+      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
+      <div>1. Export views ZIP (images + transforms.json)</div>
+      <div>2. Upload to Google Colab notebook</div>
+      <div>3. Train 3DGS → download <b>.ply</b> → load in Splat tab</div>
+    </div>
+  </div>
+  <div class="panel"><div class="panel-title">4. Convert Splats</div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
       Convert to <span style="color:var(--accent2)">.sog</span> format for optimal web delivery (~95% smaller than raw PLY).
     </div>
     <div class="btn-group">
       <button class="btn" onclick="window.open('https://supersplat.io','_blank')">SuperSplat (SPZ to SOG)</button>
       <button class="btn" onclick="window.open('https://marble.worldlabs.ai','_blank')">Marble Studio</button>
-    </div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:8px;line-height:1.6">
-      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
-      <div>1. Marble API produces <b>.spz</b> splat + collider <b>.glb</b></div>
-      <div>2. SuperSplat compresses to <b>.sog</b></div>
-      <div>3. Spark.js renders in-browser alongside track mesh</div>
     </div>
   </div>
 </div>
@@ -307,6 +324,7 @@
   </div>
 </div>
 <div id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from 'three';
@@ -1520,6 +1538,124 @@ if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 var el = document.getElementById(id);
 if (el) el.addEventListener('input', applySplatSettings);
 });
+// Training view sliders
+['s-trainviews','s-trainres'].forEach(function(id){
+var sl=document.getElementById(id);if(!sl)return;
+var vlbl=document.getElementById('v-'+id.slice(2));
+if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
+});
+}
+
+// ============================================================
+// EXPORT TRAINING VIEWS for 3DGS
+// ============================================================
+async function exportTrainingViews(){
+var numViews=parseInt(document.getElementById('s-trainviews').value);
+var res=parseInt(document.getElementById('s-trainres').value);
+var btn=document.getElementById('btn-export-views');
+var prog=document.getElementById('export-views-progress');
+btn.disabled=true;btn.textContent='Rendering...';prog.style.display='block';
+
+// Compute scene bounding box from track + terrain
+var bbox=new THREE.Box3();
+if(trackRibbon)bbox.expandByObject(trackRibbon);
+if(terrainMesh)bbox.expandByObject(terrainMesh);
+if(tLine)bbox.expandByObject(tLine);
+if(_splatMesh)bbox.expandByObject(_splatMesh);
+if(bbox.isEmpty()){
+trackData.forEach(function(p){bbox.expandByPoint(new THREE.Vector3(p[0][0],p[0][1],p[0][2]))});
+}
+var center=new THREE.Vector3();bbox.getCenter(center);
+var size=new THREE.Vector3();bbox.getSize(size);
+var radius=Math.max(size.x,size.y,size.z)*0.7;
+if(radius<100)radius=500;
+
+// Offscreen renderer
+var offRndr=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+offRndr.setSize(res,res);offRndr.setPixelRatio(1);
+offRndr.outputColorSpace=THREE.LinearSRGBColorSpace;
+
+var fov=50;
+var offCam=new THREE.PerspectiveCamera(fov,1,1,radius*10);
+
+// Generate camera poses — orbits at 3 elevations + top-down
+var frames=[];
+var elevations=[0.3,0.55,0.8]; // fraction of PI (low, mid, high)
+var viewsPerRing=Math.floor(numViews/elevations.length);
+var extraTop=numViews-viewsPerRing*elevations.length;
+
+for(var e=0;e<elevations.length;e++){
+var phi=Math.PI*elevations[e];
+var n=viewsPerRing+(e<extraTop?1:0);
+for(var i=0;i<n;i++){
+var theta=(2*Math.PI*i)/n;
+var x=center.x+radius*Math.sin(phi)*Math.cos(theta);
+var y=center.y+radius*Math.cos(phi);
+var z=center.z+radius*Math.sin(phi)*Math.sin(theta);
+frames.push({pos:[x,y,z],target:[center.x,center.y,center.z]});
+}
+}
+
+// Render each frame and collect PNGs
+var zip=new JSZip();
+var imgFolder=zip.folder('images');
+var transforms={
+camera_model:'OPENCV',
+fl_x:res/(2*Math.tan(fov*Math.PI/360)),
+fl_y:res/(2*Math.tan(fov*Math.PI/360)),
+cx:res/2,cy:res/2,
+w:res,h:res,
+frames:[]
+};
+
+for(var i=0;i<frames.length;i++){
+prog.textContent='Rendering view '+(i+1)+' / '+frames.length;
+offCam.position.set(frames[i].pos[0],frames[i].pos[1],frames[i].pos[2]);
+offCam.lookAt(frames[i].target[0],frames[i].target[1],frames[i].target[2]);
+offCam.updateMatrixWorld(true);
+
+offRndr.clear();offRndr.render(scene,offCam);
+
+// Build nerfstudio-format transform matrix (c2w, OpenGL convention)
+// Three.js matrixWorld is already camera-to-world
+var m=offCam.matrixWorld.clone();
+// Convert from Three.js (Y-up, -Z forward) to OpenGL (Y-up, -Z forward) — same convention, just emit the 4x4
+var me=m.elements; // column-major
+var c2w=[
+[me[0],me[4],me[8],me[12]],
+[me[1],me[5],me[9],me[13]],
+[me[2],me[6],me[10],me[14]],
+[me[3],me[7],me[11],me[15]]
+];
+
+var fname='images/frame_'+String(i).padStart(5,'0')+'.png';
+transforms.frames.push({file_path:fname,transform_matrix:c2w});
+
+// Canvas to PNG blob
+var dataUrl=offRndr.domElement.toDataURL('image/png');
+var b64=dataUrl.split(',')[1];
+imgFolder.file('frame_'+String(i).padStart(5,'0')+'.png',b64,{base64:true});
+
+// Yield to keep UI responsive
+if(i%4===0)await new Promise(function(r){setTimeout(r,0)});
+}
+
+offRndr.dispose();
+
+prog.textContent='Compressing ZIP...';
+zip.file('transforms.json',JSON.stringify(transforms,null,2));
+
+var blob=await zip.generateAsync({type:'blob'},function(meta){
+prog.textContent='Compressing... '+Math.round(meta.percent)+'%';
+});
+
+var url=URL.createObjectURL(blob);
+var a=document.createElement('a');a.href=url;a.download='training_views.zip';a.click();
+URL.revokeObjectURL(url);
+
+btn.disabled=false;btn.textContent='Export Views ZIP';
+prog.textContent='Done — '+frames.length+' views at '+res+'px';
+toast('Training views exported');
 }
 
 // ============================================================
@@ -1541,7 +1677,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,exportTrainingViews});
 init();fitView();showMarblePending();
 </script>
 
