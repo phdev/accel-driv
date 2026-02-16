@@ -1458,24 +1458,30 @@ _splatMesh.rotation.set(rx, ry, 0);
 
 function splatBackdropPreset() {
 if (!_splatMesh) { toast('Load a splat first'); return; }
-var cx = 0, cy = 0, cz = 0;
+var minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
 if (trackData.length > 10) {
-trackData.forEach(function(p) { cx += p[0][0]; cy += p[0][1]; cz += p[0][2]; });
-cx /= trackData.length; cy /= trackData.length; cz /= trackData.length;
+trackData.forEach(function(p) {
+minX=Math.min(minX,p[0][0]);maxX=Math.max(maxX,p[0][0]);
+minY=Math.min(minY,p[0][1]);maxY=Math.max(maxY,p[0][1]);
+minZ=Math.min(minZ,p[0][2]);maxZ=Math.max(maxZ,p[0][2]);
+});
 }
+var cx = (minX+maxX)/2, cy = (minY+maxY)/2, cz = (minZ+maxZ)/2;
 var sc = 30;
 document.getElementById('s-splatscale').value = sc;
 document.getElementById('v-splatscale').textContent = sc.toFixed(1);
 document.getElementById('s-splatpx').value = Math.round(cx);
 document.getElementById('v-splatpx').textContent = Math.round(cx);
-document.getElementById('s-splatpy').value = Math.round(cy - 20);
-document.getElementById('v-splatpy').textContent = Math.round(cy - 20);
+document.getElementById('s-splatpy').value = Math.round(cy);
+document.getElementById('v-splatpy').textContent = Math.round(cy);
 document.getElementById('s-splatpz').value = Math.round(cz);
 document.getElementById('v-splatpz').textContent = Math.round(cz);
+document.getElementById('s-splatrx').value = 0;
+document.getElementById('v-splatrx').textContent = '0';
 document.getElementById('s-splatry').value = 0;
 document.getElementById('v-splatry').textContent = '0';
 applySplatSettings();
-toast('Backdrop preset applied (scale 30x, centered below track)');
+toast('Backdrop preset applied (scale 30x, centered on track)');
 }
 
 function splatResetTransform() {
