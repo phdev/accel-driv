@@ -267,7 +267,10 @@ if (window.parent !== window) {
     if (e.data && e.data.type === 'trackData') {
       window.removeEventListener('message', onMsg);
       trackData = e.data.track;
-      init();
+      try { init(); } catch(err) {
+        $loading.textContent = 'Init error: ' + err.message;
+        console.error(err);
+      }
     }
   });
   // Forward ESC to parent so editor can close the overlay
@@ -330,6 +333,10 @@ function setupScene() {
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
+  renderer.domElement.style.position = 'absolute';
+  renderer.domElement.style.top = '0';
+  renderer.domElement.style.left = '0';
+  renderer.domElement.style.zIndex = '0';
   document.body.appendChild(renderer.domElement);
 
   // Lighting
