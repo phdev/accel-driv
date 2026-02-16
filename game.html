@@ -179,6 +179,7 @@ let trackData = null;
 let curve = null;
 let trackLength = 0;
 let scene, camera, renderer, composer, bloomPass;
+const inIframe = window.parent !== window;
 let roadMesh, groundMesh;
 let carGroup, carBody;
 let barrierLeft, barrierRight;
@@ -344,20 +345,17 @@ function setupScene() {
   underLight.position.set(0, -5, 0);
   scene.add(underLight);
 
-  // ── BLOOM POST-PROCESSING ──
-  const renderPass = new RenderPass(scene, camera);
-  bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(innerWidth, innerHeight),
-    // bloom strength
-    1.0,
-    // bloom radius
-    0.1,
-    // bloom threshold
-    0.0
-  );
-  composer = new EffectComposer(renderer);
-  composer.addPass(renderPass);
-  composer.addPass(bloomPass);
+  // ── BLOOM POST-PROCESSING (skip in iframe — renders black) ──
+  if (!inIframe) {
+    const renderPass = new RenderPass(scene, camera);
+    bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(innerWidth, innerHeight),
+      1.0, 0.1, 0.0
+    );
+    composer = new EffectComposer(renderer);
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+  }
 
   // ── DEBUG BLOOM SLIDERS ──
   function wireSlider(id, cb) {
@@ -385,11 +383,12 @@ function setupScene() {
     dprVal.textContent = v;
     renderer.setPixelRatio(v);
     renderer.setSize(innerWidth, innerHeight);
-    composer.setSize(innerWidth, innerHeight);
+    if (composer) composer.setSize(innerWidth, innerHeight);
   });
 
   // Prevent debug panel touches from reaching game controls
   const dbgPanel = document.getElementById('debug-panel');
+  if (inIframe) dbgPanel.style.display = 'none';
   ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'pointerup'].forEach(evt => {
     dbgPanel.addEventListener(evt, e => e.stopPropagation());
   });
@@ -398,7 +397,7 @@ function setupScene() {
     camera.aspect = innerWidth/innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
-    composer.setSize(innerWidth, innerHeight);
+    if (composer) composer.setSize(innerWidth, innerHeight);
   });
 }
 
@@ -1757,7 +1756,8 @@ function animate(now = 0) {
   }
 
   // Render
-  composer.render();
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
 }
 
 // ── EXTERNAL API ──
