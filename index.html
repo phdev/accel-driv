@@ -196,7 +196,6 @@
     <div class="slider-group" style="margin-bottom:6px">
       <div class="slider-label"><span>Environment Prompt</span></div>
       <textarea id="marble-prompt" rows="3" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">neon-lit cyberpunk racing track through a mountain valley at night, futuristic buildings with holographic signs, glowing bioluminescent vegetation, dramatic clouds, volumetric lighting</textarea>
-      <button class="btn" style="margin-top:4px;font-size:10px" onclick="suggestTrackPrompt()">Generate Track-Aware Prompt</button>
     </div>
     <div class="slider-group" style="margin-bottom:6px">
       <div class="slider-label"><span>Input mode</span></div>
@@ -204,6 +203,11 @@
         <option value="text">Text prompt only</option>
         <option value="screenshot" selected>Screenshot of current view + prompt</option>
       </select>
+      <button class="btn btn-accent2" style="margin-top:4px;width:100%;font-size:11px" onclick="trackAwarePrompt()">Screenshot + Track-Aware Prompt</button>
+      <div id="marble-screenshot-preview" style="display:none;margin-top:6px;text-align:center">
+        <img id="marble-screenshot-img" style="max-width:100%;border-radius:4px;border:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--text-dim);margin-top:2px">Viewport captured — will be sent with prompt</div>
+      </div>
     </div>
     <div class="slider-group" style="margin-bottom:6px">
       <div class="slider-label"><span>Splat quality</span></div>
@@ -936,25 +940,31 @@ tight: avgCurv > 0.06, flowing: avgCurv <= 0.03, compact: footprint < 150, spraw
 elRange: elRange, avgCurv: avgCurv, footprint: footprint, hasLoop: hasLoop };
 }
 
-function suggestTrackPrompt() {
+var _capturedScreenshot = null;
+
+function trackAwarePrompt() {
 if (trackData.length < 20) { toast('Load a track first'); return; }
+// 1. Capture screenshot
+_capturedScreenshot = captureScreenshot();
+var preview = document.getElementById('marble-screenshot-preview');
+document.getElementById('marble-screenshot-img').src = _capturedScreenshot;
+preview.style.display = 'block';
+// 2. Set input mode to screenshot
+document.getElementById('marble-mode').value = 'screenshot';
+// 3. Generate geometry-aware prompt
 var t = analyzeTrack();
 var p = 'racing track environment';
-// terrain
 if (t.mountainous || t.hasLoop) p = 'dramatic mountain racing road with steep elevation changes and vertical sections';
 else if (t.hilly) p = 'hillside racing road winding through varied terrain';
 else p = 'wide racing highway on mostly flat ground';
-// curves
 if (t.tight) p += ', tight technical corners and sharp switchbacks';
 else if (t.flowing) p += ', long sweeping high-speed curves';
 else p += ', a mix of fast straights and medium-speed bends';
-// scale
 if (t.sprawling) p += ', vast open landscape stretching to the horizon';
 else if (t.compact) p += ', enclosed arena-style layout surrounded by structures';
-// scenery + atmosphere
 p += ', futuristic roadside barriers and signage, dramatic sky, volumetric lighting, photorealistic detail';
 document.getElementById('marble-prompt').value = p;
-toast('Track-aware prompt generated');
+toast('Screenshot captured + prompt generated — hit Generate World');
 }
 
 function saveMarblePending(opId, apiKey, quality) {
@@ -1058,7 +1068,8 @@ try {
 var worldPrompt;
 if (mode === 'screenshot' && trackData.length > 10) {
 progEl.textContent = 'Capturing viewport screenshot...';
-var screenshotDataUrl = captureScreenshot();
+var screenshotDataUrl = _capturedScreenshot || captureScreenshot();
+_capturedScreenshot = null;
 var blob = await (await fetch(screenshotDataUrl)).blob();
 progEl.textContent = 'Uploading screenshot to Marble...';
 var uploadRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/media-assets:prepare_upload', {
@@ -1287,7 +1298,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,exportAll,startGame,stopGame,generateMarbleWorld,suggestTrackPrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending});
 init();fitView();showMarblePending();
 </script>
 
