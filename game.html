@@ -622,7 +622,7 @@ function buildCar() {
     model.traverse((child) => {
       if (child.isMesh) {
         child.material = child.material.clone();
-        child.material.emissive = new THREE.Color(0x3388ff);
+        child.material.emissive.set(0x3388ff);
         child.material.emissiveIntensity = 0.4;
       }
     });
@@ -793,7 +793,7 @@ function buildAICars() {
         if (child.isMesh) {
           child.material = child.material.clone();
           child.material.color.copy(aiColor);
-          child.material.emissive = aiColor.clone().multiplyScalar(0.3);
+          child.material.emissive.copy(aiColor).multiplyScalar(0.3);
           child.material.emissiveIntensity = 0.6;
         }
       });
