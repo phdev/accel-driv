@@ -310,6 +310,80 @@
       <button class="btn" onclick="window.open('https://marble.worldlabs.ai','_blank')">Marble Studio</button>
     </div>
   </div>
+  <div class="panel"><div class="panel-title">5. Flythrough &rarr; Runway &rarr; Marble</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
+      Record a camera flythrough along the track spline, stylize with <span style="color:var(--accent2)">Runway</span>, then reconstruct 3D Gaussian splats with <span style="color:var(--accent2)">Marble</span>.
+    </div>
+    <div class="slider-group" style="margin-bottom:6px">
+      <div class="slider-label"><span>Runway API Key</span></div>
+      <input type="password" id="runway-apikey" placeholder="rw_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+    </div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 1 &mdash; Flythrough Video</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Camera follows the track spline, baking geometry into frames.</div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Duration (s)</span><span id="v-flydur">5</span></div>
+        <input type="range" id="s-flydur" min="2" max="10" value="5" step="1">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Camera height</span><span id="v-flyht">8</span></div>
+        <input type="range" id="s-flyht" min="2" max="40" value="8" step="1">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Resolution</span></div>
+        <select id="fly-res" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="720" selected>1280 x 720</option>
+          <option value="1080">1920 x 1080</option>
+        </select>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-accent2" onclick="recordFlythrough()" id="fly-rec-btn">Record Flythrough</button>
+        <button class="btn" onclick="downloadFlythrough()">Download</button>
+      </div>
+      <div id="fly-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+      <video id="fly-video" style="display:none;max-width:100%;border-radius:4px;margin-top:6px" controls muted></video>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 2 &mdash; Runway Stylization</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Sends a keyframe to Runway to generate a consistently styled video.</div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Style prompt</span></div>
+        <textarea id="runway-prompt" rows="2" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">cinematic camera flythrough of a neon-lit futuristic racing track, volumetric fog, dramatic lighting, photorealistic</textarea>
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Model</span></div>
+        <select id="runway-model" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="gen4_turbo" selected>Gen-4 Turbo</option>
+          <option value="gen3a_turbo">Gen-3 Alpha Turbo</option>
+        </select>
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Keyframe</span></div>
+        <select id="runway-keyframe" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="first">First frame</option>
+          <option value="middle" selected>Middle frame</option>
+          <option value="last">Last frame</option>
+        </select>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-accent2" onclick="runRunwayStylize()" id="runway-btn">Stylize with Runway</button>
+      </div>
+      <div id="runway-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+      <video id="runway-video" style="display:none;max-width:100%;border-radius:4px;margin-top:6px" controls></video>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 3 &mdash; Marble from Video</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Uploads the styled video to Marble for 3D Gaussian splat reconstruction.</div>
+      <div class="btn-group">
+        <button class="btn btn-accent" onclick="runMarbleFromVideo()" id="marble-vid-btn">Reconstruct 3D World</button>
+      </div>
+      <div id="marble-vid-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-accent" onclick="runFullPipeline()" id="pipeline-full-btn" style="width:100%">Run Full Pipeline</button>
+    </div>
+    <div id="pipeline-progress" style="display:none;font-size:11px;color:var(--accent);margin-top:4px"></div>
+  </div>
 </div>
 
   </div>
@@ -1320,6 +1394,296 @@ btn.textContent = 'Generate World';
 }
 }
 
+// ============================================================
+// FLYTHROUGH → RUNWAY → MARBLE PIPELINE
+// ============================================================
+var _flyBlob = null;
+var _flyFrames = [];
+var _runwayVideoUrl = null;
+
+async function recordFlythrough() {
+if (trackData.length < 20) { toast('Load a track first'); return; }
+var duration = parseInt(document.getElementById('s-flydur').value);
+var resVal = document.getElementById('fly-res').value;
+var camH = parseFloat(document.getElementById('s-flyht').value);
+var w = resVal === '1080' ? 1920 : 1280;
+var h = resVal === '1080' ? 1080 : 720;
+var fps = 30;
+var totalFrames = duration * fps;
+var btn = document.getElementById('fly-rec-btn');
+var progEl = document.getElementById('fly-progress');
+btn.disabled = true; btn.textContent = 'Recording...';
+progEl.style.display = 'block'; progEl.textContent = 'Building spline...';
+
+// Build CatmullRomCurve3 from track data
+var pts = [];
+var step = Math.max(1, Math.floor(trackData.length / 500));
+for (var i = 0; i < trackData.length; i += step) {
+pts.push(new THREE.Vector3(trackData[i][0][0], trackData[i][0][1], trackData[i][0][2]));
+}
+var last = trackData[trackData.length - 1][0];
+if (pts.length < 2 || pts[pts.length - 1].distanceTo(new THREE.Vector3(last[0], last[1], last[2])) > 1) {
+pts.push(new THREE.Vector3(last[0], last[1], last[2]));
+}
+var flyCurve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+
+// Hide editor-only overlays during recording
+var hidden = [];
+[ptCloud, selHL, cpGrp, splineLine].forEach(function(obj) {
+if (obj && obj.visible) { obj.visible = false; hidden.push(obj); }
+});
+scene.traverse(function(obj) {
+if (obj.type === 'GridHelper' && obj.visible) { obj.visible = false; hidden.push(obj); }
+});
+
+// Offscreen renderer
+var offR = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+offR.setSize(w, h); offR.setPixelRatio(1);
+offR.outputColorSpace = THREE.LinearSRGBColorSpace;
+var offCam = new THREE.PerspectiveCamera(60, w / h, 1, 20000);
+
+// Copy editor scene lighting
+// (scene is shared, so lighting already exists)
+
+// MediaRecorder setup
+var stream = offR.domElement.captureStream(0);
+var vTrack = stream.getVideoTracks()[0];
+var hasRF = typeof vTrack.requestFrame === 'function';
+if (!hasRF) { stream = offR.domElement.captureStream(fps); }
+var mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
+var chunks = [];
+recorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
+
+_flyFrames = [];
+_flyBlob = null;
+recorder.start();
+
+for (var f = 0; f < totalFrames; f++) {
+var t = f / Math.max(totalFrames - 1, 1);
+t = Math.min(t, 0.9999);
+var lookT = Math.min(t + 0.02, 0.9999);
+
+var point = flyCurve.getPointAt(t);
+var lookPt = flyCurve.getPointAt(lookT);
+var tangent = flyCurve.getTangentAt(t).normalize();
+
+// Camera: behind and above the track point, looking forward
+offCam.position.set(
+point.x - tangent.x * 10,
+point.y + camH,
+point.z - tangent.z * 10
+);
+offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
+offCam.updateMatrixWorld(true);
+
+offR.clear(); offR.render(scene, offCam);
+if (hasRF) vTrack.requestFrame();
+
+// Capture keyframes for Runway (first, middle, last)
+if (f === 0 || f === Math.floor(totalFrames / 2) || f === totalFrames - 1) {
+_flyFrames.push({
+label: f === 0 ? 'first' : f === totalFrames - 1 ? 'last' : 'middle',
+dataUrl: offR.domElement.toDataURL('image/jpeg', 0.92)
+});
+}
+
+progEl.textContent = 'Recording ' + (f + 1) + '/' + totalFrames;
+await new Promise(function(r) { setTimeout(r, Math.round(1000 / fps)); });
+}
+
+// Restore hidden objects
+hidden.forEach(function(obj) { obj.visible = true; });
+
+return new Promise(function(resolve) {
+recorder.onstop = function() {
+_flyBlob = new Blob(chunks, { type: 'video/webm' });
+var videoEl = document.getElementById('fly-video');
+videoEl.src = URL.createObjectURL(_flyBlob);
+videoEl.style.display = 'block';
+progEl.textContent = 'Recorded ' + duration + 's flythrough (' + totalFrames + ' frames)';
+offR.dispose();
+btn.disabled = false; btn.textContent = 'Record Flythrough';
+toast('Flythrough recorded');
+resolve();
+};
+recorder.stop();
+});
+}
+
+function downloadFlythrough() {
+if (!_flyBlob) { toast('Record a flythrough first'); return; }
+var a = document.createElement('a'); a.href = URL.createObjectURL(_flyBlob);
+a.download = 'flythrough.webm'; a.click();
+}
+
+async function runRunwayStylize() {
+var apiKey = document.getElementById('runway-apikey').value.trim();
+if (!apiKey) { toast('Enter a Runway API key'); return; }
+if (!_flyFrames.length) { toast('Record a flythrough first'); return; }
+var prompt = document.getElementById('runway-prompt').value.trim();
+var model = document.getElementById('runway-model').value;
+var keyframeSel = document.getElementById('runway-keyframe').value;
+var duration = parseInt(document.getElementById('s-flydur').value);
+var btn = document.getElementById('runway-btn');
+var progEl = document.getElementById('runway-progress');
+btn.disabled = true; btn.textContent = 'Stylizing...';
+progEl.style.display = 'block';
+
+var keyframe = _flyFrames.find(function(f) { return f.label === keyframeSel; }) || _flyFrames[0];
+var headers = {
+'Content-Type': 'application/json',
+'Authorization': 'Bearer ' + apiKey,
+'X-Runway-Version': '2024-11-06'
+};
+
+try {
+progEl.textContent = 'Submitting to Runway (' + model + ')...';
+var res = await proxiedFetch('https://api.dev.runwayml.com/v1/image_to_video', {
+method: 'POST', headers: headers,
+body: JSON.stringify({
+model: model,
+promptImage: keyframe.dataUrl,
+promptText: prompt,
+ratio: '1280:720',
+duration: Math.min(duration, 10)
+})
+});
+if (!res.ok) { var errBody = await res.text(); throw new Error('Runway (' + res.status + '): ' + errBody); }
+var taskData = await res.json();
+var taskId = taskData.id;
+progEl.textContent = 'Task ' + taskId.substring(0, 8) + '... queued';
+
+// Poll for completion
+_runwayVideoUrl = await pollRunwayTask(taskId, apiKey, progEl);
+
+var videoEl = document.getElementById('runway-video');
+videoEl.src = _runwayVideoUrl;
+videoEl.style.display = 'block';
+progEl.textContent = 'Runway stylization complete!';
+toast('Runway video ready');
+} catch (err) {
+progEl.textContent = 'Error: ' + err.message;
+toast('Runway error: ' + err.message);
+console.error('Runway error:', err);
+} finally {
+btn.disabled = false; btn.textContent = 'Stylize with Runway';
+}
+}
+
+async function pollRunwayTask(taskId, apiKey, progEl) {
+var headers = { 'Authorization': 'Bearer ' + apiKey, 'X-Runway-Version': '2024-11-06' };
+for (var a = 0; a < 120; a++) {
+await new Promise(function(r) { setTimeout(r, 5000); });
+var elapsed = (a + 1) * 5;
+progEl.textContent = 'Generating styled video... (' + elapsed + 's)';
+try {
+var res = await proxiedFetch('https://api.dev.runwayml.com/v1/tasks/' + taskId, { headers: headers });
+if (!res.ok) continue;
+var data = await res.json();
+if (data.status === 'SUCCEEDED') return data.output[0];
+if (data.status === 'FAILED') throw new Error('Runway failed: ' + (data.failureCode || 'unknown'));
+if (data.status === 'CANCELED') throw new Error('Runway task canceled');
+progEl.textContent = 'Runway: ' + data.status + ' (' + elapsed + 's)';
+} catch (e) {
+if (e.message.includes('Runway failed') || e.message.includes('canceled')) throw e;
+}
+}
+throw new Error('Runway timed out (10 min)');
+}
+
+async function runMarbleFromVideo() {
+var marbleKey = document.getElementById('marble-apikey').value.trim();
+if (!marbleKey) { toast('Enter a Marble API key (panel 1)'); return; }
+if (!_runwayVideoUrl) { toast('Run Runway stylization first (stage 2)'); return; }
+var quality = document.getElementById('marble-quality').value;
+var prompt = document.getElementById('marble-prompt').value.trim();
+var btn = document.getElementById('marble-vid-btn');
+var progEl = document.getElementById('marble-vid-progress');
+btn.disabled = true; btn.textContent = 'Generating...';
+progEl.style.display = 'block';
+
+var headers = { 'Content-Type': 'application/json', 'WLT-Api-Key': marbleKey };
+
+try {
+// Download the Runway video and re-upload to Marble as a media asset
+progEl.textContent = 'Downloading styled video...';
+var vidRes = await proxiedFetch(_runwayVideoUrl);
+if (!vidRes.ok) throw new Error('Video download failed: ' + vidRes.status);
+var videoBlob = await vidRes.blob();
+
+progEl.textContent = 'Uploading video to Marble...';
+var upRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/media-assets:prepare_upload', {
+method: 'POST', headers: headers,
+body: JSON.stringify({ file_name: 'styled-flythrough.mp4', kind: 'video', extension: 'mp4' })
+});
+if (!upRes.ok) throw new Error('Marble upload setup failed: ' + upRes.status);
+var upData = await upRes.json();
+var mediaId = upData.media_asset.media_asset_id;
+var upUrl = upData.upload_info.upload_url;
+var upMethod = upData.upload_info.upload_method || 'PUT';
+var upHeaders = upData.upload_info.required_headers || {};
+await proxiedFetch(upUrl, { method: upMethod, headers: upHeaders, body: videoBlob });
+
+progEl.textContent = 'Generating 3D world from video (1-5 min)...';
+var genRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/worlds:generate', {
+method: 'POST', headers: headers,
+body: JSON.stringify({
+display_name: 'Styled Track Environment',
+model: 'Marble 0.1-plus',
+world_prompt: {
+type: 'video',
+video_prompt: { source: 'media_asset', media_asset_id: mediaId },
+text_prompt: prompt || ''
+}
+})
+});
+if (!genRes.ok) {
+if (genRes.status === 401) throw new Error('Invalid Marble API key');
+var errText = await genRes.text();
+throw new Error('Marble generation failed (' + genRes.status + '): ' + errText);
+}
+
+var genData = await genRes.json();
+var opId = genData.operation_id || genData.name;
+var worldData = null;
+if (genData.done && genData.response) { worldData = genData.response; }
+else if (opId) {
+saveMarblePending(opId, marbleKey, quality);
+worldData = await pollMarbleOp(opId, marbleKey, quality, progEl);
+} else { worldData = genData.world || genData; }
+
+handleMarbleResult(worldData, quality);
+progEl.textContent = 'Pipeline complete — 3D world loaded!';
+toast('3D world reconstructed!');
+} catch (err) {
+progEl.textContent = 'Error: ' + err.message;
+toast('Error: ' + err.message);
+console.error('Marble video error:', err);
+} finally {
+btn.disabled = false; btn.textContent = 'Reconstruct 3D World';
+}
+}
+
+async function runFullPipeline() {
+var btn = document.getElementById('pipeline-full-btn');
+var progEl = document.getElementById('pipeline-progress');
+btn.disabled = true; progEl.style.display = 'block';
+try {
+progEl.textContent = 'Stage 1/3: Recording flythrough...';
+await recordFlythrough();
+progEl.textContent = 'Stage 2/3: Runway stylization...';
+await runRunwayStylize();
+progEl.textContent = 'Stage 3/3: Marble 3D reconstruction...';
+await runMarbleFromVideo();
+progEl.textContent = 'Full pipeline complete!';
+toast('Pipeline complete!');
+} catch (err) {
+progEl.textContent = 'Pipeline error: ' + err.message;
+toast('Pipeline error: ' + err.message);
+} finally { btn.disabled = false; }
+}
+
 async function loadSplatFromURL() {
 var url = document.getElementById('splat-url').value.trim();
 if (!url) { toast('Enter a splat URL'); return; }
@@ -1499,6 +1863,9 @@ var sl=document.getElementById(id);if(!sl)return;
 var vlbl=document.getElementById('v-'+id.slice(2));
 if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 });
+// Runway API key from URL param
+var rkParam=new URLSearchParams(window.location.search).get('rk');
+if(rkParam){var rkEl=document.getElementById('runway-apikey');if(rkEl)rkEl.value=rkParam}
 }
 
 // ============================================================
@@ -1632,7 +1999,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,exportTrainingViews});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,exportTrainingViews,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline});
 init();fitView();showMarblePending();
 </script>
 
