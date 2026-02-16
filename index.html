@@ -1075,6 +1075,8 @@ _splatMesh.scale.setScalar(scale);
 // UI BINDING
 // ============================================================
 function bindUI(){
+var mkParam=new URLSearchParams(window.location.search).get('mk');
+if(mkParam){var mkEl=document.getElementById('marble-apikey');if(mkEl)mkEl.value=mkParam}
 var sliders={'smooth-iter':'smooth-iter-val','smooth-str':'smooth-str-val','cp-count':'cp-count-val','spline-resolution':'spline-res-val','loop-blend':'loop-blend-val','loop-pts':'loop-pts-val','elev-offset':'elev-val','s-imgscale':'v-imgscale','s-imgpts':'v-imgpts','s-imgsmooth':'v-imgsmooth','s-splatopacity':'v-splatopacity','s-splatscale':'v-splatscale'};
 Object.keys(sliders).forEach(function(a){var b=sliders[a];var sl=document.getElementById(a),vl=document.getElementById(b);if(sl&&vl)sl.addEventListener('input',function(){vl.textContent=sl.value})});
 document.querySelectorAll('input[type="range"]').forEach(function(sl){
