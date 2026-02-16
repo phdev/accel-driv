@@ -156,6 +156,25 @@
     <label class="chk"><input type="checkbox" id="chk-ai" checked onchange="toggleAICars()"><span>Show cars</span></label>
     <div class="btn-group"><button class="btn btn-accent2" onclick="placeAICars()">Place Cars</button></div>
   </div>
+  <div class="panel"><div class="panel-title">Scenery</div>
+    <div class="slider-group" style="margin-bottom:6px">
+      <div class="slider-label"><span>Theme</span></div>
+      <select id="scenery-theme" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+        <option value="neon">Neon City</option>
+        <option value="canyon">Canyon</option>
+        <option value="scifi">Sci-Fi</option>
+      </select>
+    </div>
+    <div class="slider-group"><div class="slider-label"><span>Density</span><span id="v-scenerydensity">1.0</span></div><input type="range" id="s-scenerydensity" min="0.2" max="3" value="1" step="0.1"></div>
+    <div class="slider-group"><div class="slider-label"><span>Building height</span><span id="v-sceneryheight">60</span></div><input type="range" id="s-sceneryheight" min="10" max="200" value="60" step="5"></div>
+    <div class="slider-group"><div class="slider-label"><span>Setback</span><span id="v-scenerysetback">40</span></div><input type="range" id="s-scenerysetback" min="20" max="120" value="40" step="5"></div>
+    <label class="chk"><input type="checkbox" id="chk-barriers" checked><span>Barriers</span></label>
+    <label class="chk"><input type="checkbox" id="chk-buildings" checked><span>Buildings</span></label>
+    <label class="chk"><input type="checkbox" id="chk-arches" checked><span>Arches</span></label>
+    <label class="chk"><input type="checkbox" id="chk-lights" checked><span>Streetlights</span></label>
+    <label class="chk"><input type="checkbox" id="chk-scenery" checked onchange="toggleScenery()"><span>Show scenery</span></label>
+    <div class="btn-group"><button class="btn btn-accent2" onclick="generateScenery()">Generate</button><button class="btn" onclick="clearScenery()">Clear</button></div>
+  </div>
   <div class="panel"><div class="btn-group"><button class="btn btn-accent" onclick="exportAll()">Export Scene</button></div></div>
 </div>
 
@@ -309,6 +328,7 @@ let terrainMesh=null,terrainWire=null;
 let speedPadGroup=null,speedPadData=[];
 let aiCarGroup=null,aiCarData=[];
 let trackRibbon=null;
+let sceneryGroup=null;
 let activeTab='track';
 
 function norm(v){var l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])||1;return[v[0]/l,v[1]/l,v[2]/l]}
@@ -580,6 +600,195 @@ aiCarGroup.add(body);aiCarData.push({position:[cx,cy,cz],forward:[tp.fwd[0],tp.f
 scene.add(aiCarGroup);aiCarGroup.visible=document.getElementById('chk-ai').checked;toast(count+' cars placed')}
 
 function toggleAICars(){if(aiCarGroup)aiCarGroup.visible=document.getElementById('chk-ai').checked}
+
+// ============================================================
+// PROCEDURAL SCENERY
+// ============================================================
+var THEMES = {
+neon: {
+  barrier: 0x00ffcc, barrierEmit: 0x004433, barrierH: 3,
+  bldgColors: [0x1a1a2e, 0x16213e, 0x0f3460], bldgEmit: [0x001122, 0x000a1a, 0x000815],
+  windowColor: 0x00ccff, windowEmit: 0x0088aa,
+  archColor: 0xff6ec7, archEmit: 0x661144,
+  lightColor: 0x00ffcc, lightEmit: 0x00aa88, lightIntensity: 3.14,
+  poleColor: 0x333344
+},
+canyon: {
+  barrier: 0x8b6914, barrierEmit: 0x2a1f05, barrierH: 2,
+  bldgColors: [0x8b7355, 0x9b8465, 0x7a6245], bldgEmit: [0x1a1008, 0x1a1008, 0x1a1008],
+  windowColor: 0x8b7355, windowEmit: 0x1a1008,
+  archColor: 0xa0522d, archEmit: 0x3a1a0a,
+  lightColor: 0xffaa44, lightEmit: 0xaa6622, lightIntensity: 2.51,
+  poleColor: 0x5a4a3a
+},
+scifi: {
+  barrier: 0x8844ff, barrierEmit: 0x220066, barrierH: 4,
+  bldgColors: [0x0a0a1a, 0x111128, 0x080820], bldgEmit: [0x110033, 0x0a0022, 0x080020],
+  windowColor: 0xaa66ff, windowEmit: 0x6633aa,
+  archColor: 0x44aaff, archEmit: 0x113366,
+  lightColor: 0xaa66ff, lightEmit: 0x6633aa, lightIntensity: 4.71,
+  poleColor: 0x222233
+}
+};
+
+function generateScenery() {
+if (trackData.length < 20) { toast('Load a track first'); return; }
+clearScenery();
+sceneryGroup = new THREE.Group();
+var theme = THEMES[document.getElementById('scenery-theme').value] || THEMES.neon;
+var density = parseFloat(document.getElementById('s-scenerydensity').value);
+var maxH = parseFloat(document.getElementById('s-sceneryheight').value);
+var setback = parseFloat(document.getElementById('s-scenerysetback').value);
+var doBarriers = document.getElementById('chk-barriers').checked;
+var doBuildings = document.getElementById('chk-buildings').checked;
+var doArches = document.getElementById('chk-arches').checked;
+var doLights = document.getElementById('chk-lights').checked;
+var trackLen = getTrackLength();
+var step = 15 / density; // base spacing in world units
+
+// Barriers — continuous wall along both sides
+if (doBarriers) {
+var barrierStep = 8 / density;
+var bh = theme.barrierH, bw = 1.5;
+var lVerts = [], rVerts = [], lIdx = [], rIdx = [];
+var n = Math.floor(trackLen / barrierStep);
+for (var i = 0; i <= n; i++) {
+var frac = i / n;
+var tp = getTrackPointAt(frac);
+var rv = crs(tp.fwd, tp.norm); var rl = Math.sqrt(rv[0]**2+rv[1]**2+rv[2]**2)||1;
+rv = [rv[0]/rl, rv[1]/rl, rv[2]/rl];
+var hw = (defWidth / 2) + 2;
+// Left barrier
+var lx = tp.pos[0] - rv[0]*hw, ly = tp.pos[1] - rv[1]*hw + 1, lz = tp.pos[2] - rv[2]*hw;
+lVerts.push(lx - rv[0]*bw, ly, lz - rv[2]*bw, lx - rv[0]*bw, ly+bh, lz - rv[2]*bw);
+// Right barrier
+var rx = tp.pos[0] + rv[0]*hw, ry = tp.pos[1] + rv[1]*hw + 1, rz = tp.pos[2] + rv[2]*hw;
+rVerts.push(rx + rv[0]*bw, ry, rz + rv[2]*bw, rx + rv[0]*bw, ry+bh, rz + rv[2]*bw);
+if (i > 0) {
+var bi = (i-1)*2;
+lIdx.push(bi, bi+1, bi+2, bi+1, bi+3, bi+2);
+rIdx.push(bi, bi+1, bi+2, bi+1, bi+3, bi+2);
+}
+}
+var bMat = new THREE.MeshPhongMaterial({color: theme.barrier, emissive: theme.barrierEmit, side: THREE.DoubleSide});
+[{v:lVerts,i:lIdx},{v:rVerts,i:rIdx}].forEach(function(d){
+var g = new THREE.BufferGeometry();
+g.setAttribute('position', new THREE.Float32BufferAttribute(d.v, 3));
+g.setIndex(d.i); g.computeVertexNormals();
+sceneryGroup.add(new THREE.Mesh(g, bMat));
+});
+}
+
+// Buildings — placed at intervals on both sides
+if (doBuildings) {
+var bldgStep = 50 / density;
+var nBldg = Math.floor(trackLen / bldgStep);
+var seed = 12345;
+function prng() { seed = (seed * 16807 + 0) % 2147483647; return (seed - 1) / 2147483646; }
+for (var i = 0; i < nBldg; i++) {
+var frac = i / nBldg;
+var tp = getTrackPointAt(frac);
+var rv = crs(tp.fwd, tp.norm); var rl = Math.sqrt(rv[0]**2+rv[1]**2+rv[2]**2)||1;
+rv = [rv[0]/rl, rv[1]/rl, rv[2]/rl];
+for (var side = -1; side <= 1; side += 2) {
+var h = maxH * (0.3 + prng() * 0.7);
+var w = 12 + prng() * 20;
+var d = 12 + prng() * 15;
+var dist = setback + prng() * 20;
+var cx = tp.pos[0] + rv[0] * side * dist;
+var cy = tp.pos[1] + h/2;
+var cz = tp.pos[2] + rv[2] * side * dist;
+var ci = Math.floor(prng() * theme.bldgColors.length);
+var bldg = new THREE.Mesh(
+new THREE.BoxGeometry(w, h, d),
+new THREE.MeshPhongMaterial({color: theme.bldgColors[ci], emissive: theme.bldgEmit[ci]})
+);
+bldg.position.set(cx, cy, cz);
+// Orient along track
+bldg.lookAt(cx + tp.fwd[0], cy, cz + tp.fwd[2]);
+sceneryGroup.add(bldg);
+// Window strips
+var winRows = Math.floor(h / 8);
+for (var wr = 0; wr < winRows; wr++) {
+var wy = -h/2 + 6 + wr * 8;
+var winStrip = new THREE.Mesh(
+new THREE.BoxGeometry(w * 0.9, 1.5, d + 0.2),
+new THREE.MeshPhongMaterial({color: theme.windowColor, emissive: theme.windowEmit, transparent: true, opacity: 0.6 + prng() * 0.4})
+);
+winStrip.position.y = wy;
+bldg.add(winStrip);
+}
+}
+}
+}
+
+// Arches — overhead gates at intervals
+if (doArches) {
+var archStep = 200 / density;
+var nArch = Math.floor(trackLen / archStep);
+for (var i = 0; i < nArch; i++) {
+var frac = (i + 0.5) / nArch;
+var tp = getTrackPointAt(frac);
+var rv = crs(tp.fwd, tp.norm); var rl = Math.sqrt(rv[0]**2+rv[1]**2+rv[2]**2)||1;
+rv = [rv[0]/rl, rv[1]/rl, rv[2]/rl];
+var archW = defWidth + 10, archH = 25, poleR = 1.5;
+var archMat = new THREE.MeshPhongMaterial({color: theme.archColor, emissive: theme.archEmit});
+// Left pole
+var lp = new THREE.Mesh(new THREE.CylinderGeometry(poleR, poleR, archH, 6), archMat);
+lp.position.set(tp.pos[0] - rv[0]*archW/2, tp.pos[1] + archH/2, tp.pos[2] - rv[2]*archW/2);
+sceneryGroup.add(lp);
+// Right pole
+var rp = new THREE.Mesh(new THREE.CylinderGeometry(poleR, poleR, archH, 6), archMat);
+rp.position.set(tp.pos[0] + rv[0]*archW/2, tp.pos[1] + archH/2, tp.pos[2] + rv[2]*archW/2);
+sceneryGroup.add(rp);
+// Crossbar
+var bar = new THREE.Mesh(new THREE.BoxGeometry(archW, 2, 3), archMat);
+bar.position.set(tp.pos[0], tp.pos[1] + archH, tp.pos[2]);
+bar.lookAt(tp.pos[0] + tp.fwd[0], tp.pos[1] + archH, tp.pos[2] + tp.fwd[2]);
+sceneryGroup.add(bar);
+}
+}
+
+// Streetlights — poles with point lights
+if (doLights) {
+var lightStep = 80 / density;
+var nLights = Math.floor(trackLen / lightStep);
+var poleMat = new THREE.MeshPhongMaterial({color: theme.poleColor});
+var bulbMat = new THREE.MeshPhongMaterial({color: theme.lightColor, emissive: theme.lightEmit});
+for (var i = 0; i < nLights; i++) {
+var frac = i / nLights;
+var tp = getTrackPointAt(frac);
+var rv = crs(tp.fwd, tp.norm); var rl = Math.sqrt(rv[0]**2+rv[1]**2+rv[2]**2)||1;
+rv = [rv[0]/rl, rv[1]/rl, rv[2]/rl];
+var side = (i % 2 === 0) ? -1 : 1;
+var dist = (defWidth / 2) + 5;
+var px = tp.pos[0] + rv[0] * side * dist;
+var pz = tp.pos[2] + rv[2] * side * dist;
+var py = tp.pos[1];
+// Pole
+var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 15, 4), poleMat);
+pole.position.set(px, py + 7.5, pz);
+sceneryGroup.add(pole);
+// Bulb
+var bulb = new THREE.Mesh(new THREE.SphereGeometry(1.2, 6, 4), bulbMat);
+bulb.position.set(px, py + 15.5, pz);
+sceneryGroup.add(bulb);
+// Light
+var pl = new THREE.PointLight(theme.lightColor, theme.lightIntensity, 40, 1);
+pl.position.set(px, py + 15, pz);
+sceneryGroup.add(pl);
+}
+}
+
+scene.add(sceneryGroup);
+sceneryGroup.visible = document.getElementById('chk-scenery').checked;
+toast('Scenery generated');
+}
+
+function clearScenery() {
+if (sceneryGroup) { scene.remove(sceneryGroup); sceneryGroup = null; }
+}
+function toggleScenery() { if (sceneryGroup) sceneryGroup.visible = document.getElementById('chk-scenery').checked; }
 
 function exportAll(){
 var d={track:trackData.map(function(p){return[Math.round(p[0][0]*10)/10,Math.round(p[0][1]*10)/10,Math.round(p[0][2]*10)/10,Math.round(p[1][0]*1e4)/1e4,Math.round(p[1][1]*1e4)/1e4,Math.round(p[1][2]*1e4)/1e4]}),
@@ -1326,7 +1535,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending});
 init();fitView();showMarblePending();
 </script>
 
