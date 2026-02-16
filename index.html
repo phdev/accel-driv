@@ -190,7 +190,7 @@
     </div>
     <div class="slider-group" style="margin-bottom:6px">
       <div class="slider-label"><span>API Key</span></div>
-      <input type="password" id="marble-apikey" value="jYhp7pVjKc14pqnO3X8jXIYysOL26Fey" placeholder="WLT-xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+      <input type="password" id="marble-apikey" placeholder="WLT-xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
     </div>
     <div class="slider-group" style="margin-bottom:6px">
       <div class="slider-label"><span>Environment Prompt</span></div>
@@ -1073,7 +1073,6 @@ _splatMesh.scale.setScalar(scale);
 // UI BINDING
 // ============================================================
 function bindUI(){
-var mk=document.getElementById('marble-apikey');if(mk&&!mk.value)mk.value='jYhp7pVjKc14pqnO3X8jXIYysOL26Fey';
 var sliders={'smooth-iter':'smooth-iter-val','smooth-str':'smooth-str-val','cp-count':'cp-count-val','spline-resolution':'spline-res-val','loop-blend':'loop-blend-val','loop-pts':'loop-pts-val','elev-offset':'elev-val','s-imgscale':'v-imgscale','s-imgpts':'v-imgpts','s-imgsmooth':'v-imgsmooth','s-splatopacity':'v-splatopacity','s-splatscale':'v-splatscale'};
 Object.keys(sliders).forEach(function(a){var b=sliders[a];var sl=document.getElementById(a),vl=document.getElementById(b);if(sl&&vl)sl.addEventListener('input',function(){vl.textContent=sl.value})});
 document.querySelectorAll('input[type="range"]').forEach(function(sl){
