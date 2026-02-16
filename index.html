@@ -1425,7 +1425,11 @@ var last = trackData[trackData.length - 1][0];
 if (pts.length < 2 || pts[pts.length - 1].distanceTo(new THREE.Vector3(last[0], last[1], last[2])) > 1) {
 pts.push(new THREE.Vector3(last[0], last[1], last[2]));
 }
-var flyCurve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+// Detect closed loop: if start and end are within 50 units, close the spline
+var first = trackData[0][0];
+var trackGap = Math.hypot(first[0] - last[0], first[1] - last[1], first[2] - last[2]);
+var isClosed = trackGap < 50;
+var flyCurve = new THREE.CatmullRomCurve3(pts, isClosed, 'catmullrom', 0.5);
 
 // Hide editor-only overlays during recording
 var hidden = [];
@@ -1460,9 +1464,16 @@ _flyBlob = null;
 recorder.start();
 
 for (var f = 0; f < totalFrames; f++) {
-var t = f / Math.max(totalFrames - 1, 1);
+var t;
+if (isClosed) {
+// Full loop: t goes from 0 to 1 (back to start)
+t = f / totalFrames;
+} else {
+t = f / Math.max(totalFrames - 1, 1);
 t = Math.min(t, 0.9999);
-var lookT = Math.min(t + 0.02, 0.9999);
+}
+var lookT = t + 0.02;
+if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
 
 var point = flyCurve.getPointAt(t);
 var lookPt = flyCurve.getPointAt(lookT);
