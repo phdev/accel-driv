@@ -1151,7 +1151,7 @@ if (ssc) ssc.addEventListener('input', applySplatSettings);
 function setupDrawer(){
 var handle=document.getElementById('drawer-handle');if(!handle)return;
 var startY=0,startTranslate=0;var sb=document.getElementById('sidebar');
-handle.addEventListener('touchstart',function(e){e.preventDefault();startY=e.touches[0].clientY;var st=getComputedStyle(sb).transform;var m=st.match(/matrix.*((.+))/);startTranslate=m?parseFloat(m[1].split(',').pop()):0},{passive:false});
+handle.addEventListener('touchstart',function(e){e.preventDefault();startY=e.touches[0].clientY;var st=getComputedStyle(sb).transform;var m=st.match(/matrix.*\((.+)\)/);startTranslate=m?parseFloat(m[1].split(',').pop()):0},{passive:false});
 handle.addEventListener('touchmove',function(e){e.preventDefault();var dy=e.touches[0].clientY-startY;var h=sb.offsetHeight;var newT=Math.max(0,Math.min(h-48,startTranslate+dy));sb.style.transition='none';sb.style.transform='translateY('+newT+'px)'},{passive:false});
 handle.addEventListener('touchend',function(e){e.preventDefault();sb.style.transition='';var h=sb.offsetHeight;var curr=parseFloat((sb.style.transform.match(/translateY\((.+)px\)/)||['','0'])[1]);if(curr<(h-48)*.6){sb.classList.add('open');drawerOpen=true}else{sb.classList.remove('open');drawerOpen=false}sb.style.transform=''},{passive:false});
 }
