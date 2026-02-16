@@ -215,6 +215,11 @@
       <button class="btn btn-accent" onclick="generateMarbleWorld()" id="marble-gen-btn">Generate World</button>
     </div>
     <div id="marble-progress" style="font-size:11px;color:var(--accent2);display:none"></div>
+    <div id="marble-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
+      <div style="color:var(--accent2);margin-bottom:4px">Pending generation found</div>
+      <div id="marble-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
+      <div class="btn-group"><button class="btn btn-accent2" onclick="checkMarbleOperation()">Check Status</button><button class="btn" onclick="clearMarblePending()">Dismiss</button></div>
+    </div>
   </div>
 
   <div class="panel"><div class="panel-title">2. Preview and Load Splat</div>
@@ -889,6 +894,89 @@ rndr.render(scene, cam);
 return rndr.domElement.toDataURL('image/png');
 }
 
+function saveMarblePending(opId, apiKey, quality) {
+localStorage.setItem('marble_pending', JSON.stringify({ opId: opId, apiKey: apiKey, quality: quality, time: Date.now() }));
+}
+function clearMarblePending() {
+localStorage.removeItem('marble_pending');
+var el = document.getElementById('marble-pending'); if (el) el.style.display = 'none';
+}
+function showMarblePending() {
+var raw = localStorage.getItem('marble_pending'); if (!raw) return;
+try { var p = JSON.parse(raw); } catch(e) { return; }
+var age = Math.round((Date.now() - p.time) / 60000);
+if (age > 30) { clearMarblePending(); return; }
+var el = document.getElementById('marble-pending'); if (!el) return;
+document.getElementById('marble-pending-info').textContent = 'Operation: ' + p.opId.substring(0, 20) + '... (' + age + ' min ago)';
+el.style.display = 'block';
+}
+function handleMarbleResult(worldData, quality) {
+var progEl = document.getElementById('marble-progress');
+var assets = worldData.assets;
+var splatUrl = null;
+if (assets && assets.splats && assets.splats.spz_urls) {
+splatUrl = assets.splats.spz_urls[quality] || assets.splats.spz_urls['100k'] || assets.splats.spz_urls['full_res'];
+}
+var colliderUrl = null;
+if (assets && assets.mesh) { colliderUrl = assets.mesh.collider_mesh_url; }
+if (splatUrl) {
+document.getElementById('splat-url').value = splatUrl;
+progEl.textContent = 'World generated! Loading splat...';
+loadSplatFromURL();
+if (colliderUrl) { window._marbleColliderUrl = colliderUrl; }
+} else {
+progEl.textContent = 'World generated! View at: ' + (worldData.world_marble_url || '');
+if (worldData.world_marble_url) { window.open(worldData.world_marble_url, '_blank'); }
+}
+toast('World generated!');
+}
+async function pollMarbleOp(opId, apiKey, quality, progEl) {
+for (var attempt = 0; attempt < 180; attempt++) {
+await new Promise(function(r) { setTimeout(r, 3000); });
+progEl.textContent = 'Generating 3D world... (' + (attempt * 3) + 's)';
+var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + opId, { headers: { 'WLT-Api-Key': apiKey } });
+if (!pollRes.ok) continue;
+var pollData = await pollRes.json();
+if (pollData.done) {
+clearMarblePending();
+if (pollData.error) throw new Error('Generation error: ' + (pollData.error.message || JSON.stringify(pollData.error)));
+return pollData.response;
+}
+if (pollData.metadata && pollData.metadata.progress) {
+progEl.textContent = 'Generating: ' + (pollData.metadata.progress.description || pollData.metadata.progress.status);
+}
+}
+throw new Error('Timeout waiting for world generation');
+}
+async function checkMarbleOperation() {
+var raw = localStorage.getItem('marble_pending'); if (!raw) { toast('No pending operation'); return; }
+try { var p = JSON.parse(raw); } catch(e) { toast('Invalid pending data'); clearMarblePending(); return; }
+var progEl = document.getElementById('marble-progress');
+var pendEl = document.getElementById('marble-pending');
+progEl.style.display = 'block';
+progEl.textContent = 'Checking operation status...';
+pendEl.style.display = 'none';
+var apiKey = p.apiKey || document.getElementById('marble-apikey').value.trim();
+if (!apiKey) { toast('Enter your API key first'); pendEl.style.display = 'block'; return; }
+try {
+var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + p.opId, { headers: { 'WLT-Api-Key': apiKey } });
+if (!pollRes.ok) throw new Error('Poll failed: ' + pollRes.status);
+var pollData = await pollRes.json();
+if (pollData.done) {
+clearMarblePending();
+if (pollData.error) throw new Error('Generation error: ' + (pollData.error.message || JSON.stringify(pollData.error)));
+handleMarbleResult(pollData.response, p.quality || '100k');
+} else {
+progEl.textContent = 'Still generating — resuming poll...';
+var worldData = await pollMarbleOp(p.opId, apiKey, p.quality || '100k', progEl);
+handleMarbleResult(worldData, p.quality || '100k');
+}
+} catch (err) {
+progEl.textContent = 'Error: ' + err.message;
+toast('Error: ' + err.message);
+console.error('Marble check error:', err);
+}
+}
 async function generateMarbleWorld() {
 var apiKey = document.getElementById('marble-apikey').value.trim();
 if (!apiKey) { toast('Enter a Marble API key'); return; }
@@ -937,42 +1025,13 @@ var worldData = null;
 if (genData.done && genData.response) {
 worldData = genData.response;
 } else if (opId) {
-for (var attempt = 0; attempt < 180; attempt++) {
-await new Promise(function(r) { setTimeout(r, 3000); });
-progEl.textContent = 'Generating 3D world... (' + (attempt * 3) + 's)';
-var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + opId, { headers: { 'WLT-Api-Key': apiKey } });
-if (!pollRes.ok) continue;
-var pollData = await pollRes.json();
-if (pollData.done) {
-if (pollData.error) throw new Error('Generation error: ' + (pollData.error.message || JSON.stringify(pollData.error)));
-worldData = pollData.response;
-break;
-}
-if (pollData.metadata && pollData.metadata.progress) {
-progEl.textContent = 'Generating: ' + (pollData.metadata.progress.description || pollData.metadata.progress.status);
-}
-}
-if (!worldData) throw new Error('Timeout waiting for world generation');
+saveMarblePending(opId, apiKey, quality);
+progEl.textContent = 'Generating 3D world... (you can close this tab and check back later)';
+worldData = await pollMarbleOp(opId, apiKey, quality, progEl);
 } else {
 worldData = genData.world || genData;
 }
-var assets = worldData.assets;
-var splatUrl = null;
-if (assets && assets.splats && assets.splats.spz_urls) {
-splatUrl = assets.splats.spz_urls[quality] || assets.splats.spz_urls['100k'] || assets.splats.spz_urls['full_res'];
-}
-var colliderUrl = null;
-if (assets && assets.mesh) { colliderUrl = assets.mesh.collider_mesh_url; }
-if (splatUrl) {
-document.getElementById('splat-url').value = splatUrl;
-progEl.textContent = 'World generated! Loading splat...';
-await loadSplatFromURL();
-if (colliderUrl) { window._marbleColliderUrl = colliderUrl; progEl.textContent += ' (collider mesh available)'; }
-} else {
-progEl.textContent = 'World generated! View at: ' + (worldData.world_marble_url || '');
-if (worldData.world_marble_url) { window.open(worldData.world_marble_url, '_blank'); }
-}
-toast('World generated!');
+handleMarbleResult(worldData, quality);
 } catch (err) {
 progEl.textContent = 'Error: ' + err.message;
 toast('Error: ' + err.message);
@@ -1111,8 +1170,8 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,exportAll,startGame,stopGame,generateMarbleWorld,loadSplatFromURL,loadSplatFromFile,removeSplat});
-init();fitView();
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,exportAll,startGame,stopGame,generateMarbleWorld,loadSplatFromURL,loadSplatFromFile,removeSplat,checkMarbleOperation,clearMarblePending});
+init();fitView();showMarblePending();
 </script>
 
 </body>
