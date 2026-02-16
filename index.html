@@ -245,6 +245,7 @@
       <div class="slider-group"><div class="slider-label"><span>Position X</span><span id="v-splatpx">0</span></div><input type="range" id="s-splatpx" min="-500" max="500" value="0" step="1"></div>
       <div class="slider-group"><div class="slider-label"><span>Position Y</span><span id="v-splatpy">0</span></div><input type="range" id="s-splatpy" min="-500" max="500" value="0" step="1"></div>
       <div class="slider-group"><div class="slider-label"><span>Position Z</span><span id="v-splatpz">0</span></div><input type="range" id="s-splatpz" min="-500" max="500" value="0" step="1"></div>
+      <div class="slider-group"><div class="slider-label"><span>Rotation X</span><span id="v-splatrx">0</span></div><input type="range" id="s-splatrx" min="-180" max="180" value="0" step="1"></div>
       <div class="slider-group"><div class="slider-label"><span>Rotation Y</span><span id="v-splatry">0</span></div><input type="range" id="s-splatry" min="-180" max="180" value="0" step="1"></div>
     </div>
     <div class="btn-group" style="margin-top:6px">
@@ -1182,6 +1183,8 @@ document.getElementById('s-splatpy').value = Math.round(p.y);
 document.getElementById('v-splatpy').textContent = Math.round(p.y);
 document.getElementById('s-splatpz').value = Math.round(p.z);
 document.getElementById('v-splatpz').textContent = Math.round(p.z);
+document.getElementById('s-splatrx').value = 0;
+document.getElementById('v-splatrx').textContent = '0';
 document.getElementById('s-splatry').value = 0;
 document.getElementById('v-splatry').textContent = '0';
 document.getElementById('s-splatscale').value = 1;
@@ -1197,11 +1200,12 @@ var scale = parseFloat(document.getElementById('s-splatscale').value);
 var px = parseFloat(document.getElementById('s-splatpx').value);
 var py = parseFloat(document.getElementById('s-splatpy').value);
 var pz = parseFloat(document.getElementById('s-splatpz').value);
+var rx = parseFloat(document.getElementById('s-splatrx').value) * Math.PI / 180;
 var ry = parseFloat(document.getElementById('s-splatry').value) * Math.PI / 180;
 _splatMesh.opacity = opacity;
 _splatMesh.scale.setScalar(scale);
 _splatMesh.position.set(px, py, pz);
-_splatMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0,1,0), ry);
+_splatMesh.rotation.set(rx, ry, 0);
 }
 
 function splatBackdropPreset() {
@@ -1236,6 +1240,8 @@ document.getElementById('s-splatpy').value = 0;
 document.getElementById('v-splatpy').textContent = '0';
 document.getElementById('s-splatpz').value = 0;
 document.getElementById('v-splatpz').textContent = '0';
+document.getElementById('s-splatrx').value = 0;
+document.getElementById('v-splatrx').textContent = '0';
 document.getElementById('s-splatry').value = 0;
 document.getElementById('v-splatry').textContent = '0';
 document.getElementById('s-splatopacity').value = 1;
@@ -1256,7 +1262,7 @@ document.querySelectorAll('input[type="range"]').forEach(function(sl){
 var vid='v-'+sl.id.substring(2);var vlbl=document.getElementById(vid);
 if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 });
-['s-splatopacity','s-splatscale','s-splatpx','s-splatpy','s-splatpz','s-splatry'].forEach(function(id){
+['s-splatopacity','s-splatscale','s-splatpx','s-splatpy','s-splatpz','s-splatrx','s-splatry'].forEach(function(id){
 var el = document.getElementById(id);
 if (el) el.addEventListener('input', applySplatSettings);
 });
