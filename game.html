@@ -86,7 +86,11 @@ canvas.game-canvas{display:block;width:100%;height:100%}
 
   <!-- Debug bloom panel -->
   <div id="debug-panel" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.75);border:1px solid rgba(255,110,199,.4);border-radius:8px;padding:10px 14px;z-index:40;font:400 .7rem system-ui;color:rgba(220,200,255,.85);display:flex;flex-direction:column;gap:6px;min-width:180px;touch-action:auto;-webkit-user-select:none;user-select:none">
-    <div style="font-weight:700;font-size:.75rem;color:#ff6ec7;margin-bottom:2px">Bloom Debug</div>
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="font-weight:700;font-size:.75rem;color:#ff6ec7">Bloom Debug</span>
+      <button id="dbg-minimize" style="background:none;border:1px solid rgba(255,110,199,.4);border-radius:4px;color:#ff6ec7;font:700 .7rem system-ui;width:20px;height:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1" title="Minimize">&ndash;</button>
+    </div>
+    <div id="dbg-body" style="display:flex;flex-direction:column;gap:6px">
     <label style="display:flex;align-items:center;justify-content:space-between;gap:8px">
       Threshold <span style="display:flex;align-items:center;gap:4px"><input type="range" id="dbg-threshold" min="0" max="1" step="0.01" value="0" style="width:80px;accent-color:#ff6ec7;touch-action:auto"><span id="dbg-threshold-val" style="min-width:28px;text-align:right">0</span></span>
     </label>
@@ -105,6 +109,7 @@ canvas.game-canvas{display:block;width:100%;height:100%}
     </label>
     <div style="border-top:1px solid rgba(255,110,199,.2);margin:2px 0"></div>
     <div style="display:flex;justify-content:space-between"><span>FPS</span><span id="dbg-fps" style="color:#33ff88">--</span></div>
+    </div>
   </div>
 </div>
 
@@ -413,6 +418,14 @@ function setupScene() {
   // Prevent debug panel touches from reaching game controls
   const dbgPanel = document.getElementById('debug-panel');
   if (inIframe) dbgPanel.style.display = 'none';
+  const dbgMinBtn = document.getElementById('dbg-minimize');
+  const dbgBody = document.getElementById('dbg-body');
+  dbgMinBtn.addEventListener('click', () => {
+    const collapsed = dbgBody.style.display === 'none';
+    dbgBody.style.display = collapsed ? 'flex' : 'none';
+    dbgMinBtn.innerHTML = collapsed ? '&ndash;' : '+';
+    dbgPanel.style.minWidth = collapsed ? '180px' : 'auto';
+  });
   ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'pointerup'].forEach(evt => {
     dbgPanel.addEventListener(evt, e => e.stopPropagation());
   });
