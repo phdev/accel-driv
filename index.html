@@ -872,9 +872,9 @@ SE + '</body></html>';
 // ============================================================
 // MARBLE WORLD GENERATION + SPARK.JS SPLAT VIEWER
 // ============================================================
-var CORS_PROXY = 'https://corsproxy.io/?';
-function proxiedFetch(url, opts) {
-  return fetch(CORS_PROXY + encodeURIComponent(url), opts);
+async function proxiedFetch(url, opts) {
+  try { return await fetch(url, opts); }
+  catch (e) { return fetch('https://corsproxy.io/?' + encodeURIComponent(url), opts); }
 }
 var _splatMesh = null;
 var _sparkLoaded = false;
@@ -921,7 +921,7 @@ var uploadRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/media-ass
 method: 'POST', headers: headers,
 body: JSON.stringify({ file_name: 'track-screenshot.png', kind: 'image', extension: 'png' })
 });
-if (!uploadRes.ok) throw new Error('Media asset creation failed: ' + uploadRes.status);
+if (!uploadRes.ok) throw new Error(uploadRes.status === 401 ? 'Invalid API key — check your Marble key' : 'Media asset creation failed: ' + uploadRes.status);
 var uploadData = await uploadRes.json();
 var mediaAssetId = uploadData.media_asset.media_asset_id;
 var uploadUrl = uploadData.upload_info.upload_url;
@@ -937,7 +937,7 @@ var genRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/worlds:gener
 method: 'POST', headers: headers,
 body: JSON.stringify({ display_name: 'Track Environment', model: 'Marble 0.1-plus', world_prompt: worldPrompt })
 });
-if (!genRes.ok) { var errText = await genRes.text(); throw new Error('Generation failed (' + genRes.status + '): ' + errText); }
+if (!genRes.ok) { if (genRes.status === 401) throw new Error('Invalid API key — check your Marble key'); var errText = await genRes.text(); throw new Error('Generation failed (' + genRes.status + '): ' + errText); }
 var genData = await genRes.json();
 var opId = genData.operation_id || genData.name;
 var worldData = null;
