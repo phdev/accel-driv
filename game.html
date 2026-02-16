@@ -1082,12 +1082,14 @@ function requestGyro() {
   if (typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission === 'function') {
     // iOS 13+ requires user-gesture-triggered permission request
-    DeviceOrientationEvent.requestPermission().then(state => {
-      if (state === 'granted') enableGyro();
-    }).catch(err => {
-      console.warn('Gyro permission denied:', err);
-      enableGyro();
-    });
+    try {
+      DeviceOrientationEvent.requestPermission().then(state => {
+        if (state === 'granted') enableGyro();
+      }).catch(err => {
+        console.warn('Gyro permission denied:', err);
+        enableGyro();
+      });
+    } catch(e) { enableGyro(); }
   } else {
     enableGyro();
   }
