@@ -238,7 +238,18 @@
     </div>
     <input type="file" id="splat-file-input" accept=".spz,.ply,.splat,.sog,.ksplat" style="display:none">
     <div class="slider-group"><div class="slider-label"><span>Splat opacity</span><span id="v-splatopacity">1.0</span></div><input type="range" id="s-splatopacity" min="0" max="1" value="1" step="0.05"></div>
-    <div class="slider-group"><div class="slider-label"><span>Splat scale</span><span id="v-splatscale">1.0</span></div><input type="range" id="s-splatscale" min="0.01" max="5" value="1" step="0.01"></div>
+    <div class="slider-group"><div class="slider-label"><span>Splat scale</span><span id="v-splatscale">1.0</span></div><input type="range" id="s-splatscale" min="0.01" max="100" value="1" step="0.1"></div>
+    <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+      <div class="slider-label" style="margin-bottom:4px"><span style="color:var(--accent)">Transform</span></div>
+      <div class="slider-group"><div class="slider-label"><span>Position X</span><span id="v-splatpx">0</span></div><input type="range" id="s-splatpx" min="-500" max="500" value="0" step="1"></div>
+      <div class="slider-group"><div class="slider-label"><span>Position Y</span><span id="v-splatpy">0</span></div><input type="range" id="s-splatpy" min="-500" max="500" value="0" step="1"></div>
+      <div class="slider-group"><div class="slider-label"><span>Position Z</span><span id="v-splatpz">0</span></div><input type="range" id="s-splatpz" min="-500" max="500" value="0" step="1"></div>
+      <div class="slider-group"><div class="slider-label"><span>Rotation Y</span><span id="v-splatry">0</span></div><input type="range" id="s-splatry" min="-180" max="180" value="0" step="1"></div>
+    </div>
+    <div class="btn-group" style="margin-top:6px">
+      <button class="btn btn-accent2" onclick="splatBackdropPreset()">Use as Backdrop</button>
+      <button class="btn" onclick="splatResetTransform()">Reset Transform</button>
+    </div>
     <div id="splat-info" style="font-size:10px;color:var(--text-dim);margin-top:4px"></div>
   </div>
 
@@ -1059,16 +1070,9 @@ onLoad: function(mesh) {
 var numSplats = mesh.numSplats || 'unknown';
 infoEl.textContent = 'Loaded: ' + numSplats + ' splats';
 toast('Splat loaded (' + numSplats + ' splats)');
-if (trackData.length > 10) {
-var cx = 0, cy = 0, cz = 0;
-trackData.forEach(function(p) { cx += p[0][0]; cy += p[0][1]; cz += p[0][2]; });
-cx /= trackData.length; cy /= trackData.length; cz /= trackData.length;
-mesh.position.set(cx, cy, cz);
-}
-applySplatSettings();
+syncSplatSlidersToMesh();
 }
 });
-_splatMesh.quaternion.set(1, 0, 0, 0);
 scene.add(_splatMesh);
 } catch (err) {
 infoEl.textContent = 'Error: ' + err.message;
@@ -1096,10 +1100,9 @@ onLoad: function(mesh) {
 var numSplats = mesh.numSplats || 'unknown';
 infoEl.textContent = 'Loaded: ' + file.name + ' (' + numSplats + ' splats, ' + (file.size/1e6).toFixed(1) + ' MB)';
 toast('Splat loaded: ' + file.name);
-applySplatSettings();
+syncSplatSlidersToMesh();
 }
 });
-_splatMesh.quaternion.set(1, 0, 0, 0);
 scene.add(_splatMesh);
 } catch (err) {
 infoEl.textContent = 'Error: ' + err.message;
@@ -1120,12 +1123,75 @@ toast('Splat removed');
 }
 }
 
+function syncSplatSlidersToMesh() {
+if (!_splatMesh) return;
+var p = _splatMesh.position;
+document.getElementById('s-splatpx').value = Math.round(p.x);
+document.getElementById('v-splatpx').textContent = Math.round(p.x);
+document.getElementById('s-splatpy').value = Math.round(p.y);
+document.getElementById('v-splatpy').textContent = Math.round(p.y);
+document.getElementById('s-splatpz').value = Math.round(p.z);
+document.getElementById('v-splatpz').textContent = Math.round(p.z);
+document.getElementById('s-splatry').value = 0;
+document.getElementById('v-splatry').textContent = '0';
+document.getElementById('s-splatscale').value = 1;
+document.getElementById('v-splatscale').textContent = '1.0';
+document.getElementById('s-splatopacity').value = 1;
+document.getElementById('v-splatopacity').textContent = '1.0';
+}
+
 function applySplatSettings() {
 if (!_splatMesh) return;
 var opacity = parseFloat(document.getElementById('s-splatopacity').value);
 var scale = parseFloat(document.getElementById('s-splatscale').value);
+var px = parseFloat(document.getElementById('s-splatpx').value);
+var py = parseFloat(document.getElementById('s-splatpy').value);
+var pz = parseFloat(document.getElementById('s-splatpz').value);
+var ry = parseFloat(document.getElementById('s-splatry').value) * Math.PI / 180;
 _splatMesh.opacity = opacity;
 _splatMesh.scale.setScalar(scale);
+_splatMesh.position.set(px, py, pz);
+_splatMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0,1,0), ry);
+}
+
+function splatBackdropPreset() {
+if (!_splatMesh) { toast('Load a splat first'); return; }
+var cx = 0, cy = 0, cz = 0;
+if (trackData.length > 10) {
+trackData.forEach(function(p) { cx += p[0][0]; cy += p[0][1]; cz += p[0][2]; });
+cx /= trackData.length; cy /= trackData.length; cz /= trackData.length;
+}
+var sc = 30;
+document.getElementById('s-splatscale').value = sc;
+document.getElementById('v-splatscale').textContent = sc.toFixed(1);
+document.getElementById('s-splatpx').value = Math.round(cx);
+document.getElementById('v-splatpx').textContent = Math.round(cx);
+document.getElementById('s-splatpy').value = Math.round(cy - 20);
+document.getElementById('v-splatpy').textContent = Math.round(cy - 20);
+document.getElementById('s-splatpz').value = Math.round(cz);
+document.getElementById('v-splatpz').textContent = Math.round(cz);
+document.getElementById('s-splatry').value = 0;
+document.getElementById('v-splatry').textContent = '0';
+applySplatSettings();
+toast('Backdrop preset applied (scale 30x, centered below track)');
+}
+
+function splatResetTransform() {
+if (!_splatMesh) { toast('Load a splat first'); return; }
+document.getElementById('s-splatscale').value = 1;
+document.getElementById('v-splatscale').textContent = '1.0';
+document.getElementById('s-splatpx').value = 0;
+document.getElementById('v-splatpx').textContent = '0';
+document.getElementById('s-splatpy').value = 0;
+document.getElementById('v-splatpy').textContent = '0';
+document.getElementById('s-splatpz').value = 0;
+document.getElementById('v-splatpz').textContent = '0';
+document.getElementById('s-splatry').value = 0;
+document.getElementById('v-splatry').textContent = '0';
+document.getElementById('s-splatopacity').value = 1;
+document.getElementById('v-splatopacity').textContent = '1.0';
+applySplatSettings();
+toast('Transform reset');
 }
 
 // ============================================================
@@ -1140,10 +1206,10 @@ document.querySelectorAll('input[type="range"]').forEach(function(sl){
 var vid='v-'+sl.id.substring(2);var vlbl=document.getElementById(vid);
 if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 });
-var sop = document.getElementById('s-splatopacity');
-var ssc = document.getElementById('s-splatscale');
-if (sop) sop.addEventListener('input', applySplatSettings);
-if (ssc) ssc.addEventListener('input', applySplatSettings);
+['s-splatopacity','s-splatscale','s-splatpx','s-splatpy','s-splatpz','s-splatry'].forEach(function(id){
+var el = document.getElementById(id);
+if (el) el.addEventListener('input', applySplatSettings);
+});
 }
 
 // ============================================================
@@ -1165,7 +1231,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,exportAll,startGame,stopGame,generateMarbleWorld,loadSplatFromURL,loadSplatFromFile,removeSplat,checkMarbleOperation,clearMarblePending});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,exportAll,startGame,stopGame,generateMarbleWorld,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending});
 init();fitView();showMarblePending();
 </script>
 
