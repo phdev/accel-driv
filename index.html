@@ -908,8 +908,30 @@ _sparkLoaded = true;
 }
 
 function captureScreenshot() {
+if (!trackData.length) { rndr.render(scene, cam); return rndr.domElement.toDataURL('image/png'); }
+// Save current camera state
+var savePhi = orb.phi, saveTheta = orb.theta, saveDist = orb.dist;
+var saveTgt = orb.tgt.clone();
+// Compute track bounding box
+var minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
+trackData.forEach(function(p){
+minX=Math.min(minX,p[0][0]);maxX=Math.max(maxX,p[0][0]);
+minY=Math.min(minY,p[0][1]);maxY=Math.max(maxY,p[0][1]);
+minZ=Math.min(minZ,p[0][2]);maxZ=Math.max(maxZ,p[0][2]);
+});
+// Top-down: phi=0.001 (nearly straight down), theta=0
+orb.tgt.set((minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2);
+orb.phi = 0.001;
+orb.theta = 0;
+orb.dist = Math.max(maxX-minX, maxZ-minZ) * 1.1;
+updCam();
 rndr.render(scene, cam);
-return rndr.domElement.toDataURL('image/png');
+var dataUrl = rndr.domElement.toDataURL('image/png');
+// Restore camera
+orb.phi = savePhi; orb.theta = saveTheta; orb.dist = saveDist;
+orb.tgt.copy(saveTgt);
+updCam();
+return dataUrl;
 }
 
 function analyzeTrack() {
