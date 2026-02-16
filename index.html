@@ -872,6 +872,10 @@ SE + '</body></html>';
 // ============================================================
 // MARBLE WORLD GENERATION + SPARK.JS SPLAT VIEWER
 // ============================================================
+var CORS_PROXY = 'https://corsproxy.io/?';
+function proxiedFetch(url, opts) {
+  return fetch(CORS_PROXY + encodeURIComponent(url), opts);
+}
 var _splatMesh = null;
 var _sparkLoaded = false;
 
@@ -913,7 +917,7 @@ progEl.textContent = 'Capturing viewport screenshot...';
 var screenshotDataUrl = captureScreenshot();
 var blob = await (await fetch(screenshotDataUrl)).blob();
 progEl.textContent = 'Uploading screenshot to Marble...';
-var uploadRes = await fetch('https://api.worldlabs.ai/marble/v1/media-assets:prepare_upload', {
+var uploadRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/media-assets:prepare_upload', {
 method: 'POST', headers: headers,
 body: JSON.stringify({ file_name: 'track-screenshot.png', kind: 'image', extension: 'png' })
 });
@@ -923,13 +927,13 @@ var mediaAssetId = uploadData.media_asset.media_asset_id;
 var uploadUrl = uploadData.upload_info.upload_url;
 var uploadMethod = uploadData.upload_info.upload_method || 'PUT';
 var uploadHeaders = uploadData.upload_info.required_headers || {};
-await fetch(uploadUrl, { method: uploadMethod, headers: uploadHeaders, body: blob });
+await proxiedFetch(uploadUrl, { method: uploadMethod, headers: uploadHeaders, body: blob });
 worldPrompt = { type: 'image', image_prompt: { source: 'media_asset', media_asset_id: mediaAssetId }, text_prompt: prompt };
 } else {
 worldPrompt = { type: 'text', text_prompt: prompt };
 }
 progEl.textContent = 'Generating 3D world (this takes 1-3 minutes)...';
-var genRes = await fetch('https://api.worldlabs.ai/marble/v1/worlds:generate', {
+var genRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/worlds:generate', {
 method: 'POST', headers: headers,
 body: JSON.stringify({ display_name: 'Track Environment', model: 'Marble 0.1-plus', world_prompt: worldPrompt })
 });
@@ -943,7 +947,7 @@ worldData = genData.response;
 for (var attempt = 0; attempt < 180; attempt++) {
 await new Promise(function(r) { setTimeout(r, 3000); });
 progEl.textContent = 'Generating 3D world... (' + (attempt * 3) + 's)';
-var pollRes = await fetch('https://api.worldlabs.ai/marble/v1/operations/' + opId, { headers: { 'WLT-Api-Key': apiKey } });
+var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + opId, { headers: { 'WLT-Api-Key': apiKey } });
 if (!pollRes.ok) continue;
 var pollData = await pollRes.json();
 if (pollData.done) {
