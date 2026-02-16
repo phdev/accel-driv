@@ -341,7 +341,7 @@
         <button class="btn" onclick="downloadFlythrough()">Download</button>
       </div>
       <div id="fly-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
-      <video id="fly-video" style="display:none;max-width:100%;border-radius:4px;margin-top:6px" controls muted></video>
+      <video id="fly-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls muted></video>
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 2 &mdash; Runway Stylization</div>
@@ -365,11 +365,18 @@
           <option value="last">Last frame</option>
         </select>
       </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Output duration</span></div>
+        <select id="runway-duration" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="5">5 seconds</option>
+          <option value="10" selected>10 seconds</option>
+        </select>
+      </div>
       <div class="btn-group">
         <button class="btn btn-accent2" onclick="runRunwayStylize()" id="runway-btn">Stylize with Runway</button>
       </div>
       <div id="runway-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
-      <video id="runway-video" style="display:none;max-width:100%;border-radius:4px;margin-top:6px" controls></video>
+      <video id="runway-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls></video>
       <div id="runway-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
         <div style="color:var(--accent2);margin-bottom:4px">Pending Runway generation found</div>
         <div id="runway-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
@@ -1631,7 +1638,7 @@ if (!_flyFrames.length) { toast('Record a flythrough first'); return; }
 var prompt = document.getElementById('runway-prompt').value.trim();
 var model = document.getElementById('runway-model').value;
 var keyframeSel = document.getElementById('runway-keyframe').value;
-var duration = parseInt(document.getElementById('s-flydur').value);
+var duration = parseInt(document.getElementById('runway-duration').value);
 var btn = document.getElementById('runway-btn');
 var progEl = document.getElementById('runway-progress');
 btn.disabled = true; btn.textContent = 'Stylizing...';
@@ -1653,7 +1660,7 @@ model: model,
 promptImage: keyframe.dataUrl,
 promptText: prompt,
 ratio: '1280:720',
-duration: Math.min(duration, 10)
+duration: duration
 })
 });
 if (!res.ok) { var errBody = await res.text(); throw new Error('Runway (' + res.status + '): ' + errBody); }
