@@ -370,6 +370,11 @@
       </div>
       <div id="runway-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
       <video id="runway-video" style="display:none;max-width:100%;border-radius:4px;margin-top:6px" controls></video>
+      <div id="runway-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
+        <div style="color:var(--accent2);margin-bottom:4px">Pending Runway generation found</div>
+        <div id="runway-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
+        <div class="btn-group"><button class="btn btn-accent2" onclick="checkRunwayOperation()">Check Status</button><button class="btn" onclick="clearRunwayPending()">Dismiss</button></div>
+      </div>
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 3 &mdash; Marble from Video</div>
@@ -1152,6 +1157,90 @@ async function proxiedFetch(url, opts) {
   try { return await fetch(url, opts); }
   catch (e) { return fetch('https://corsproxy.io/?' + encodeURIComponent(url), opts); }
 }
+
+// ---- Visibility-aware polling sleep ----
+// When the tab is backgrounded, browsers throttle setTimeout to >=1s (or pause entirely).
+// This mechanism lets polling loops be woken up early when the tab regains focus.
+var _pollWakeResolvers = [];
+function pollSleep(ms) {
+  return new Promise(function(resolve) {
+    var done = false;
+    var timer = setTimeout(function() { if (!done) { done = true; resolve('timer'); } }, ms);
+    _pollWakeResolvers.push(function() { if (!done) { done = true; clearTimeout(timer); resolve('wake'); } });
+  });
+}
+function wakePollLoops() {
+  var fns = _pollWakeResolvers.splice(0);
+  fns.forEach(function(fn) { fn(); });
+}
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden) {
+    wakePollLoops();
+    showRunwayPending();
+    showMarblePending();
+  }
+});
+
+// ---- Runway pending state persistence ----
+function saveRunwayPending(taskId, apiKey) {
+  localStorage.setItem('runway_pending', JSON.stringify({ taskId: taskId, apiKey: apiKey, time: Date.now() }));
+}
+function clearRunwayPending() {
+  localStorage.removeItem('runway_pending');
+  var el = document.getElementById('runway-pending'); if (el) el.style.display = 'none';
+}
+function showRunwayPending() {
+  var raw = localStorage.getItem('runway_pending'); if (!raw) return;
+  try { var p = JSON.parse(raw); } catch(e) { return; }
+  var age = Math.round((Date.now() - p.time) / 60000);
+  if (age > 15) { clearRunwayPending(); return; }
+  var el = document.getElementById('runway-pending'); if (!el) return;
+  document.getElementById('runway-pending-info').textContent = 'Task: ' + p.taskId.substring(0, 12) + '... (' + age + ' min ago)';
+  el.style.display = 'block';
+}
+async function checkRunwayOperation() {
+  var raw = localStorage.getItem('runway_pending'); if (!raw) { toast('No pending Runway task'); return; }
+  try { var p = JSON.parse(raw); } catch(e) { toast('Invalid pending data'); clearRunwayPending(); return; }
+  var progEl = document.getElementById('runway-progress');
+  var pendEl = document.getElementById('runway-pending');
+  progEl.style.display = 'block';
+  progEl.textContent = 'Checking Runway task status...';
+  pendEl.style.display = 'none';
+  var apiKey = p.apiKey || document.getElementById('runway-apikey').value.trim();
+  if (!apiKey) { toast('Enter your Runway API key first'); pendEl.style.display = 'block'; return; }
+  var headers = { 'Authorization': 'Bearer ' + apiKey, 'X-Runway-Version': '2024-11-06' };
+  try {
+    var res = await proxiedFetch('https://api.dev.runwayml.com/v1/tasks/' + p.taskId, { headers: headers });
+    if (!res.ok) throw new Error('Poll failed: ' + res.status);
+    var data = await res.json();
+    if (data.status === 'SUCCEEDED') {
+      clearRunwayPending();
+      _runwayVideoUrl = data.output[0];
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = _runwayVideoUrl; videoEl.style.display = 'block';
+      progEl.textContent = 'Runway stylization complete!';
+      toast('Runway video ready');
+    } else if (data.status === 'FAILED') {
+      clearRunwayPending();
+      throw new Error('Runway failed: ' + (data.failureCode || 'unknown'));
+    } else if (data.status === 'CANCELED') {
+      clearRunwayPending();
+      throw new Error('Runway task canceled');
+    } else {
+      progEl.textContent = 'Still generating — resuming poll...';
+      _runwayVideoUrl = await pollRunwayTask(p.taskId, apiKey, progEl);
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = _runwayVideoUrl; videoEl.style.display = 'block';
+      progEl.textContent = 'Runway stylization complete!';
+      toast('Runway video ready');
+    }
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('Runway error: ' + err.message);
+    console.error('Runway check error:', err);
+  }
+}
+
 var _splatMesh = null;
 var _sparkLoaded = false;
 
@@ -1282,9 +1371,13 @@ if (worldData.world_marble_url) { window.open(worldData.world_marble_url, '_blan
 toast('World generated!');
 }
 async function pollMarbleOp(opId, apiKey, quality, progEl) {
-for (var attempt = 0; attempt < 180; attempt++) {
-await new Promise(function(r) { setTimeout(r, 3000); });
-progEl.textContent = 'Generating 3D world... (' + (attempt * 3) + 's)';
+var startTime = Date.now();
+var maxMs = 9 * 60 * 1000; // 9 min wall-clock timeout
+while (Date.now() - startTime < maxMs) {
+await pollSleep(3000);
+var elapsed = Math.round((Date.now() - startTime) / 1000);
+progEl.textContent = 'Generating 3D world... (' + elapsed + 's)';
+try {
 var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + opId, { headers: { 'WLT-Api-Key': apiKey } });
 if (!pollRes.ok) continue;
 var pollData = await pollRes.json();
@@ -1295,6 +1388,9 @@ return pollData.response;
 }
 if (pollData.metadata && pollData.metadata.progress) {
 progEl.textContent = 'Generating: ' + (pollData.metadata.progress.description || pollData.metadata.progress.status);
+}
+} catch (e) {
+if (e.message.includes('Generation error')) throw e;
 }
 }
 throw new Error('Timeout waiting for world generation');
@@ -1584,17 +1680,20 @@ btn.disabled = false; btn.textContent = 'Stylize with Runway';
 
 async function pollRunwayTask(taskId, apiKey, progEl) {
 var headers = { 'Authorization': 'Bearer ' + apiKey, 'X-Runway-Version': '2024-11-06' };
-for (var a = 0; a < 120; a++) {
-await new Promise(function(r) { setTimeout(r, 5000); });
-var elapsed = (a + 1) * 5;
+saveRunwayPending(taskId, apiKey);
+var startTime = Date.now();
+var maxMs = 10 * 60 * 1000; // 10 min wall-clock timeout
+while (Date.now() - startTime < maxMs) {
+await pollSleep(5000);
+var elapsed = Math.round((Date.now() - startTime) / 1000);
 progEl.textContent = 'Generating styled video... (' + elapsed + 's)';
 try {
 var res = await proxiedFetch('https://api.dev.runwayml.com/v1/tasks/' + taskId, { headers: headers });
 if (!res.ok) continue;
 var data = await res.json();
-if (data.status === 'SUCCEEDED') return data.output[0];
-if (data.status === 'FAILED') throw new Error('Runway failed: ' + (data.failureCode || 'unknown'));
-if (data.status === 'CANCELED') throw new Error('Runway task canceled');
+if (data.status === 'SUCCEEDED') { clearRunwayPending(); return data.output[0]; }
+if (data.status === 'FAILED') { clearRunwayPending(); throw new Error('Runway failed: ' + (data.failureCode || 'unknown')); }
+if (data.status === 'CANCELED') { clearRunwayPending(); throw new Error('Runway task canceled'); }
 progEl.textContent = 'Runway: ' + data.status + ' (' + elapsed + 's)';
 } catch (e) {
 if (e.message.includes('Runway failed') || e.message.includes('canceled')) throw e;
@@ -2010,8 +2109,8 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,exportTrainingViews,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline});
-init();fitView();showMarblePending();
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline});
+init();fitView();showMarblePending();showRunwayPending();
 </script>
 
 </body>
