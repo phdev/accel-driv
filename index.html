@@ -265,6 +265,7 @@
   </div>
 </div>
 <div id="toast"></div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js"}}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 // ============================================================
@@ -879,16 +880,12 @@ async function proxiedFetch(url, opts) {
 var _splatMesh = null;
 var _sparkLoaded = false;
 
-function ensureSparkLoaded() {
-return new Promise(function(resolve, reject) {
-if (_sparkLoaded) { resolve(); return; }
-if (window.Spark) { _sparkLoaded = true; resolve(); return; }
-var s = document.createElement('script');
-s.src = 'https://cdn.jsdelivr.net/npm/@sparkjsdev/spark@latest/dist/spark.min.js';
-s.onload = function() { _sparkLoaded = true; resolve(); };
-s.onerror = function() { reject(new Error('Failed to load Spark.js')); };
-document.head.appendChild(s);
-});
+async function ensureSparkLoaded() {
+if (_sparkLoaded) return;
+if (window.Spark) { _sparkLoaded = true; return; }
+var mod = await import('https://cdn.jsdelivr.net/npm/@sparkjsdev/spark@0.1.10/dist/spark.module.js');
+window.Spark = mod;
+_sparkLoaded = true;
 }
 
 function captureScreenshot() {
