@@ -3030,9 +3030,9 @@ if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 });
 // Proxy URL persistence: ?proxy=<url> to set, ?proxy=clear to remove
 var _proxyParam = new URLSearchParams(window.location.search).get('proxy');
-if (_proxyParam === '' || _proxyParam === 'clear') { localStorage.removeItem('proxy_url'); _proxyUrl = ''; }
+if (_proxyParam === '' || _proxyParam === 'clear') { localStorage.removeItem('proxy_url'); }
 else if (_proxyParam) { var _pu = _proxyParam.replace(/\/+$/, ''); localStorage.setItem('proxy_url', _pu); _proxyUrl = _pu; }
-else { _proxyUrl = localStorage.getItem('proxy_url') || ''; }
+else { var _stored = localStorage.getItem('proxy_url'); if (_stored) _proxyUrl = _stored; }
 // API key persistence: load from localStorage, URL params override
 var _apiKeyIds = ['runway-apikey', 'decart-apikey', 'marble-apikey'];
 if (_proxyUrl) {
