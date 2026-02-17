@@ -2105,7 +2105,7 @@ btn.disabled = false; btn.textContent = 'Stylize with Runway';
 var _runwaySegmentUrls = [];
 
 async function concatenateSegments(urls, progEl) {
-// Fetch all segment videos and concatenate using MediaSource or re-encode via canvas
+// Fetch all segment videos
 var blobs = [];
 for (var i = 0; i < urls.length; i++) {
   progEl.textContent = 'Downloading segment ' + (i + 1) + '/' + urls.length + '...';
@@ -2113,7 +2113,7 @@ for (var i = 0; i < urls.length; i++) {
   blobs.push(await res.blob());
 }
 
-// Use a hidden video + canvas + MediaRecorder to concatenate
+// Concatenate via hidden video → canvas → MediaRecorder
 progEl.textContent = 'Joining segments...';
 var canvas = document.createElement('canvas');
 canvas.width = 1280; canvas.height = 720;
@@ -2121,40 +2121,67 @@ var ctx = canvas.getContext('2d');
 var stream = canvas.captureStream(30);
 var mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
 var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
-var chunks = [];
-recorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
+var recChunks = [];
+recorder.ondataavailable = function(e) { if (e.data.size) recChunks.push(e.data); };
+recorder.start();
 
-return new Promise(async function(resolve, reject) {
-  recorder.start();
-  var vid = document.createElement('video');
-  vid.muted = true; vid.playsInline = true;
+var vid = document.createElement('video');
+vid.muted = true; vid.playsInline = true;
+var totalRecordedSec = 0;
 
-  for (var i = 0; i < blobs.length; i++) {
-    progEl.textContent = 'Encoding segment ' + (i + 1) + '/' + blobs.length + '...';
-    await new Promise(function(res, rej) {
-      vid.src = URL.createObjectURL(blobs[i]);
-      vid.onloadeddata = function() { vid.play(); res(); };
-      vid.onerror = function() { rej(new Error('Failed to load segment ' + (i + 1))); };
-    });
-    // Draw frames from this segment
-    await new Promise(function(res) {
-      function drawFrame() {
-        if (vid.paused || vid.ended) { res(); return; }
-        ctx.drawImage(vid, 0, 0, 1280, 720);
-        requestAnimationFrame(drawFrame);
-      }
-      vid.onended = function() { res(); };
-      drawFrame();
-    });
-    URL.revokeObjectURL(vid.src);
-  }
+for (var i = 0; i < blobs.length; i++) {
+  progEl.textContent = 'Encoding segment ' + (i + 1) + '/' + blobs.length + '...';
+  var blobUrl = URL.createObjectURL(blobs[i]);
 
-  recorder.onstop = function() {
-    var finalBlob = new Blob(chunks, { type: mimeType });
-    resolve(URL.createObjectURL(finalBlob));
+  // Load video and wait for play() to actually start
+  await new Promise(function(res, rej) {
+    vid.src = blobUrl;
+    vid.onloadeddata = function() {
+      vid.play().then(res).catch(function(e) {
+        // Autoplay may be blocked; try muted play
+        vid.muted = true;
+        vid.play().then(res).catch(rej);
+      });
+    };
+    vid.onerror = function() { rej(new Error('Failed to load segment ' + (i + 1))); };
+  });
+
+  // Draw frames until this segment ends
+  var segDur = vid.duration;
+  await new Promise(function(res) {
+    var done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      if (isFinite(segDur)) totalRecordedSec += segDur;
+      res();
+    }
+    vid.onended = finish;
+    // Safety timeout: if onended doesn't fire, stop after expected duration + buffer
+    var safetyMs = (isFinite(segDur) ? segDur : 10) * 1000 + 2000;
+    var safetyTimer = setTimeout(finish, safetyMs);
+    function drawFrame() {
+      if (done) { clearTimeout(safetyTimer); return; }
+      if (vid.ended) { clearTimeout(safetyTimer); finish(); return; }
+      ctx.drawImage(vid, 0, 0, 1280, 720);
+      requestAnimationFrame(drawFrame);
+    }
+    drawFrame();
+  });
+
+  URL.revokeObjectURL(blobUrl);
+}
+
+// Stop recorder and build final blob with fixed duration
+var finalBlobUrl = await new Promise(function(resolve) {
+  recorder.onstop = async function() {
+    var rawBlob = new Blob(recChunks, { type: mimeType });
+    var fixedBlob = await fixWebmDuration(rawBlob, totalRecordedSec * 1000);
+    resolve(URL.createObjectURL(fixedBlob));
   };
   recorder.stop();
 });
+return finalBlobUrl;
 }
 
 async function pollRunwayTask(taskId, apiKey, progEl, prefix) {
