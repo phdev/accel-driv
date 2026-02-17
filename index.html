@@ -418,7 +418,7 @@ const ET=[[400,-250,-400,0,1,0],[415.4,-250,-400.1,0,1,0],[435.9,-249.9,-400.5,0
 let trackData=[],origData=null,selA=-1,selB=-1,loopAdded=0,editMode='select';
 let cps=[],selCP=-1,dragCP=false,cpMeshes=[];
 let defWidth=30,isMobile=window.innerWidth<=768;
-let scene,cam,rndr,tLine,tRibbon,ptCloud,loopLine,selHL,cpGrp,splineLine,wRibbon,ray,mouse,gPlane;
+let scene,cam,rndr,tLine,tRibbon,ptCloud,loopLine,selHL,cpGrp,splineLine,wRibbon,ray,mouse,gPlane,laneLineGroup;
 let cScene,cCam;
 let orb={rot:false,pan:false,lx:0,ly:0,tgt:new THREE.Vector3(600,0,0),phi:Math.PI/4,theta:Math.PI/4,dist:1500};
 let tch={mode:null,last:null,initDist:0,tapTime:0,tapPos:null,moved:false};
@@ -517,7 +517,7 @@ function fitView(){if(!trackData.length)return;var a=Infinity,b=-Infinity,c=Infi
 // TRACK VISUALIZATION
 // ============================================================
 function buildVis(){
-if(tLine)scene.remove(tLine);if(tRibbon)scene.remove(tRibbon);if(ptCloud)scene.remove(ptCloud);if(selHL)scene.remove(selHL);if(trackRibbon)scene.remove(trackRibbon);
+if(tLine)scene.remove(tLine);if(tRibbon)scene.remove(tRibbon);if(ptCloud)scene.remove(ptCloud);if(selHL)scene.remove(selHL);if(trackRibbon)scene.remove(trackRibbon);if(laneLineGroup){scene.remove(laneLineGroup);laneLineGroup=null}
 if(!trackData.length)return;
 var pos=[],col=[];var mY=Infinity,MY=-Infinity;trackData.forEach(function(p){mY=Math.min(mY,p[0][1]);MY=Math.max(MY,p[0][1])});var yr=Math.max(MY-mY,1);
 trackData.forEach(function(p){pos.push(p[0][0],p[0][1],p[0][2]);var t=(p[0][1]-mY)/yr;col.push(1-t*.6,.3+t*.4,.2+t*.6)});
@@ -527,6 +527,7 @@ ptCloud=new THREE.Points(g1.clone(),new THREE.PointsMaterial({size:4,vertexColor
 selHL=new THREE.Points(new THREE.BufferGeometry(),new THREE.PointsMaterial({size:8,color:0x00ffcc,sizeAttenuation:false}));scene.add(selHL);
 updateSelVis();
 buildTrackRibbon();
+buildEditorLaneLines();
 }
 
 function buildTrackRibbon(){
@@ -548,6 +549,71 @@ g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3));
 g.setIndex(idx);g.computeVertexNormals();
 trackRibbon=new THREE.Mesh(g,new THREE.MeshPhongMaterial({vertexColors:true,side:THREE.DoubleSide}));
 scene.add(trackRibbon);
+}
+
+function buildEditorLaneLines(){
+if(laneLineGroup){scene.remove(laneLineGroup);laneLineGroup=null}
+if(trackData.length<10)return;
+laneLineGroup=new THREE.Group();
+var w=15,dashLen=18,gapLen=24,dashW=1.2,edgeInset=2.5;
+var dashMat=new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,transparent:true,opacity:0.5,depthWrite:false});
+var edgeMat=new THREE.MeshBasicMaterial({color:0xffdd44,side:THREE.DoubleSide,transparent:true,opacity:0.4,depthWrite:false});
+// Accumulate distance along track and place dashes
+var dist=0,cycleLen=dashLen+gapLen;
+var i=0;
+while(i<trackData.length-1){
+  var p=trackData[i][0],pn=trackData[Math.min(i+1,trackData.length-1)][0];
+  var segLen=Math.sqrt((pn[0]-p[0])**2+(pn[1]-p[1])**2+(pn[2]-p[2])**2);
+  var prevDist=dist;
+  dist+=segLen;
+  // Check if a dash start falls within this segment
+  var nextDash=Math.ceil(prevDist/cycleLen)*cycleLen;
+  while(nextDash<dist&&nextDash+dashLen*0.5<dist){
+    // Find the midpoint index roughly at nextDash+dashLen/2
+    var midDist=nextDash+dashLen/2;
+    var mi=i;
+    var acc=prevDist;
+    while(mi<trackData.length-2){
+      var d2=Math.sqrt((trackData[mi+1][0][0]-trackData[mi][0][0])**2+(trackData[mi+1][0][1]-trackData[mi][0][1])**2+(trackData[mi+1][0][2]-trackData[mi][0][2])**2);
+      if(acc+d2>=midDist)break;
+      acc+=d2;mi++;
+    }
+    var mp=trackData[mi][0],mn=trackData[mi][1];
+    var fwd;
+    if(mi<trackData.length-1)fwd=sub(trackData[mi+1][0],mp);else fwd=sub(mp,trackData[mi-1][0]);
+    var fl=Math.sqrt(fwd[0]**2+fwd[1]**2+fwd[2]**2)||1;
+    fwd=[fwd[0]/fl,fwd[1]/fl,fwd[2]/fl];
+    var r=crs(fwd,mn),rl=Math.sqrt(r[0]**2+r[1]**2+r[2]**2)||1;
+    r=[r[0]/rl,r[1]/rl,r[2]/rl];
+    // Center dash
+    var dg=new THREE.PlaneGeometry(dashW,dashLen);
+    var dm=new THREE.Mesh(dg,dashMat);
+    dm.position.set(mp[0],mp[1]+1.5,mp[2]);
+    var la=new THREE.Vector3(mp[0]+fwd[0],mp[1]+fwd[1]+1.5,mp[2]+fwd[2]);
+    dm.up.set(mn[0],mn[1],mn[2]);
+    dm.lookAt(la);
+    dm.rotateX(-Math.PI/2);
+    laneLineGroup.add(dm);
+    // Left edge dash
+    var eg=new THREE.PlaneGeometry(dashW*0.6,dashLen*0.7);
+    var el=new THREE.Mesh(eg,edgeMat);
+    el.position.set(mp[0]-r[0]*(w-edgeInset),mp[1]-r[1]*(w-edgeInset)+1.5,mp[2]-r[2]*(w-edgeInset));
+    el.up.set(mn[0],mn[1],mn[2]);
+    el.lookAt(new THREE.Vector3(el.position.x+fwd[0],el.position.y+fwd[1],el.position.z+fwd[2]));
+    el.rotateX(-Math.PI/2);
+    laneLineGroup.add(el);
+    // Right edge dash
+    var er=new THREE.Mesh(eg.clone(),edgeMat);
+    er.position.set(mp[0]+r[0]*(w-edgeInset),mp[1]+r[1]*(w-edgeInset)+1.5,mp[2]+r[2]*(w-edgeInset));
+    er.up.set(mn[0],mn[1],mn[2]);
+    er.lookAt(new THREE.Vector3(er.position.x+fwd[0],er.position.y+fwd[1],er.position.z+fwd[2]));
+    er.rotateX(-Math.PI/2);
+    laneLineGroup.add(er);
+    nextDash+=cycleLen;
+  }
+  i++;
+}
+scene.add(laneLineGroup);
 }
 
 function updateSelVis(){if(!selHL)return;if(selA<0){selHL.geometry.setAttribute('position',new THREE.Float32BufferAttribute([],3));return}var lo=Math.min(selA,selB<0?selA:selB),hi=Math.max(selA,selB<0?selA:selB);var p=[];for(var i=lo;i<=hi&&i<trackData.length;i++)p.push(trackData[i][0][0],trackData[i][0][1],trackData[i][0][2]);selHL.geometry.setAttribute('position',new THREE.Float32BufferAttribute(p,3))}
