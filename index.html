@@ -1685,11 +1685,10 @@ recorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); }
 
 _flyFrames = [];
 _flyBlob = null;
-recorder.start();
 
 // --- Pre-pass: capture keyframe images for Runway segment chaining ---
-// Done separately so that the expensive toDataURL calls don't inflate
-// the recording loop's wall-clock time (which MediaRecorder uses for timestamps).
+// Done BEFORE recorder.start() so the expensive toDataURL calls don't
+// add wall-clock time to the recording (MediaRecorder uses wall-clock for timestamps).
 progEl.textContent = 'Capturing keyframes...';
 for (var kf = 0; kf <= duration; kf++) {
   var kfFrame = kf === duration ? totalFrames - 1 : kf * fps;
@@ -1710,48 +1709,66 @@ for (var kf = 0; kf <= duration; kf++) {
   });
 }
 
-// --- Main recording pass: render + requestFrame only, no toDataURL ---
-// MediaRecorder timestamps frames by wall-clock, so we pace each frame
-// to land at exactly the right moment. Without toDataURL overhead in this
-// loop, render time stays well under the 33ms frame interval.
+// --- Main recording pass: wall-clock driven ---
+// Camera position is derived from elapsed wall-clock time, NOT frame count.
+// This guarantees the full track is traversed in exactly `duration` seconds
+// regardless of how long each render() takes. If rendering is slow, we get
+// fewer frames (lower effective fps) but correct duration and full traversal.
+var recordingDurationMs = duration * 1000;
 var frameInterval = 1000 / fps;
+recorder.start();
 var recordingStart = performance.now();
+var f = 0;
 
-for (var f = 0; f < totalFrames; f++) {
-var t;
-if (isClosed) {
-t = f / totalFrames;
-} else {
-t = f / Math.max(totalFrames - 1, 1);
-t = Math.min(t, 0.9999);
+while (true) {
+  var elapsed = performance.now() - recordingStart;
+  if (elapsed >= recordingDurationMs) break;
+
+  // Camera position based on elapsed time, not frame count
+  var t = elapsed / recordingDurationMs;
+  if (isClosed) {
+    t = t % 1;
+  } else {
+    t = Math.min(t, 0.9999);
+  }
+  var lookT = t + 0.02;
+  if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
+
+  var point = flyCurve.getPointAt(t);
+  var lookPt = flyCurve.getPointAt(lookT);
+  var tangent = flyCurve.getTangentAt(t).normalize();
+
+  offCam.position.set(
+    point.x - tangent.x * 10,
+    point.y + camH,
+    point.z - tangent.z * 10
+  );
+  offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
+  offCam.updateMatrixWorld(true);
+
+  offR.clear(); offR.render(scene, offCam);
+  if (hasRF) vTrack.requestFrame();
+
+  f++;
+  var pct = Math.min(100, Math.round(elapsed / recordingDurationMs * 100));
+  progEl.textContent = 'Recording ' + pct + '% (' + f + ' frames)';
+
+  // Sleep remaining time until next frame interval
+  var nextFrameTime = recordingStart + f * frameInterval;
+  var sleepMs = nextFrameTime - performance.now();
+  if (sleepMs > 1) {
+    await new Promise(function(r) { setTimeout(r, sleepMs); });
+  } else {
+    // Render took longer than frame interval — just yield and continue.
+    // We'll get fewer frames but wall-clock stays correct.
+    await new Promise(function(r) { setTimeout(r, 0); });
+  }
 }
-var lookT = t + 0.02;
-if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
 
-var point = flyCurve.getPointAt(t);
-var lookPt = flyCurve.getPointAt(lookT);
-var tangent = flyCurve.getTangentAt(t).normalize();
-
-offCam.position.set(
-point.x - tangent.x * 10,
-point.y + camH,
-point.z - tangent.z * 10
-);
-offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
-offCam.updateMatrixWorld(true);
-
-offR.clear(); offR.render(scene, offCam);
-if (hasRF) vTrack.requestFrame();
-
-progEl.textContent = 'Recording ' + (f + 1) + '/' + totalFrames;
-// Sleep remaining time so wall-clock matches target frame time
-var targetTime = recordingStart + (f + 1) * frameInterval;
-var sleepMs = targetTime - performance.now();
-if (sleepMs > 1) {
-  await new Promise(function(r) { setTimeout(r, sleepMs); });
-} else {
-  await new Promise(function(r) { setTimeout(r, 0); });
-}
+// Ensure we hit exactly the target duration before stopping
+var remaining = recordingDurationMs - (performance.now() - recordingStart);
+if (remaining > 10) {
+  await new Promise(function(r) { setTimeout(r, remaining); });
 }
 
 // Remove temporary environment objects and restore scene
@@ -1780,7 +1797,7 @@ _flyBlob = await fixWebmDuration(_flyBlob, duration * 1000);
 var videoEl = document.getElementById('fly-video');
 videoEl.src = URL.createObjectURL(_flyBlob);
 videoEl.style.display = 'block';
-progEl.textContent = 'Recorded ' + duration + 's flythrough (' + totalFrames + ' frames)';
+progEl.textContent = 'Recorded ' + duration + 's flythrough (' + f + ' frames)';
 offR.dispose();
 btn.disabled = false; btn.textContent = 'Record Flythrough';
 toast('Flythrough recorded');
