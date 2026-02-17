@@ -1687,7 +1687,14 @@ _flyFrames = [];
 _flyBlob = null;
 recorder.start();
 
+// MediaRecorder timestamps frames by wall-clock, so we must pace frames
+// to match the target frame interval exactly. Track recording start time
+// and sleep only the remaining ms after render/capture overhead.
+var frameInterval = 1000 / fps;
+var recordingStart = performance.now();
+
 for (var f = 0; f < totalFrames; f++) {
+var frameStart = performance.now();
 var t;
 if (isClosed) {
 // Full loop: t goes from 0 to 1 (back to start)
@@ -1730,14 +1737,15 @@ dataUrl: offR.domElement.toDataURL('image/jpeg', 0.92)
 }
 
 progEl.textContent = 'Recording ' + (f + 1) + '/' + totalFrames;
-// When using requestFrame(), only yield briefly so the encoder can process the frame.
-// Real-time sleeping inflates MediaRecorder wall-clock timestamps, producing a video
-// much longer than intended. The actual duration is stamped via fixWebmDuration afterward.
-if (hasRF) {
-  await new Promise(function(r) { setTimeout(r, 0); });
+// Sleep the remaining time so each frame lands at exactly the right wall-clock moment.
+// This ensures MediaRecorder produces a video whose duration matches the target,
+// regardless of how long render + toDataURL takes per frame.
+var targetTime = recordingStart + (f + 1) * frameInterval;
+var sleepMs = targetTime - performance.now();
+if (sleepMs > 1) {
+  await new Promise(function(r) { setTimeout(r, sleepMs); });
 } else {
-  // Fallback: captureStream(fps) relies on wall-clock pacing
-  await new Promise(function(r) { setTimeout(r, Math.round(1000 / fps)); });
+  await new Promise(function(r) { setTimeout(r, 0); });
 }
 }
 
