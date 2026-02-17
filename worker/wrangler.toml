@@ -1,0 +1,9 @@
+name = "accel-driv-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# API keys are stored as encrypted secrets, NOT in this file.
+# After deploying, add them with:
+#   wrangler secret put RUNWAY_KEY
+#   wrangler secret put MARBLE_KEY
+#   wrangler secret put DECART_KEY

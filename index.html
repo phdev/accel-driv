@@ -1239,7 +1239,27 @@ toast('Back to editor');
 // ============================================================
 // MARBLE WORLD GENERATION + SPARK.JS SPLAT VIEWER
 // ============================================================
+var _proxyUrl = '';
+var _RUNWAY_PREFIX = 'https://api.dev.runwayml.com/v1/';
+var _MARBLE_PREFIX = 'https://api.worldlabs.ai/marble/v1/';
+var _DECART_PREFIX = 'https://api.decart.ai/v1/';
 async function proxiedFetch(url, opts) {
+  opts = opts || {};
+  if (_proxyUrl) {
+    var workerPath = null;
+    if (url.indexOf(_RUNWAY_PREFIX) === 0) workerPath = '/runway/' + url.slice(_RUNWAY_PREFIX.length);
+    else if (url.indexOf(_MARBLE_PREFIX) === 0) workerPath = '/marble/' + url.slice(_MARBLE_PREFIX.length);
+    else if (url.indexOf(_DECART_PREFIX) === 0) workerPath = '/decart/' + url.slice(_DECART_PREFIX.length);
+    if (workerPath) {
+      // Strip auth headers — Worker adds them server-side
+      var h = {};
+      if (opts.headers) { for (var k in opts.headers) { var kl = k.toLowerCase(); if (kl !== 'authorization' && kl !== 'wlt-api-key' && kl !== 'x-api-key' && kl !== 'x-runway-version') h[k] = opts.headers[k]; } }
+      return fetch(_proxyUrl + workerPath, Object.assign({}, opts, { headers: h }));
+    }
+    // Non-API URL: try direct, fallback to Worker generic proxy
+    try { return await fetch(url, opts); }
+    catch (e) { return fetch(_proxyUrl + '/fetch?url=' + encodeURIComponent(url), opts); }
+  }
   try { return await fetch(url, opts); }
   catch (e) { return fetch('https://corsproxy.io/?' + encodeURIComponent(url), opts); }
 }
@@ -3008,25 +3028,40 @@ var sl=document.getElementById(id);if(!sl)return;
 var vlbl=document.getElementById('v-'+id.slice(2));
 if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 });
+// Proxy URL persistence: ?proxy=<url> to set, ?proxy=clear to remove
+var _proxyParam = new URLSearchParams(window.location.search).get('proxy');
+if (_proxyParam === '' || _proxyParam === 'clear') { localStorage.removeItem('proxy_url'); _proxyUrl = ''; }
+else if (_proxyParam) { var _pu = _proxyParam.replace(/\/+$/, ''); localStorage.setItem('proxy_url', _pu); _proxyUrl = _pu; }
+else { _proxyUrl = localStorage.getItem('proxy_url') || ''; }
 // API key persistence: load from localStorage, URL params override
 var _apiKeyIds = ['runway-apikey', 'decart-apikey', 'marble-apikey'];
-_apiKeyIds.forEach(function(id) {
-  var el = document.getElementById(id); if (!el) return;
-  var saved = localStorage.getItem('apikey_' + id);
-  if (saved && !el.value) el.value = saved;
-  el.addEventListener('input', function() {
-    var v = el.value.trim();
-    if (v) localStorage.setItem('apikey_' + id, v);
-    else localStorage.removeItem('apikey_' + id);
+if (_proxyUrl) {
+  _apiKeyIds.forEach(function(id) {
+    var el = document.getElementById(id); if (!el) return;
+    el.value = 'proxy-managed';
+    el.disabled = true;
+    el.style.opacity = '0.5';
+    el.title = 'API key managed by proxy: ' + _proxyUrl;
   });
-});
-// URL params override localStorage (Runway, Decart, Marble)
-var rkParam=new URLSearchParams(window.location.search).get('rk');
-if(rkParam){var rkEl=document.getElementById('runway-apikey');if(rkEl)rkEl.value=rkParam}
-var dkParam=new URLSearchParams(window.location.search).get('dk');
-if(dkParam){var dkEl=document.getElementById('decart-apikey');if(dkEl)dkEl.value=dkParam}
-var mkParam=new URLSearchParams(window.location.search).get('mk');
-if(mkParam){var mkEl=document.getElementById('marble-apikey');if(mkEl)mkEl.value=mkParam}
+} else {
+  _apiKeyIds.forEach(function(id) {
+    var el = document.getElementById(id); if (!el) return;
+    var saved = localStorage.getItem('apikey_' + id);
+    if (saved && !el.value) el.value = saved;
+    el.addEventListener('input', function() {
+      var v = el.value.trim();
+      if (v) localStorage.setItem('apikey_' + id, v);
+      else localStorage.removeItem('apikey_' + id);
+    });
+  });
+  // URL params override localStorage (Runway, Decart, Marble)
+  var rkParam=new URLSearchParams(window.location.search).get('rk');
+  if(rkParam){var rkEl=document.getElementById('runway-apikey');if(rkEl)rkEl.value=rkParam}
+  var dkParam=new URLSearchParams(window.location.search).get('dk');
+  if(dkParam){var dkEl=document.getElementById('decart-apikey');if(dkEl)dkEl.value=dkParam}
+  var mkParam=new URLSearchParams(window.location.search).get('mk');
+  if(mkParam){var mkEl=document.getElementById('marble-apikey');if(mkEl)mkEl.value=mkParam}
+}
 }
 
 // ============================================================
