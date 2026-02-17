@@ -371,6 +371,7 @@
       <div id="runway-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
       <div id="runway-segments" style="display:none;margin-top:6px"></div>
       <video id="runway-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls></video>
+      <div id="runway-download-bar" style="display:none;margin-top:4px" class="btn-group"></div>
       <div id="runway-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
         <div style="color:var(--accent2);margin-bottom:4px">Pending Runway generation found</div>
         <div id="runway-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
@@ -1697,6 +1698,30 @@ var a = document.createElement('a'); a.href = URL.createObjectURL(_flyBlob);
 a.download = 'flythrough.webm'; a.click();
 }
 
+// ---- Download helpers ----
+function downloadVideoUrl(url, filename) {
+  var a = document.createElement('a');
+  // If it's a blob URL we can download directly; for remote URLs fetch first
+  if (url.startsWith('blob:')) {
+    a.href = url; a.download = filename; a.click();
+  } else {
+    proxiedFetch(url).then(function(r) { return r.blob(); }).then(function(b) {
+      var blobUrl = URL.createObjectURL(b);
+      a.href = blobUrl; a.download = filename; a.click();
+      setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 1000);
+    });
+  }
+}
+
+function makeDownloadBtn(url, label, filename) {
+  var btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.textContent = label;
+  btn.style.cssText = 'font-size:10px;padding:3px 8px;margin-top:2px';
+  btn.onclick = function() { downloadVideoUrl(url, filename); };
+  return btn;
+}
+
 // ---- Aleph model helpers ----
 function onRunwayModelChange() {
   var model = document.getElementById('runway-model').value;
@@ -1909,9 +1934,11 @@ if (isAleph) {
 var btn = document.getElementById('runway-btn');
 var progEl = document.getElementById('runway-progress');
 var segEl = document.getElementById('runway-segments');
+var dlBar = document.getElementById('runway-download-bar');
 btn.disabled = true; btn.textContent = 'Stylizing...';
 progEl.style.display = 'block';
 segEl.style.display = 'none'; segEl.innerHTML = '';
+dlBar.style.display = 'none'; dlBar.innerHTML = '';
 
 var headers = {
 'Content-Type': 'application/json',
@@ -1925,6 +1952,10 @@ var numSegments;
 
 if (isAleph) {
   // ---- ALEPH: video-to-video path ----
+  // Prepend motion-preservation instruction so Aleph follows the source
+  // camera path exactly instead of hallucinating new curves/turns
+  var alephPrompt = 'Preserve the exact camera motion, direction, and trajectory from the source video. Do not add turns, curves, or direction changes that are not in the original. ' + prompt;
+
   progEl.textContent = 'Splitting flythrough into ' + segDuration + 's chunks...';
   var videoChunks = await splitVideoIntoChunks(_flyBlob, segDuration);
   numSegments = videoChunks.length;
@@ -1945,7 +1976,7 @@ if (isAleph) {
       body: JSON.stringify({
         model: 'gen4_aleph',
         videoUri: videoDataUrl,
-        promptText: prompt,
+        promptText: alephPrompt,
         ratio: '1280:720',
         duration: Math.max(2, chunk.duration || segDuration)
       })
@@ -1966,6 +1997,7 @@ if (isAleph) {
       segTitle.textContent = 'Chunk ' + (ci + 1);
       segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
       segEl.appendChild(segTitle); segEl.appendChild(segVid);
+      segEl.appendChild(makeDownloadBtn(segUrl, 'Download chunk ' + (ci + 1), 'runway-chunk-' + (ci + 1) + '.mp4'));
     }
   }
 } else {
@@ -2027,6 +2059,7 @@ if (isAleph) {
       segTitle.textContent = 'Segment ' + (si + 1);
       segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
       segEl.appendChild(segTitle); segEl.appendChild(segVid);
+      segEl.appendChild(makeDownloadBtn(segUrl, 'Download segment ' + (si + 1), 'runway-segment-' + (si + 1) + '.mp4'));
     }
   }
 }
@@ -2046,6 +2079,16 @@ if (numSegments === 1) {
   var videoEl = document.getElementById('runway-video');
   videoEl.src = _runwayVideoUrl;
   videoEl.style.display = 'block';
+}
+
+// Show download bar
+dlBar.style.display = 'flex';
+dlBar.innerHTML = '';
+dlBar.appendChild(makeDownloadBtn(_runwayVideoUrl, numSegments > 1 ? 'Download full video' : 'Download video', 'runway-stylized.mp4'));
+if (numSegments > 1) {
+  for (var di = 0; di < segmentUrls.length; di++) {
+    dlBar.appendChild(makeDownloadBtn(segmentUrls[di], (isAleph ? 'Chunk ' : 'Seg ') + (di + 1), 'runway-part-' + (di + 1) + '.mp4'));
+  }
 }
 
 progEl.textContent = 'Runway stylization complete!' + (numSegments > 1 ? ' (' + numSegments + ' segments joined)' : '');
