@@ -345,15 +345,16 @@
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 2 &mdash; Runway Stylization</div>
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Stylizes the flythrough using <span style="color:var(--accent2)">Runway</span> image-to-video. Gen-4 Turbo uses first+last keyframes per segment for consistency. Longer tracks are auto-chained into 10s segments and concatenated.</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Stylizes the flythrough using <span style="color:var(--accent2)">Runway</span>. Gen-4 Turbo/Gen-3 use image-to-video with keyframes per segment. <strong>Aleph</strong> uses video-to-video &mdash; sends actual flythrough chunks preserving camera motion (max 5s/segment). Longer tracks are auto-chunked and concatenated.</div>
       <div class="slider-group">
         <div class="slider-label"><span>Style prompt</span></div>
         <textarea id="runway-prompt" rows="2" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">cinematic flythrough of a futuristic racing track through a detailed sci-fi cityscape environment, towering neon buildings on both sides, volumetric fog, reflective wet ground, dramatic sky with clouds, photorealistic</textarea>
       </div>
       <div class="slider-group">
         <div class="slider-label"><span>Model</span></div>
-        <select id="runway-model" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+        <select id="runway-model" onchange="onRunwayModelChange()" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
           <option value="gen4_turbo" selected>Gen-4 Turbo</option>
+          <option value="gen4_aleph">Gen-4 Aleph (video-to-video)</option>
           <option value="gen3a_turbo">Gen-3 Alpha Turbo</option>
         </select>
       </div>
@@ -1696,13 +1697,121 @@ var a = document.createElement('a'); a.href = URL.createObjectURL(_flyBlob);
 a.download = 'flythrough.webm'; a.click();
 }
 
+// ---- Aleph model helpers ----
+function onRunwayModelChange() {
+  var model = document.getElementById('runway-model').value;
+  var durSel = document.getElementById('runway-duration');
+  if (model === 'gen4_aleph') {
+    // Aleph max 5s per generation — force segment to 5s
+    durSel.value = '5';
+    durSel.disabled = true;
+  } else {
+    durSel.disabled = false;
+  }
+}
+
+function blobToDataUrl(blob) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() { resolve(reader.result); };
+    reader.onerror = function() { reject(new Error('Failed to read blob')); };
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Split a video blob into chunks of segDur seconds each.
+// Returns an array of { blob, duration } objects.
+async function splitVideoIntoChunks(videoBlob, segDur) {
+  var video = document.createElement('video');
+  video.muted = true; video.playsInline = true;
+  video.preload = 'auto';
+  video.src = URL.createObjectURL(videoBlob);
+
+  // Wait for metadata so we know the full duration
+  await new Promise(function(res, rej) {
+    video.onloadedmetadata = function() { res(); };
+    video.onerror = function() { rej(new Error('Cannot load video for chunking')); };
+  });
+
+  var totalDur = video.duration;
+  if (!isFinite(totalDur) || totalDur <= 0) {
+    // WebM duration can be unknown; fall back to flythrough keyframe time
+    totalDur = _flyFrames.length ? _flyFrames[_flyFrames.length - 1].time : segDur;
+  }
+  var numChunks = Math.max(1, Math.ceil(totalDur / segDur));
+  var chunks = [];
+
+  var canvas = document.createElement('canvas');
+  canvas.width = 1280; canvas.height = 720;
+  var ctx = canvas.getContext('2d');
+
+  for (var i = 0; i < numChunks; i++) {
+    var startT = i * segDur;
+    var endT = Math.min((i + 1) * segDur, totalDur);
+    var chunkDur = endT - startT;
+
+    // Seek to start of this chunk
+    await new Promise(function(res) {
+      video.currentTime = startT;
+      video.onseeked = function() { res(); };
+    });
+
+    // Record this chunk via canvas + MediaRecorder
+    var cStream = canvas.captureStream(30);
+    var mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+    var rec = new MediaRecorder(cStream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
+    var parts = [];
+    rec.ondataavailable = function(e) { if (e.data.size) parts.push(e.data); };
+
+    var chunkBlob = await new Promise(function(resolve, reject) {
+      rec.start();
+      video.play();
+
+      function drawLoop() {
+        if (video.paused || video.ended || video.currentTime >= endT) {
+          video.pause();
+          rec.onstop = function() {
+            resolve(new Blob(parts, { type: mimeType }));
+          };
+          rec.stop();
+          return;
+        }
+        ctx.drawImage(video, 0, 0, 1280, 720);
+        requestAnimationFrame(drawLoop);
+      }
+
+      // Also stop on timeupdate to catch endT precisely
+      video.ontimeupdate = function() {
+        if (video.currentTime >= endT) {
+          video.pause();
+        }
+      };
+      drawLoop();
+    });
+
+    chunks.push({ blob: chunkBlob, duration: Math.round(chunkDur) });
+  }
+
+  URL.revokeObjectURL(video.src);
+  return chunks;
+}
+
 async function runRunwayStylize() {
 var apiKey = document.getElementById('runway-apikey').value.trim();
 if (!apiKey) { toast('Enter a Runway API key'); return; }
-if (!_flyFrames.length || _flyFrames.length < 2) { toast('Record a flythrough first'); return; }
 var prompt = document.getElementById('runway-prompt').value.trim();
 var model = document.getElementById('runway-model').value;
+var isAleph = (model === 'gen4_aleph');
 var segDuration = parseInt(document.getElementById('runway-duration').value);
+if (isAleph) segDuration = Math.min(segDuration, 5); // Aleph hard cap
+
+// Validation: Aleph needs the video blob, image-to-video needs keyframes
+if (isAleph) {
+  if (!_flyBlob) { toast('Record a flythrough first'); return; }
+} else {
+  if (!_flyFrames.length || _flyFrames.length < 2) { toast('Record a flythrough first'); return; }
+}
+
 var btn = document.getElementById('runway-btn');
 var progEl = document.getElementById('runway-progress');
 var segEl = document.getElementById('runway-segments');
@@ -1716,73 +1825,115 @@ var headers = {
 'X-Runway-Version': '2024-11-06'
 };
 
-// Determine total flythrough duration from keyframes
-var totalDuration = _flyFrames[_flyFrames.length - 1].time;
-var numSegments = Math.max(1, Math.ceil(totalDuration / segDuration));
-
-// Build segment boundaries using captured keyframes
-var segments = [];
-for (var s = 0; s < numSegments; s++) {
-  var startTime = s * segDuration;
-  var endTime = Math.min((s + 1) * segDuration, totalDuration);
-  // Find closest keyframes to start and end times
-  var firstKF = _flyFrames.reduce(function(best, f) {
-    return Math.abs(f.time - startTime) < Math.abs(best.time - startTime) ? f : best;
-  });
-  var lastKF = _flyFrames.reduce(function(best, f) {
-    return Math.abs(f.time - endTime) < Math.abs(best.time - endTime) ? f : best;
-  });
-  // Avoid using same frame for first and last
-  if (firstKF === lastKF && _flyFrames.length > 1) {
-    var idx = _flyFrames.indexOf(firstKF);
-    lastKF = _flyFrames[Math.min(idx + 1, _flyFrames.length - 1)];
-  }
-  segments.push({ index: s, firstKF: firstKF, lastKF: lastKF, duration: segDuration });
-}
-
-progEl.textContent = numSegments === 1
-  ? 'Submitting to Runway (' + model + ')...'
-  : 'Stylizing ' + numSegments + ' segments with ' + model + '...';
-
 try {
 var segmentUrls = [];
+var numSegments;
 
-for (var si = 0; si < segments.length; si++) {
-  var seg = segments[si];
-  var segLabel = numSegments > 1 ? 'Segment ' + (si + 1) + '/' + numSegments + ': ' : '';
+if (isAleph) {
+  // ---- ALEPH: video-to-video path ----
+  progEl.textContent = 'Splitting flythrough into ' + segDuration + 's chunks...';
+  var videoChunks = await splitVideoIntoChunks(_flyBlob, segDuration);
+  numSegments = videoChunks.length;
+  progEl.textContent = numSegments === 1
+    ? 'Submitting to Runway Aleph...'
+    : 'Stylizing ' + numSegments + ' chunks with Aleph (video-to-video)...';
 
-  // Use first frame as keyframe to avoid unstylized transition
-  var promptImage = seg.firstKF.dataUrl;
+  for (var ci = 0; ci < videoChunks.length; ci++) {
+    var chunk = videoChunks[ci];
+    var segLabel = numSegments > 1 ? 'Chunk ' + (ci + 1) + '/' + numSegments + ': ' : '';
 
-  progEl.textContent = segLabel + 'Submitting to Runway...';
-  var res = await proxiedFetch('https://api.dev.runwayml.com/v1/image_to_video', {
-    method: 'POST', headers: headers,
-    body: JSON.stringify({
-      model: model,
-      promptImage: promptImage,
-      promptText: prompt,
-      ratio: '1280:720',
-      duration: seg.duration
-    })
-  });
-  if (!res.ok) { var errBody = await res.text(); throw new Error('Runway (' + res.status + '): ' + errBody); }
-  var taskData = await res.json();
-  var taskId = taskData.id;
+    progEl.textContent = segLabel + 'Encoding video chunk as data URI...';
+    var videoDataUrl = await blobToDataUrl(chunk.blob);
 
-  // Poll this segment
-  var segUrl = await pollRunwayTask(taskId, apiKey, progEl, segLabel);
-  segmentUrls.push(segUrl);
+    progEl.textContent = segLabel + 'Submitting to Runway Aleph...';
+    var res = await proxiedFetch('https://api.dev.runwayml.com/v1/video_to_video', {
+      method: 'POST', headers: headers,
+      body: JSON.stringify({
+        model: 'gen4_aleph',
+        videoUri: videoDataUrl,
+        promptText: prompt,
+        ratio: '1280:720',
+        duration: Math.max(2, chunk.duration || segDuration)
+      })
+    });
+    if (!res.ok) { var errBody = await res.text(); throw new Error('Runway Aleph (' + res.status + '): ' + errBody); }
+    var taskData = await res.json();
+    var taskId = taskData.id;
 
-  // Show individual segment videos if multi-segment
-  if (numSegments > 1) {
-    segEl.style.display = 'block';
-    var segVid = document.createElement('video');
-    segVid.src = segUrl; segVid.controls = true;
-    segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
-    var segTitle = document.createElement('div');
-    segTitle.textContent = 'Segment ' + (si + 1);
-    segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
-    segEl.appendChild(segTitle); segEl.appendChild(segVid);
+    var segUrl = await pollRunwayTask(taskId, apiKey, progEl, segLabel);
+    segmentUrls.push(segUrl);
+
+    if (numSegments > 1) {
+      segEl.style.display = 'block';
+      var segVid = document.createElement('video');
+      segVid.src = segUrl; segVid.controls = true;
+      segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
+      var segTitle = document.createElement('div');
+      segTitle.textContent = 'Chunk ' + (ci + 1);
+      segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
+      segEl.appendChild(segTitle); segEl.appendChild(segVid);
+    }
+  }
+} else {
+  // ---- IMAGE-TO-VIDEO path (Gen-4 Turbo / Gen-3 Alpha Turbo) ----
+  var totalDuration = _flyFrames[_flyFrames.length - 1].time;
+  numSegments = Math.max(1, Math.ceil(totalDuration / segDuration));
+
+  // Build segment boundaries using captured keyframes
+  var segments = [];
+  for (var s = 0; s < numSegments; s++) {
+    var startTime = s * segDuration;
+    var endTime = Math.min((s + 1) * segDuration, totalDuration);
+    var firstKF = _flyFrames.reduce(function(best, f) {
+      return Math.abs(f.time - startTime) < Math.abs(best.time - startTime) ? f : best;
+    });
+    var lastKF = _flyFrames.reduce(function(best, f) {
+      return Math.abs(f.time - endTime) < Math.abs(best.time - endTime) ? f : best;
+    });
+    if (firstKF === lastKF && _flyFrames.length > 1) {
+      var idx = _flyFrames.indexOf(firstKF);
+      lastKF = _flyFrames[Math.min(idx + 1, _flyFrames.length - 1)];
+    }
+    segments.push({ index: s, firstKF: firstKF, lastKF: lastKF, duration: segDuration });
+  }
+
+  progEl.textContent = numSegments === 1
+    ? 'Submitting to Runway (' + model + ')...'
+    : 'Stylizing ' + numSegments + ' segments with ' + model + '...';
+
+  for (var si = 0; si < segments.length; si++) {
+    var seg = segments[si];
+    var segLabel = numSegments > 1 ? 'Segment ' + (si + 1) + '/' + numSegments + ': ' : '';
+    var promptImage = seg.firstKF.dataUrl;
+
+    progEl.textContent = segLabel + 'Submitting to Runway...';
+    var res = await proxiedFetch('https://api.dev.runwayml.com/v1/image_to_video', {
+      method: 'POST', headers: headers,
+      body: JSON.stringify({
+        model: model,
+        promptImage: promptImage,
+        promptText: prompt,
+        ratio: '1280:720',
+        duration: seg.duration
+      })
+    });
+    if (!res.ok) { var errBody = await res.text(); throw new Error('Runway (' + res.status + '): ' + errBody); }
+    var taskData = await res.json();
+    var taskId = taskData.id;
+
+    var segUrl = await pollRunwayTask(taskId, apiKey, progEl, segLabel);
+    segmentUrls.push(segUrl);
+
+    if (numSegments > 1) {
+      segEl.style.display = 'block';
+      var segVid = document.createElement('video');
+      segVid.src = segUrl; segVid.controls = true;
+      segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
+      var segTitle = document.createElement('div');
+      segTitle.textContent = 'Segment ' + (si + 1);
+      segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
+      segEl.appendChild(segTitle); segEl.appendChild(segVid);
+    }
   }
 }
 
