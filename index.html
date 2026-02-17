@@ -310,13 +310,17 @@
       <button class="btn" onclick="window.open('https://marble.worldlabs.ai','_blank')">Marble Studio</button>
     </div>
   </div>
-  <div class="panel"><div class="panel-title">5. Flythrough &rarr; Runway &rarr; Marble</div>
+  <div class="panel"><div class="panel-title">5. Flythrough &rarr; Stylize &rarr; Marble</div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
-      Record a camera flythrough along the track spline, stylize with <span style="color:var(--accent2)">Runway</span>, then reconstruct 3D Gaussian splats with <span style="color:var(--accent2)">Marble</span>.
+      Record a camera flythrough along the track spline, stylize with <span style="color:var(--accent2)">Runway</span> or <span style="color:var(--accent2)">Decart</span>, then reconstruct 3D Gaussian splats with <span style="color:var(--accent2)">Marble</span>.
     </div>
-    <div class="slider-group" style="margin-bottom:6px">
+    <div class="slider-group" style="margin-bottom:6px" id="apikey-runway-row">
       <div class="slider-label"><span>Runway API Key</span></div>
       <input type="password" id="runway-apikey" placeholder="rw_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+    </div>
+    <div class="slider-group" style="margin-bottom:6px;display:none" id="apikey-decart-row">
+      <div class="slider-label"><span>Decart API Key</span></div>
+      <input type="password" id="decart-apikey" placeholder="decart_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 1 &mdash; Flythrough Video</div>
@@ -344,38 +348,52 @@
       <video id="fly-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls muted></video>
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
-      <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 2 &mdash; Runway Stylization</div>
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Stylizes the flythrough using <span style="color:var(--accent2)">Runway</span>. Gen-4 Turbo/Gen-3 use image-to-video with keyframes per segment. <strong>Aleph</strong> uses video-to-video &mdash; sends actual flythrough chunks preserving camera motion (max 5s/segment). Longer tracks are auto-chunked and concatenated.</div>
+      <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 2 &mdash; AI Stylization</div>
+      <div id="stylize-desc" style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Stylizes the flythrough using <span style="color:var(--accent2)">Runway</span>. Gen-4 Turbo/Gen-3 use image-to-video with keyframes per segment. <strong>Aleph</strong> uses video-to-video &mdash; sends actual flythrough chunks preserving camera motion (max 5s/segment). Longer tracks are auto-chunked and concatenated.</div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Provider</span></div>
+        <select id="stylize-provider" onchange="onProviderChange()" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="runway" selected>Runway</option>
+          <option value="decart">Decart</option>
+        </select>
+      </div>
       <div class="slider-group">
         <div class="slider-label"><span>Style prompt</span></div>
         <textarea id="runway-prompt" rows="2" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">cinematic flythrough of a futuristic racing track through a detailed sci-fi cityscape environment, towering neon buildings on both sides, volumetric fog, reflective wet ground, dramatic sky with clouds, photorealistic</textarea>
       </div>
       <div class="slider-group">
         <div class="slider-label"><span>Model</span></div>
-        <select id="runway-model" onchange="onRunwayModelChange()" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+        <select id="runway-model" onchange="onModelChange()" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
           <option value="gen4_turbo" selected>Gen-4 Turbo</option>
           <option value="gen4_aleph">Gen-4 Aleph (video-to-video)</option>
           <option value="gen3a_turbo">Gen-3 Alpha Turbo</option>
         </select>
       </div>
-      <div class="slider-group">
+      <div class="slider-group" id="stylize-duration-row">
         <div class="slider-label"><span>Segment length</span></div>
         <select id="runway-duration" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
           <option value="5" id="dur-opt-5">5 seconds</option>
           <option value="10" id="dur-opt-10" selected>10 seconds (recommended)</option>
         </select>
       </div>
+      <div class="slider-group" id="decart-resolution-row" style="display:none">
+        <div class="slider-label"><span>Resolution</span></div>
+        <select id="decart-resolution" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="720p" selected>720p</option>
+          <option value="480p">480p</option>
+        </select>
+      </div>
       <div class="btn-group">
-        <button class="btn btn-accent2" onclick="runRunwayStylize()" id="runway-btn">Stylize with Runway</button>
+        <button class="btn btn-accent2" onclick="runStylize()" id="runway-btn">Stylize with Runway</button>
       </div>
       <div id="runway-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
       <div id="runway-segments" style="display:none;margin-top:6px"></div>
       <video id="runway-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls></video>
       <div id="runway-download-bar" style="display:none;margin-top:4px" class="btn-group"></div>
       <div id="runway-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
-        <div style="color:var(--accent2);margin-bottom:4px">Pending Runway generation found</div>
+        <div style="color:var(--accent2);margin-bottom:4px" id="pending-title">Pending generation found</div>
         <div id="runway-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
-        <div class="btn-group"><button class="btn btn-accent2" onclick="checkRunwayOperation()">Check Status</button><button class="btn" onclick="clearRunwayPending()">Dismiss</button></div>
+        <div class="btn-group"><button class="btn btn-accent2" onclick="checkPendingOperation()">Check Status</button><button class="btn" onclick="clearAllPending()">Dismiss</button></div>
       </div>
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
@@ -1245,6 +1263,7 @@ document.addEventListener('visibilitychange', function() {
   if (!document.hidden) {
     wakePollLoops();
     showRunwayPending();
+    showDecartPending();
     showMarblePending();
   }
 });
@@ -1841,7 +1860,6 @@ function onRunwayModelChange() {
   var opt5 = document.getElementById('dur-opt-5');
   var opt10 = document.getElementById('dur-opt-10');
   if (model === 'gen4_aleph') {
-    // Aleph max 5s per generation — force segment to 5s
     durSel.value = '5';
     durSel.disabled = true;
     opt5.textContent = '5 seconds (required for Aleph)';
@@ -1850,6 +1868,344 @@ function onRunwayModelChange() {
     durSel.disabled = false;
     opt5.textContent = '5 seconds';
     opt10.textContent = '10 seconds (recommended)';
+  }
+}
+
+function onProviderChange() {
+  var provider = document.getElementById('stylize-provider').value;
+  var modelSel = document.getElementById('runway-model');
+  var btn = document.getElementById('runway-btn');
+  var durRow = document.getElementById('stylize-duration-row');
+  var decResRow = document.getElementById('decart-resolution-row');
+  var descEl = document.getElementById('stylize-desc');
+  var rwKeyRow = document.getElementById('apikey-runway-row');
+  var dcKeyRow = document.getElementById('apikey-decart-row');
+
+  if (provider === 'decart') {
+    modelSel.innerHTML = '<option value="lucy-pro-v2v" selected>Lucy Pro V2V (video-to-video)</option>'
+      + '<option value="lucy-pro-i2v">Lucy Pro I2V (image-to-video)</option>'
+      + '<option value="lucy-dev-i2v">Lucy Dev I2V (fast/cheap)</option>'
+      + '<option value="lucy-pro-t2v">Lucy Pro T2V (text-only)</option>';
+    btn.textContent = 'Stylize with Decart';
+    durRow.style.display = 'none';
+    decResRow.style.display = '';
+    rwKeyRow.style.display = 'none';
+    dcKeyRow.style.display = '';
+    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Decart Lucy</span>. <strong>V2V</strong> sends the flythrough video for style transfer. <strong>I2V</strong> animates keyframe images. <strong>T2V</strong> generates from the text prompt only. Output is ~5s per segment.';
+  } else {
+    modelSel.innerHTML = '<option value="gen4_turbo" selected>Gen-4 Turbo</option>'
+      + '<option value="gen4_aleph">Gen-4 Aleph (video-to-video)</option>'
+      + '<option value="gen3a_turbo">Gen-3 Alpha Turbo</option>';
+    btn.textContent = 'Stylize with Runway';
+    durRow.style.display = '';
+    decResRow.style.display = 'none';
+    rwKeyRow.style.display = '';
+    dcKeyRow.style.display = 'none';
+    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Runway</span>. Gen-4 Turbo/Gen-3 use image-to-video with keyframes per segment. <strong>Aleph</strong> uses video-to-video &mdash; sends actual flythrough chunks preserving camera motion (max 5s/segment). Longer tracks are auto-chunked and concatenated.';
+    onRunwayModelChange();
+  }
+}
+
+function onModelChange() {
+  var provider = document.getElementById('stylize-provider').value;
+  if (provider === 'runway') onRunwayModelChange();
+}
+
+function runStylize() {
+  var provider = document.getElementById('stylize-provider').value;
+  if (provider === 'decart') return runDecartStylize();
+  return runRunwayStylize();
+}
+
+// ---- Decart pending state persistence ----
+function saveDecartPending(jobId, apiKey) {
+  localStorage.setItem('decart_pending', JSON.stringify({ jobId: jobId, apiKey: apiKey, time: Date.now() }));
+}
+function clearDecartPending() {
+  localStorage.removeItem('decart_pending');
+}
+function showDecartPending() {
+  var raw = localStorage.getItem('decart_pending'); if (!raw) return;
+  try { var p = JSON.parse(raw); } catch(e) { return; }
+  var age = Math.round((Date.now() - p.time) / 60000);
+  if (age > 15) { clearDecartPending(); return; }
+  var el = document.getElementById('runway-pending'); if (!el) return;
+  document.getElementById('pending-title').textContent = 'Pending Decart generation found';
+  document.getElementById('runway-pending-info').textContent = 'Job: ' + p.jobId.substring(0, 16) + '... (' + age + ' min ago)';
+  el.style.display = 'block';
+}
+
+function checkPendingOperation() {
+  var rwRaw = localStorage.getItem('runway_pending');
+  var dcRaw = localStorage.getItem('decart_pending');
+  if (dcRaw) return checkDecartOperation();
+  if (rwRaw) return checkRunwayOperation();
+  toast('No pending task');
+}
+function clearAllPending() {
+  clearRunwayPending();
+  clearDecartPending();
+}
+
+async function checkDecartOperation() {
+  var raw = localStorage.getItem('decart_pending'); if (!raw) { toast('No pending Decart task'); return; }
+  try { var p = JSON.parse(raw); } catch(e) { toast('Invalid pending data'); clearDecartPending(); return; }
+  var progEl = document.getElementById('runway-progress');
+  var pendEl = document.getElementById('runway-pending');
+  progEl.style.display = 'block';
+  progEl.textContent = 'Checking Decart job status...';
+  pendEl.style.display = 'none';
+  var apiKey = p.apiKey || document.getElementById('decart-apikey').value.trim();
+  if (!apiKey) { toast('Enter your Decart API key first'); pendEl.style.display = 'block'; return; }
+  try {
+    var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + p.jobId, {
+      headers: { 'X-API-KEY': apiKey }
+    });
+    if (!res.ok) throw new Error('Poll failed: ' + res.status);
+    var data = await res.json();
+    if (data.status === 'completed') {
+      clearDecartPending();
+      var vidUrl = await downloadDecartJob(p.jobId, apiKey);
+      _runwayVideoUrl = vidUrl;
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = vidUrl; videoEl.style.display = 'block';
+      var dlBar = document.getElementById('runway-download-bar');
+      dlBar.style.display = 'flex'; dlBar.innerHTML = '';
+      dlBar.appendChild(makeDownloadBtn(vidUrl, 'Download video', 'decart-stylized.mp4'));
+      progEl.textContent = 'Decart stylization complete!';
+      toast('Decart video ready');
+    } else if (data.status === 'failed') {
+      clearDecartPending();
+      throw new Error('Decart job failed');
+    } else {
+      progEl.textContent = 'Still generating — resuming poll...';
+      var vidUrl = await pollDecartJob(p.jobId, apiKey, progEl, '');
+      _runwayVideoUrl = vidUrl;
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = vidUrl; videoEl.style.display = 'block';
+      var dlBar = document.getElementById('runway-download-bar');
+      dlBar.style.display = 'flex'; dlBar.innerHTML = '';
+      dlBar.appendChild(makeDownloadBtn(vidUrl, 'Download video', 'decart-stylized.mp4'));
+      progEl.textContent = 'Decart stylization complete!';
+      toast('Decart video ready');
+    }
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('Decart error: ' + err.message);
+    console.error('Decart check error:', err);
+  }
+}
+
+async function pollDecartJob(jobId, apiKey, progEl, prefix) {
+  prefix = prefix || '';
+  saveDecartPending(jobId, apiKey);
+  var startTime = Date.now();
+  var maxMs = 10 * 60 * 1000;
+  while (Date.now() - startTime < maxMs) {
+    await pollSleep(5000);
+    var elapsed = Math.round((Date.now() - startTime) / 1000);
+    progEl.textContent = prefix + 'Generating styled video... (' + elapsed + 's)';
+    try {
+      var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + jobId, {
+        headers: { 'X-API-KEY': apiKey }
+      });
+      if (!res.ok) continue;
+      var data = await res.json();
+      if (data.status === 'completed') {
+        clearDecartPending();
+        return await downloadDecartJob(jobId, apiKey);
+      }
+      if (data.status === 'failed') { clearDecartPending(); throw new Error('Decart job failed' + (data.error ? ': ' + data.error : '')); }
+      progEl.textContent = prefix + 'Decart: ' + data.status + ' (' + elapsed + 's)';
+    } catch (e) {
+      if (e.message.includes('Decart job failed')) throw e;
+    }
+  }
+  throw new Error('Decart timed out (10 min)');
+}
+
+async function downloadDecartJob(jobId, apiKey) {
+  var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + jobId + '/content', {
+    headers: { 'X-API-KEY': apiKey }
+  });
+  if (!res.ok) throw new Error('Decart download failed: ' + res.status);
+  var blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+async function runDecartStylize() {
+  var apiKey = document.getElementById('decart-apikey').value.trim();
+  if (!apiKey) { toast('Enter a Decart API key'); return; }
+  var prompt = document.getElementById('runway-prompt').value.trim();
+  var model = document.getElementById('runway-model').value;
+  var resolution = document.getElementById('decart-resolution').value;
+  var isV2V = (model === 'lucy-pro-v2v');
+  var isI2V = (model === 'lucy-pro-i2v' || model === 'lucy-dev-i2v');
+  var isT2V = (model === 'lucy-pro-t2v');
+
+  // Validation
+  if (isV2V && !_flyBlob) { toast('Record a flythrough first'); return; }
+  if (isI2V && (!_flyFrames.length || _flyFrames.length < 2)) { toast('Record a flythrough first'); return; }
+  if (!prompt && isT2V) { toast('Enter a style prompt for text-to-video'); return; }
+
+  var btn = document.getElementById('runway-btn');
+  var progEl = document.getElementById('runway-progress');
+  var segEl = document.getElementById('runway-segments');
+  var dlBar = document.getElementById('runway-download-bar');
+  btn.disabled = true; btn.textContent = 'Stylizing...';
+  progEl.style.display = 'block';
+  segEl.style.display = 'none'; segEl.innerHTML = '';
+  dlBar.style.display = 'none'; dlBar.innerHTML = '';
+
+  try {
+    var segmentUrls = [];
+
+    if (isT2V) {
+      // ---- TEXT-TO-VIDEO: single generation, no input media ----
+      progEl.textContent = 'Submitting to Decart (' + model + ')...';
+      var form = new FormData();
+      form.append('prompt', prompt);
+      form.append('resolution', resolution);
+      var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
+        method: 'POST',
+        headers: { 'X-API-KEY': apiKey },
+        body: form
+      });
+      if (!res.ok) { var errBody = await res.text(); throw new Error('Decart (' + res.status + '): ' + errBody); }
+      var jobData = await res.json();
+      var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, '');
+      segmentUrls.push(vidUrl);
+
+    } else if (isV2V) {
+      // ---- VIDEO-TO-VIDEO: send flythrough chunks ----
+      // Decart V2V output is ~5s, so chunk the flythrough accordingly
+      var segDuration = 5;
+      var flyDur = _flyFrames.length ? _flyFrames[_flyFrames.length - 1].time : segDuration;
+      var videoChunks;
+      if (flyDur <= segDuration + 0.5) {
+        videoChunks = [_flyBlob];
+      } else {
+        progEl.textContent = 'Splitting flythrough into ~5s chunks...';
+        var rawChunks = await splitVideoIntoChunks(_flyBlob, segDuration);
+        videoChunks = rawChunks.map(function(c) { return c.blob; });
+      }
+      var numChunks = videoChunks.length;
+
+      for (var ci = 0; ci < numChunks; ci++) {
+        var segLabel = numChunks > 1 ? 'Chunk ' + (ci + 1) + '/' + numChunks + ': ' : '';
+        progEl.textContent = segLabel + 'Submitting to Decart V2V...';
+
+        var form = new FormData();
+        form.append('prompt', prompt);
+        form.append('data', videoChunks[ci], 'flythrough.mp4');
+        var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
+          method: 'POST',
+          headers: { 'X-API-KEY': apiKey },
+          body: form
+        });
+        if (!res.ok) { var errBody = await res.text(); throw new Error('Decart V2V (' + res.status + '): ' + errBody); }
+        var jobData = await res.json();
+        var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, segLabel);
+        segmentUrls.push(vidUrl);
+
+        if (numChunks > 1) {
+          segEl.style.display = 'block';
+          var segVid = document.createElement('video');
+          segVid.src = vidUrl; segVid.controls = true;
+          segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
+          var segTitle = document.createElement('div');
+          segTitle.textContent = 'Chunk ' + (ci + 1);
+          segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
+          segEl.appendChild(segTitle); segEl.appendChild(segVid);
+          segEl.appendChild(makeDownloadBtn(vidUrl, 'Download chunk ' + (ci + 1), 'decart-chunk-' + (ci + 1) + '.mp4'));
+        }
+      }
+
+    } else if (isI2V) {
+      // ---- IMAGE-TO-VIDEO: animate keyframe images ----
+      // Each I2V output is ~5s, so we create segments from keyframes
+      var segDuration = 5;
+      var totalDuration = _flyFrames[_flyFrames.length - 1].time;
+      var numSegments = Math.max(1, Math.ceil(totalDuration / segDuration));
+      var segments = [];
+      for (var s = 0; s < numSegments; s++) {
+        var startTime = s * segDuration;
+        var kf = _flyFrames.reduce(function(best, f) {
+          return Math.abs(f.time - startTime) < Math.abs(best.time - startTime) ? f : best;
+        });
+        segments.push(kf);
+      }
+
+      for (var si = 0; si < segments.length; si++) {
+        var segLabel = segments.length > 1 ? 'Segment ' + (si + 1) + '/' + segments.length + ': ' : '';
+        progEl.textContent = segLabel + 'Submitting to Decart I2V...';
+
+        // Convert keyframe data URL to blob for multipart upload
+        var kfDataUrl = segments[si].dataUrl;
+        var kfBlob = await (await fetch(kfDataUrl)).blob();
+
+        var form = new FormData();
+        form.append('prompt', prompt);
+        form.append('data', kfBlob, 'keyframe.jpg');
+        form.append('resolution', resolution);
+        var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
+          method: 'POST',
+          headers: { 'X-API-KEY': apiKey },
+          body: form
+        });
+        if (!res.ok) { var errBody = await res.text(); throw new Error('Decart I2V (' + res.status + '): ' + errBody); }
+        var jobData = await res.json();
+        var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, segLabel);
+        segmentUrls.push(vidUrl);
+
+        if (segments.length > 1) {
+          segEl.style.display = 'block';
+          var segVid = document.createElement('video');
+          segVid.src = vidUrl; segVid.controls = true;
+          segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
+          var segTitle = document.createElement('div');
+          segTitle.textContent = 'Segment ' + (si + 1);
+          segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
+          segEl.appendChild(segTitle); segEl.appendChild(segVid);
+          segEl.appendChild(makeDownloadBtn(vidUrl, 'Download segment ' + (si + 1), 'decart-segment-' + (si + 1) + '.mp4'));
+        }
+      }
+    }
+
+    // Store segment URLs and display result
+    _runwaySegmentUrls = segmentUrls;
+    var numSegments = segmentUrls.length;
+
+    if (numSegments === 1) {
+      _runwayVideoUrl = segmentUrls[0];
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = _runwayVideoUrl;
+      videoEl.style.display = 'block';
+    } else {
+      progEl.textContent = 'Downloading and concatenating ' + numSegments + ' segments...';
+      _runwayVideoUrl = await concatenateSegments(segmentUrls, progEl);
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = _runwayVideoUrl;
+      videoEl.style.display = 'block';
+    }
+
+    // Show download bar
+    dlBar.style.display = 'flex'; dlBar.innerHTML = '';
+    dlBar.appendChild(makeDownloadBtn(_runwayVideoUrl, numSegments > 1 ? 'Download full video' : 'Download video', 'decart-stylized.mp4'));
+    if (numSegments > 1) {
+      for (var di = 0; di < segmentUrls.length; di++) {
+        dlBar.appendChild(makeDownloadBtn(segmentUrls[di], 'Seg ' + (di + 1), 'decart-part-' + (di + 1) + '.mp4'));
+      }
+    }
+
+    progEl.textContent = 'Decart stylization complete!' + (numSegments > 1 ? ' (' + numSegments + ' segments joined)' : '');
+    toast('Decart video ready');
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('Decart error: ' + err.message);
+    console.error('Decart error:', err);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Stylize with Decart';
   }
 }
 
@@ -2462,8 +2818,9 @@ btn.disabled = true; progEl.style.display = 'block';
 try {
 progEl.textContent = 'Stage 1/3: Recording flythrough...';
 await recordFlythrough();
-progEl.textContent = 'Stage 2/3: Runway stylization...';
-await runRunwayStylize();
+var provider = document.getElementById('stylize-provider').value;
+progEl.textContent = 'Stage 2/3: ' + (provider === 'decart' ? 'Decart' : 'Runway') + ' stylization...';
+await runStylize();
 progEl.textContent = 'Stage 3/3: Marble 3D reconstruction...';
 await runMarbleFromVideo();
 progEl.textContent = 'Full pipeline complete!';
@@ -2656,6 +3013,8 @@ if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 // Runway API key from URL param
 var rkParam=new URLSearchParams(window.location.search).get('rk');
 if(rkParam){var rkEl=document.getElementById('runway-apikey');if(rkEl)rkEl.value=rkParam}
+var dkParam=new URLSearchParams(window.location.search).get('dk');
+if(dkParam){var dkEl=document.getElementById('decart-apikey');if(dkEl)dkEl.value=dkParam}
 }
 
 // ============================================================
