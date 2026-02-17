@@ -1751,17 +1751,8 @@ for (var si = 0; si < segments.length; si++) {
   var seg = segments[si];
   var segLabel = numSegments > 1 ? 'Segment ' + (si + 1) + '/' + numSegments + ': ' : '';
 
-  // Build promptImage: first+last keyframes for Gen-4, single for Gen-3
-  var promptImage;
-  if (model === 'gen4_turbo') {
-    promptImage = [
-      { uri: seg.firstKF.dataUrl, position: 'first' },
-      { uri: seg.lastKF.dataUrl, position: 'last' }
-    ];
-  } else {
-    // Gen-3 Alpha Turbo: single keyframe (first frame to avoid transition)
-    promptImage = seg.firstKF.dataUrl;
-  }
+  // Use first frame as keyframe to avoid unstylized transition
+  var promptImage = seg.firstKF.dataUrl;
 
   progEl.textContent = segLabel + 'Submitting to Runway...';
   var res = await proxiedFetch('https://api.dev.runwayml.com/v1/image_to_video', {
