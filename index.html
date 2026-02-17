@@ -322,8 +322,8 @@
       <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 1 &mdash; Flythrough Video</div>
       <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Camera follows the track spline, baking geometry into frames.</div>
       <div class="slider-group">
-        <div class="slider-label"><span>Duration (s)</span><span id="v-flydur">5</span></div>
-        <input type="range" id="s-flydur" min="2" max="10" value="5" step="1">
+        <div class="slider-label"><span>Duration (s)</span><span id="v-flydur">10</span></div>
+        <input type="range" id="s-flydur" min="2" max="60" value="10" step="1">
       </div>
       <div class="slider-group">
         <div class="slider-label"><span>Camera height</span><span id="v-flyht">8</span></div>
@@ -345,7 +345,7 @@
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 2 &mdash; Runway Stylization</div>
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Sends a keyframe to Runway to generate a consistently styled video.</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Stylizes the flythrough using <span style="color:var(--accent2)">Runway</span> image-to-video. Gen-4 Turbo uses first+last keyframes per segment for consistency. Longer tracks are auto-chained into 10s segments and concatenated.</div>
       <div class="slider-group">
         <div class="slider-label"><span>Style prompt</span></div>
         <textarea id="runway-prompt" rows="2" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">cinematic flythrough of a futuristic racing track through a detailed sci-fi cityscape environment, towering neon buildings on both sides, volumetric fog, reflective wet ground, dramatic sky with clouds, photorealistic</textarea>
@@ -358,24 +358,17 @@
         </select>
       </div>
       <div class="slider-group">
-        <div class="slider-label"><span>Keyframe</span></div>
-        <select id="runway-keyframe" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-          <option value="first">First frame</option>
-          <option value="middle" selected>Middle frame</option>
-          <option value="last">Last frame</option>
-        </select>
-      </div>
-      <div class="slider-group">
-        <div class="slider-label"><span>Output duration</span></div>
+        <div class="slider-label"><span>Segment length</span></div>
         <select id="runway-duration" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
           <option value="5">5 seconds</option>
-          <option value="10" selected>10 seconds</option>
+          <option value="10" selected>10 seconds (recommended)</option>
         </select>
       </div>
       <div class="btn-group">
         <button class="btn btn-accent2" onclick="runRunwayStylize()" id="runway-btn">Stylize with Runway</button>
       </div>
       <div id="runway-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+      <div id="runway-segments" style="display:none;margin-top:6px"></div>
       <video id="runway-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls></video>
       <div id="runway-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
         <div style="color:var(--accent2);margin-bottom:4px">Pending Runway generation found</div>
@@ -1653,10 +1646,16 @@ offCam.updateMatrixWorld(true);
 offR.clear(); offR.render(scene, offCam);
 if (hasRF) vTrack.requestFrame();
 
-// Capture keyframes for Runway (first, middle, last)
-if (f === 0 || f === Math.floor(totalFrames / 2) || f === totalFrames - 1) {
+// Capture keyframes every second for Runway segment chaining
+var frameSecond = Math.floor(f / fps);
+var isFirstOfSecond = (f % fps === 0);
+var isLastFrame = (f === totalFrames - 1);
+if (isFirstOfSecond || isLastFrame) {
+var label = f === 0 ? 'first' : isLastFrame ? 'last' : 't' + frameSecond;
 _flyFrames.push({
-label: f === 0 ? 'first' : f === totalFrames - 1 ? 'last' : 'middle',
+label: label,
+time: f / fps,
+frameIndex: f,
 dataUrl: offR.domElement.toDataURL('image/jpeg', 0.92)
 });
 }
@@ -1700,47 +1699,120 @@ a.download = 'flythrough.webm'; a.click();
 async function runRunwayStylize() {
 var apiKey = document.getElementById('runway-apikey').value.trim();
 if (!apiKey) { toast('Enter a Runway API key'); return; }
-if (!_flyFrames.length) { toast('Record a flythrough first'); return; }
+if (!_flyFrames.length || _flyFrames.length < 2) { toast('Record a flythrough first'); return; }
 var prompt = document.getElementById('runway-prompt').value.trim();
 var model = document.getElementById('runway-model').value;
-var keyframeSel = document.getElementById('runway-keyframe').value;
-var duration = parseInt(document.getElementById('runway-duration').value);
+var segDuration = parseInt(document.getElementById('runway-duration').value);
 var btn = document.getElementById('runway-btn');
 var progEl = document.getElementById('runway-progress');
+var segEl = document.getElementById('runway-segments');
 btn.disabled = true; btn.textContent = 'Stylizing...';
 progEl.style.display = 'block';
+segEl.style.display = 'none'; segEl.innerHTML = '';
 
-var keyframe = _flyFrames.find(function(f) { return f.label === keyframeSel; }) || _flyFrames[0];
 var headers = {
 'Content-Type': 'application/json',
 'Authorization': 'Bearer ' + apiKey,
 'X-Runway-Version': '2024-11-06'
 };
 
+// Determine total flythrough duration from keyframes
+var totalDuration = _flyFrames[_flyFrames.length - 1].time;
+var numSegments = Math.max(1, Math.ceil(totalDuration / segDuration));
+
+// Build segment boundaries using captured keyframes
+var segments = [];
+for (var s = 0; s < numSegments; s++) {
+  var startTime = s * segDuration;
+  var endTime = Math.min((s + 1) * segDuration, totalDuration);
+  // Find closest keyframes to start and end times
+  var firstKF = _flyFrames.reduce(function(best, f) {
+    return Math.abs(f.time - startTime) < Math.abs(best.time - startTime) ? f : best;
+  });
+  var lastKF = _flyFrames.reduce(function(best, f) {
+    return Math.abs(f.time - endTime) < Math.abs(best.time - endTime) ? f : best;
+  });
+  // Avoid using same frame for first and last
+  if (firstKF === lastKF && _flyFrames.length > 1) {
+    var idx = _flyFrames.indexOf(firstKF);
+    lastKF = _flyFrames[Math.min(idx + 1, _flyFrames.length - 1)];
+  }
+  segments.push({ index: s, firstKF: firstKF, lastKF: lastKF, duration: segDuration });
+}
+
+progEl.textContent = numSegments === 1
+  ? 'Submitting to Runway (' + model + ')...'
+  : 'Stylizing ' + numSegments + ' segments with ' + model + '...';
+
 try {
-progEl.textContent = 'Submitting to Runway (' + model + ')...';
-var res = await proxiedFetch('https://api.dev.runwayml.com/v1/image_to_video', {
-method: 'POST', headers: headers,
-body: JSON.stringify({
-model: model,
-promptImage: keyframe.dataUrl,
-promptText: prompt,
-ratio: '1280:720',
-duration: duration
-})
-});
-if (!res.ok) { var errBody = await res.text(); throw new Error('Runway (' + res.status + '): ' + errBody); }
-var taskData = await res.json();
-var taskId = taskData.id;
-progEl.textContent = 'Task ' + taskId.substring(0, 8) + '... queued';
+var segmentUrls = [];
 
-// Poll for completion
-_runwayVideoUrl = await pollRunwayTask(taskId, apiKey, progEl);
+for (var si = 0; si < segments.length; si++) {
+  var seg = segments[si];
+  var segLabel = numSegments > 1 ? 'Segment ' + (si + 1) + '/' + numSegments + ': ' : '';
 
-var videoEl = document.getElementById('runway-video');
-videoEl.src = _runwayVideoUrl;
-videoEl.style.display = 'block';
-progEl.textContent = 'Runway stylization complete!';
+  // Build promptImage: first+last keyframes for Gen-4, single for Gen-3
+  var promptImage;
+  if (model === 'gen4_turbo') {
+    promptImage = [
+      { uri: seg.firstKF.dataUrl, position: 'first' },
+      { uri: seg.lastKF.dataUrl, position: 'last' }
+    ];
+  } else {
+    // Gen-3 Alpha Turbo: single keyframe (first frame to avoid transition)
+    promptImage = seg.firstKF.dataUrl;
+  }
+
+  progEl.textContent = segLabel + 'Submitting to Runway...';
+  var res = await proxiedFetch('https://api.dev.runwayml.com/v1/image_to_video', {
+    method: 'POST', headers: headers,
+    body: JSON.stringify({
+      model: model,
+      promptImage: promptImage,
+      promptText: prompt,
+      ratio: '1280:720',
+      duration: seg.duration
+    })
+  });
+  if (!res.ok) { var errBody = await res.text(); throw new Error('Runway (' + res.status + '): ' + errBody); }
+  var taskData = await res.json();
+  var taskId = taskData.id;
+
+  // Poll this segment
+  var segUrl = await pollRunwayTask(taskId, apiKey, progEl, segLabel);
+  segmentUrls.push(segUrl);
+
+  // Show individual segment videos if multi-segment
+  if (numSegments > 1) {
+    segEl.style.display = 'block';
+    var segVid = document.createElement('video');
+    segVid.src = segUrl; segVid.controls = true;
+    segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
+    var segTitle = document.createElement('div');
+    segTitle.textContent = 'Segment ' + (si + 1);
+    segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
+    segEl.appendChild(segTitle); segEl.appendChild(segVid);
+  }
+}
+
+// Store all segment URLs for Marble pipeline
+_runwaySegmentUrls = segmentUrls;
+
+if (numSegments === 1) {
+  _runwayVideoUrl = segmentUrls[0];
+  var videoEl = document.getElementById('runway-video');
+  videoEl.src = _runwayVideoUrl;
+  videoEl.style.display = 'block';
+} else {
+  // Concatenate segments client-side
+  progEl.textContent = 'Downloading and concatenating ' + numSegments + ' segments...';
+  _runwayVideoUrl = await concatenateSegments(segmentUrls, progEl);
+  var videoEl = document.getElementById('runway-video');
+  videoEl.src = _runwayVideoUrl;
+  videoEl.style.display = 'block';
+}
+
+progEl.textContent = 'Runway stylization complete!' + (numSegments > 1 ? ' (' + numSegments + ' segments joined)' : '');
 toast('Runway video ready');
 } catch (err) {
 progEl.textContent = 'Error: ' + err.message;
@@ -1751,7 +1823,63 @@ btn.disabled = false; btn.textContent = 'Stylize with Runway';
 }
 }
 
-async function pollRunwayTask(taskId, apiKey, progEl) {
+var _runwaySegmentUrls = [];
+
+async function concatenateSegments(urls, progEl) {
+// Fetch all segment videos and concatenate using MediaSource or re-encode via canvas
+var blobs = [];
+for (var i = 0; i < urls.length; i++) {
+  progEl.textContent = 'Downloading segment ' + (i + 1) + '/' + urls.length + '...';
+  var res = await proxiedFetch(urls[i]);
+  blobs.push(await res.blob());
+}
+
+// Use a hidden video + canvas + MediaRecorder to concatenate
+progEl.textContent = 'Joining segments...';
+var canvas = document.createElement('canvas');
+canvas.width = 1280; canvas.height = 720;
+var ctx = canvas.getContext('2d');
+var stream = canvas.captureStream(30);
+var mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
+var chunks = [];
+recorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
+
+return new Promise(async function(resolve, reject) {
+  recorder.start();
+  var vid = document.createElement('video');
+  vid.muted = true; vid.playsInline = true;
+
+  for (var i = 0; i < blobs.length; i++) {
+    progEl.textContent = 'Encoding segment ' + (i + 1) + '/' + blobs.length + '...';
+    await new Promise(function(res, rej) {
+      vid.src = URL.createObjectURL(blobs[i]);
+      vid.onloadeddata = function() { vid.play(); res(); };
+      vid.onerror = function() { rej(new Error('Failed to load segment ' + (i + 1))); };
+    });
+    // Draw frames from this segment
+    await new Promise(function(res) {
+      function drawFrame() {
+        if (vid.paused || vid.ended) { res(); return; }
+        ctx.drawImage(vid, 0, 0, 1280, 720);
+        requestAnimationFrame(drawFrame);
+      }
+      vid.onended = function() { res(); };
+      drawFrame();
+    });
+    URL.revokeObjectURL(vid.src);
+  }
+
+  recorder.onstop = function() {
+    var finalBlob = new Blob(chunks, { type: mimeType });
+    resolve(URL.createObjectURL(finalBlob));
+  };
+  recorder.stop();
+});
+}
+
+async function pollRunwayTask(taskId, apiKey, progEl, prefix) {
+prefix = prefix || '';
 var headers = { 'Authorization': 'Bearer ' + apiKey, 'X-Runway-Version': '2024-11-06' };
 saveRunwayPending(taskId, apiKey);
 var startTime = Date.now();
@@ -1759,7 +1887,7 @@ var maxMs = 10 * 60 * 1000; // 10 min wall-clock timeout
 while (Date.now() - startTime < maxMs) {
 await pollSleep(5000);
 var elapsed = Math.round((Date.now() - startTime) / 1000);
-progEl.textContent = 'Generating styled video... (' + elapsed + 's)';
+progEl.textContent = prefix + 'Generating styled video... (' + elapsed + 's)';
 try {
 var res = await proxiedFetch('https://api.dev.runwayml.com/v1/tasks/' + taskId, { headers: headers });
 if (!res.ok) continue;
@@ -1767,7 +1895,7 @@ var data = await res.json();
 if (data.status === 'SUCCEEDED') { clearRunwayPending(); return data.output[0]; }
 if (data.status === 'FAILED') { clearRunwayPending(); throw new Error('Runway failed: ' + (data.failureCode || 'unknown')); }
 if (data.status === 'CANCELED') { clearRunwayPending(); throw new Error('Runway task canceled'); }
-progEl.textContent = 'Runway: ' + data.status + ' (' + elapsed + 's)';
+progEl.textContent = prefix + 'Runway: ' + data.status + ' (' + elapsed + 's)';
 } catch (e) {
 if (e.message.includes('Runway failed') || e.message.includes('canceled')) throw e;
 }
