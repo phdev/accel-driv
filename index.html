@@ -348,7 +348,7 @@
       <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Sends a keyframe to Runway to generate a consistently styled video.</div>
       <div class="slider-group">
         <div class="slider-label"><span>Style prompt</span></div>
-        <textarea id="runway-prompt" rows="2" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">cinematic camera flythrough of a neon-lit futuristic racing track, volumetric fog, dramatic lighting, photorealistic</textarea>
+        <textarea id="runway-prompt" rows="2" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">cinematic flythrough of a futuristic racing track through a detailed sci-fi cityscape environment, towering neon buildings on both sides, volumetric fog, reflective wet ground, dramatic sky with clouds, photorealistic</textarea>
       </div>
       <div class="slider-group">
         <div class="slider-label"><span>Model</span></div>
@@ -1543,6 +1543,65 @@ scene.traverse(function(obj) {
 if (obj.type === 'GridHelper' && obj.visible) { obj.visible = false; hidden.push(obj); }
 });
 
+// Temporary environment for Runway context (sky dome + ground plane)
+var _origBg = scene.background;
+var _origFog = scene.fog;
+scene.background = new THREE.Color(0x050510);
+scene.fog = new THREE.FogExp2(0x050510, 0.00015);
+
+// Sky dome: large inverted sphere with vertex-color gradient (horizon glow → dark zenith)
+var skyGeo = new THREE.SphereGeometry(8000, 32, 24);
+var skyColors = [];
+var skyPos = skyGeo.getAttribute('position');
+for (var si = 0; si < skyPos.count; si++) {
+  var ny = (skyPos.getY(si) / 8000 + 1) * 0.5; // 0 at bottom, 1 at top
+  // Horizon: warm dark purple/blue, zenith: near-black with slight blue
+  var hr = 0.06, hg = 0.04, hb = 0.12; // horizon
+  var zr = 0.01, zg = 0.01, zb = 0.03; // zenith
+  var blend = Math.pow(ny, 0.6);
+  skyColors.push(hr + (zr - hr) * blend, hg + (zg - hg) * blend, hb + (zb - hb) * blend);
+}
+skyGeo.setAttribute('color', new THREE.Float32BufferAttribute(skyColors, 3));
+var skyMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide });
+var skyDome = new THREE.Mesh(skyGeo, skyMat);
+scene.add(skyDome);
+
+// Stars: scattered points in the sky
+var starCount = 800;
+var starPositions = new Float32Array(starCount * 3);
+for (var si = 0; si < starCount; si++) {
+  var phi = Math.acos(2 * Math.random() - 1);
+  var theta = Math.random() * Math.PI * 2;
+  var sr = 7500 + Math.random() * 400;
+  starPositions[si * 3] = sr * Math.sin(phi) * Math.cos(theta);
+  starPositions[si * 3 + 1] = Math.abs(sr * Math.cos(phi)); // upper hemisphere only
+  starPositions[si * 3 + 2] = sr * Math.sin(phi) * Math.sin(theta);
+}
+var starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+var starMat = new THREE.PointsMaterial({ color: 0xccccff, size: 6, sizeAttenuation: true });
+var starField = new THREE.Points(starGeo, starMat);
+scene.add(starField);
+
+// Ground plane: dark textured surface extending to horizon
+var groundGeo = new THREE.PlaneGeometry(16000, 16000, 64, 64);
+var groundPos = groundGeo.getAttribute('position');
+var groundColors = [];
+for (var gi = 0; gi < groundPos.count; gi++) {
+  var gx = groundPos.getX(gi), gz = groundPos.getY(gi); // plane is XY, we rotate it
+  var dist = Math.sqrt(gx * gx + gz * gz) / 8000;
+  // Slight variation for texture, darken at edges
+  var fade = Math.max(0, 1 - dist * 0.7);
+  var base = 0.025 + 0.015 * fade;
+  groundColors.push(base * 0.8, base * 0.9, base * 1.2);
+}
+groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(groundColors, 3));
+var groundMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+var groundMesh = new THREE.Mesh(groundGeo, groundMat);
+groundMesh.rotation.x = -Math.PI / 2;
+groundMesh.position.y = -2; // slightly below track
+scene.add(groundMesh);
+
 // Offscreen renderer
 var offR = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 offR.setSize(w, h); offR.setPixelRatio(1);
@@ -1605,6 +1664,13 @@ dataUrl: offR.domElement.toDataURL('image/jpeg', 0.92)
 progEl.textContent = 'Recording ' + (f + 1) + '/' + totalFrames;
 await new Promise(function(r) { setTimeout(r, Math.round(1000 / fps)); });
 }
+
+// Remove temporary environment objects and restore scene
+scene.remove(skyDome); skyGeo.dispose(); skyMat.dispose();
+scene.remove(starField); starGeo.dispose(); starMat.dispose();
+scene.remove(groundMesh); groundGeo.dispose(); groundMat.dispose();
+scene.background = _origBg;
+scene.fog = _origFog;
 
 // Restore hidden objects
 hidden.forEach(function(obj) { obj.visible = true; });
