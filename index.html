@@ -1730,7 +1730,15 @@ dataUrl: offR.domElement.toDataURL('image/jpeg', 0.92)
 }
 
 progEl.textContent = 'Recording ' + (f + 1) + '/' + totalFrames;
-await new Promise(function(r) { setTimeout(r, Math.round(1000 / fps)); });
+// When using requestFrame(), only yield briefly so the encoder can process the frame.
+// Real-time sleeping inflates MediaRecorder wall-clock timestamps, producing a video
+// much longer than intended. The actual duration is stamped via fixWebmDuration afterward.
+if (hasRF) {
+  await new Promise(function(r) { setTimeout(r, 0); });
+} else {
+  // Fallback: captureStream(fps) relies on wall-clock pacing
+  await new Promise(function(r) { setTimeout(r, Math.round(1000 / fps)); });
+}
 }
 
 // Remove temporary environment objects and restore scene
