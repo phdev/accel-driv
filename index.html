@@ -361,8 +361,8 @@
       <div class="slider-group">
         <div class="slider-label"><span>Segment length</span></div>
         <select id="runway-duration" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-          <option value="5">5 seconds</option>
-          <option value="10" selected>10 seconds (recommended)</option>
+          <option value="5" id="dur-opt-5">5 seconds</option>
+          <option value="10" id="dur-opt-10" selected>10 seconds (recommended)</option>
         </select>
       </div>
       <div class="btn-group">
@@ -1701,12 +1701,18 @@ a.download = 'flythrough.webm'; a.click();
 function onRunwayModelChange() {
   var model = document.getElementById('runway-model').value;
   var durSel = document.getElementById('runway-duration');
+  var opt5 = document.getElementById('dur-opt-5');
+  var opt10 = document.getElementById('dur-opt-10');
   if (model === 'gen4_aleph') {
     // Aleph max 5s per generation — force segment to 5s
     durSel.value = '5';
     durSel.disabled = true;
+    opt5.textContent = '5 seconds (required for Aleph)';
+    opt10.textContent = '10 seconds';
   } else {
     durSel.disabled = false;
+    opt5.textContent = '5 seconds';
+    opt10.textContent = '10 seconds (recommended)';
   }
 }
 
@@ -1717,6 +1723,92 @@ function blobToDataUrl(blob) {
     reader.onerror = function() { reject(new Error('Failed to read blob')); };
     reader.readAsDataURL(blob);
   });
+}
+
+// Fix WebM duration metadata. MediaRecorder produces WebM blobs with
+// missing or zero duration, which causes Runway's API to reject them.
+// Patches the EBML Duration element (ID 0x4489) with the correct value.
+async function fixWebmDuration(blob, durationMs) {
+  var buffer = await blob.arrayBuffer();
+  var bytes = new Uint8Array(buffer);
+
+  // Search for the Duration EBML element: ID = 0x44 0x89
+  for (var i = 0; i < bytes.length - 12; i++) {
+    if (bytes[i] === 0x44 && bytes[i + 1] === 0x89) {
+      var sizeTag = bytes[i + 2];
+      if (sizeTag === 0x88) {
+        // 8-byte float64 duration (most common)
+        var dv = new DataView(buffer, i + 3, 8);
+        dv.setFloat64(0, durationMs);
+        return new Blob([buffer], { type: blob.type });
+      } else if (sizeTag === 0x84) {
+        // 4-byte float32 duration
+        var dv = new DataView(buffer, i + 3, 4);
+        dv.setFloat32(0, durationMs);
+        return new Blob([buffer], { type: blob.type });
+      }
+    }
+  }
+
+  // Duration element not found — inject it into Segment Info.
+  // Search for the Info element (ID 0x15 0x49 0xA9 0x66) and insert
+  // a Duration element right after the Info header.
+  for (var i = 0; i < bytes.length - 20; i++) {
+    if (bytes[i] === 0x15 && bytes[i + 1] === 0x49 && bytes[i + 2] === 0xA9 && bytes[i + 3] === 0x66) {
+      // Info element found. Read its VINT size to find where content starts.
+      var sizeStart = i + 4;
+      var infoByte = bytes[sizeStart];
+      var vintLen = 0;
+      for (var bit = 7; bit >= 0; bit--) {
+        if (infoByte & (1 << bit)) { vintLen = 8 - bit; break; }
+      }
+      if (vintLen === 0) break;
+      var insertPos = sizeStart + vintLen;
+
+      // Build the Duration element: ID(2) + size(1) + float64(8) = 11 bytes
+      var durEl = new Uint8Array(11);
+      durEl[0] = 0x44; durEl[1] = 0x89; // Duration element ID
+      durEl[2] = 0x88; // VINT size = 8 bytes
+      var durView = new DataView(durEl.buffer, 3, 8);
+      durView.setFloat64(0, durationMs);
+
+      // We also need to increase the Info element's size by 11.
+      // Read current size value
+      var sizeMask = infoByte & ~(1 << (8 - vintLen));
+      var sizeVal = sizeMask;
+      for (var j = 1; j < vintLen; j++) {
+        sizeVal = (sizeVal * 256) + bytes[sizeStart + j];
+      }
+      sizeVal += 11;
+
+      // Write updated size back (same VINT length)
+      var newSizeBytes = new Uint8Array(vintLen);
+      var tmp = sizeVal;
+      for (var j = vintLen - 1; j >= 0; j--) {
+        newSizeBytes[j] = tmp & 0xFF;
+        tmp = Math.floor(tmp / 256);
+      }
+      newSizeBytes[0] |= (1 << (8 - vintLen)); // set VINT marker bit
+
+      // Assemble: before insert | duration element | after insert
+      var before = bytes.slice(0, insertPos);
+      var after = bytes.slice(insertPos);
+
+      // Patch the size bytes in 'before'
+      for (var j = 0; j < vintLen; j++) {
+        before[sizeStart + j] = newSizeBytes[j];
+      }
+
+      var result = new Uint8Array(before.length + durEl.length + after.length);
+      result.set(before, 0);
+      result.set(durEl, before.length);
+      result.set(after, before.length + durEl.length);
+      return new Blob([result], { type: blob.type });
+    }
+  }
+
+  console.warn('fixWebmDuration: could not patch duration metadata');
+  return blob;
 }
 
 // Split a video blob into chunks of segDur seconds each.
@@ -1789,7 +1881,9 @@ async function splitVideoIntoChunks(videoBlob, segDur) {
       drawLoop();
     });
 
-    chunks.push({ blob: chunkBlob, duration: Math.round(chunkDur) });
+    // Fix duration metadata so Runway can determine video length
+    var fixedBlob = await fixWebmDuration(chunkBlob, chunkDur * 1000);
+    chunks.push({ blob: fixedBlob, duration: Math.max(2, Math.round(chunkDur)) });
   }
 
   URL.revokeObjectURL(video.src);
