@@ -2992,8 +2992,6 @@ toast('Transform reset');
 // UI BINDING
 // ============================================================
 function bindUI(){
-var mkParam=new URLSearchParams(window.location.search).get('mk');
-if(mkParam){var mkEl=document.getElementById('marble-apikey');if(mkEl)mkEl.value=mkParam}
 var sliders={'smooth-iter':'smooth-iter-val','smooth-str':'smooth-str-val','cp-count':'cp-count-val','spline-resolution':'spline-res-val','loop-blend':'loop-blend-val','loop-pts':'loop-pts-val','elev-offset':'elev-val','s-imgscale':'v-imgscale','s-imgpts':'v-imgpts','s-imgsmooth':'v-imgsmooth','s-splatopacity':'v-splatopacity','s-splatscale':'v-splatscale'};
 Object.keys(sliders).forEach(function(a){var b=sliders[a];var sl=document.getElementById(a),vl=document.getElementById(b);if(sl&&vl)sl.addEventListener('input',function(){vl.textContent=sl.value})});
 document.querySelectorAll('input[type="range"]').forEach(function(sl){
@@ -3010,11 +3008,25 @@ var sl=document.getElementById(id);if(!sl)return;
 var vlbl=document.getElementById('v-'+id.slice(2));
 if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 });
-// Runway API key from URL param
+// API key persistence: load from localStorage, URL params override
+var _apiKeyIds = ['runway-apikey', 'decart-apikey', 'marble-apikey'];
+_apiKeyIds.forEach(function(id) {
+  var el = document.getElementById(id); if (!el) return;
+  var saved = localStorage.getItem('apikey_' + id);
+  if (saved && !el.value) el.value = saved;
+  el.addEventListener('input', function() {
+    var v = el.value.trim();
+    if (v) localStorage.setItem('apikey_' + id, v);
+    else localStorage.removeItem('apikey_' + id);
+  });
+});
+// URL params override localStorage (Runway, Decart, Marble)
 var rkParam=new URLSearchParams(window.location.search).get('rk');
 if(rkParam){var rkEl=document.getElementById('runway-apikey');if(rkEl)rkEl.value=rkParam}
 var dkParam=new URLSearchParams(window.location.search).get('dk');
 if(dkParam){var dkEl=document.getElementById('decart-apikey');if(dkEl)dkEl.value=dkParam}
+var mkParam=new URLSearchParams(window.location.search).get('mk');
+if(mkParam){var mkEl=document.getElementById('marble-apikey');if(mkEl)mkEl.value=mkParam}
 }
 
 // ============================================================
