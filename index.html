@@ -1687,17 +1687,39 @@ _flyFrames = [];
 _flyBlob = null;
 recorder.start();
 
-// MediaRecorder timestamps frames by wall-clock, so we must pace frames
-// to match the target frame interval exactly. Track recording start time
-// and sleep only the remaining ms after render/capture overhead.
+// --- Pre-pass: capture keyframe images for Runway segment chaining ---
+// Done separately so that the expensive toDataURL calls don't inflate
+// the recording loop's wall-clock time (which MediaRecorder uses for timestamps).
+progEl.textContent = 'Capturing keyframes...';
+for (var kf = 0; kf <= duration; kf++) {
+  var kfFrame = kf === duration ? totalFrames - 1 : kf * fps;
+  var kt = isClosed ? kfFrame / totalFrames : Math.min(kfFrame / Math.max(totalFrames - 1, 1), 0.9999);
+  var kLookT = kt + 0.02;
+  if (isClosed) { kLookT = kLookT % 1; } else { kLookT = Math.min(kLookT, 0.9999); }
+  var kPt = flyCurve.getPointAt(kt);
+  var kLook = flyCurve.getPointAt(kLookT);
+  var kTan = flyCurve.getTangentAt(kt).normalize();
+  offCam.position.set(kPt.x - kTan.x * 10, kPt.y + camH, kPt.z - kTan.z * 10);
+  offCam.lookAt(kLook.x, kLook.y + camH * 0.3, kLook.z);
+  offCam.updateMatrixWorld(true);
+  offR.clear(); offR.render(scene, offCam);
+  var label = kf === 0 ? 'first' : kf === duration ? 'last' : 't' + kf;
+  _flyFrames.push({
+    label: label, time: kfFrame / fps, frameIndex: kfFrame,
+    dataUrl: offR.domElement.toDataURL('image/jpeg', 0.92)
+  });
+}
+
+// --- Main recording pass: render + requestFrame only, no toDataURL ---
+// MediaRecorder timestamps frames by wall-clock, so we pace each frame
+// to land at exactly the right moment. Without toDataURL overhead in this
+// loop, render time stays well under the 33ms frame interval.
 var frameInterval = 1000 / fps;
 var recordingStart = performance.now();
 
 for (var f = 0; f < totalFrames; f++) {
-var frameStart = performance.now();
 var t;
 if (isClosed) {
-// Full loop: t goes from 0 to 1 (back to start)
 t = f / totalFrames;
 } else {
 t = f / Math.max(totalFrames - 1, 1);
@@ -1710,7 +1732,6 @@ var point = flyCurve.getPointAt(t);
 var lookPt = flyCurve.getPointAt(lookT);
 var tangent = flyCurve.getTangentAt(t).normalize();
 
-// Camera: behind and above the track point, looking forward
 offCam.position.set(
 point.x - tangent.x * 10,
 point.y + camH,
@@ -1722,24 +1743,8 @@ offCam.updateMatrixWorld(true);
 offR.clear(); offR.render(scene, offCam);
 if (hasRF) vTrack.requestFrame();
 
-// Capture keyframes every second for Runway segment chaining
-var frameSecond = Math.floor(f / fps);
-var isFirstOfSecond = (f % fps === 0);
-var isLastFrame = (f === totalFrames - 1);
-if (isFirstOfSecond || isLastFrame) {
-var label = f === 0 ? 'first' : isLastFrame ? 'last' : 't' + frameSecond;
-_flyFrames.push({
-label: label,
-time: f / fps,
-frameIndex: f,
-dataUrl: offR.domElement.toDataURL('image/jpeg', 0.92)
-});
-}
-
 progEl.textContent = 'Recording ' + (f + 1) + '/' + totalFrames;
-// Sleep the remaining time so each frame lands at exactly the right wall-clock moment.
-// This ensures MediaRecorder produces a video whose duration matches the target,
-// regardless of how long render + toDataURL takes per frame.
+// Sleep remaining time so wall-clock matches target frame time
 var targetTime = recordingStart + (f + 1) * frameInterval;
 var sleepMs = targetTime - performance.now();
 if (sleepMs > 1) {
