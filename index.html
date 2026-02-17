@@ -1902,16 +1902,13 @@ function onProviderChange() {
   var dcKeyRow = document.getElementById('apikey-decart-row');
 
   if (provider === 'decart') {
-    modelSel.innerHTML = '<option value="lucy-pro-v2v" selected>Lucy Pro V2V (video-to-video)</option>'
-      + '<option value="lucy-pro-i2v">Lucy Pro I2V (image-to-video)</option>'
-      + '<option value="lucy-dev-i2v">Lucy Dev I2V (fast/cheap)</option>'
-      + '<option value="lucy-pro-t2v">Lucy Pro T2V (text-only)</option>';
+    modelSel.innerHTML = '<option value="lucy-pro-v2v" selected>Lucy Pro V2V (video-to-video)</option>';
     btn.textContent = 'Stylize with Decart';
     durRow.style.display = 'none';
-    decResRow.style.display = '';
+    decResRow.style.display = 'none';
     rwKeyRow.style.display = 'none';
     dcKeyRow.style.display = '';
-    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Decart Lucy</span>. <strong>V2V</strong> sends the flythrough video for style transfer. <strong>I2V</strong> animates keyframe images. <strong>T2V</strong> generates from the text prompt only. Output is ~5s per segment.';
+    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Decart Lucy Pro V2V</span>. Sends the flythrough video for style transfer. Output is ~5s per segment.';
   } else {
     modelSel.innerHTML = '<option value="gen4_turbo" selected>Gen-4 Turbo</option>'
       + '<option value="gen4_aleph">Gen-4 Aleph (video-to-video)</option>'
@@ -2057,16 +2054,9 @@ async function runDecartStylize() {
   var apiKey = document.getElementById('decart-apikey').value.trim();
   if (!apiKey) { toast('Enter a Decart API key'); return; }
   var prompt = document.getElementById('runway-prompt').value.trim();
-  var model = document.getElementById('runway-model').value;
-  var resolution = document.getElementById('decart-resolution').value;
-  var isV2V = (model === 'lucy-pro-v2v');
-  var isI2V = (model === 'lucy-pro-i2v' || model === 'lucy-dev-i2v');
-  var isT2V = (model === 'lucy-pro-t2v');
+  var model = 'lucy-pro-v2v';
 
-  // Validation
-  if (isV2V && !_flyBlob) { toast('Record a flythrough first'); return; }
-  if (isI2V && (!_flyFrames.length || _flyFrames.length < 2)) { toast('Record a flythrough first'); return; }
-  if (!prompt && isT2V) { toast('Enter a style prompt for text-to-video'); return; }
+  if (!_flyBlob) { toast('Record a flythrough first'); return; }
 
   var btn = document.getElementById('runway-btn');
   var progEl = document.getElementById('runway-progress');
@@ -2080,23 +2070,7 @@ async function runDecartStylize() {
   try {
     var segmentUrls = [];
 
-    if (isT2V) {
-      // ---- TEXT-TO-VIDEO: single generation, no input media ----
-      progEl.textContent = 'Submitting to Decart (' + model + ')...';
-      var form = new FormData();
-      form.append('prompt', prompt);
-      form.append('resolution', resolution);
-      var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
-        method: 'POST',
-        headers: { 'X-API-KEY': apiKey },
-        body: form
-      });
-      if (!res.ok) { var errBody = await res.text(); throw new Error('Decart (' + res.status + '): ' + errBody); }
-      var jobData = await res.json();
-      var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, '');
-      segmentUrls.push(vidUrl);
-
-    } else if (isV2V) {
+    {
       // ---- VIDEO-TO-VIDEO: send flythrough chunks ----
       // Decart V2V output is ~5s, so chunk the flythrough accordingly
       var segDuration = 5;
@@ -2141,55 +2115,6 @@ async function runDecartStylize() {
         }
       }
 
-    } else if (isI2V) {
-      // ---- IMAGE-TO-VIDEO: animate keyframe images ----
-      // Each I2V output is ~5s, so we create segments from keyframes
-      var segDuration = 5;
-      var totalDuration = _flyFrames[_flyFrames.length - 1].time;
-      var numSegments = Math.max(1, Math.ceil(totalDuration / segDuration));
-      var segments = [];
-      for (var s = 0; s < numSegments; s++) {
-        var startTime = s * segDuration;
-        var kf = _flyFrames.reduce(function(best, f) {
-          return Math.abs(f.time - startTime) < Math.abs(best.time - startTime) ? f : best;
-        });
-        segments.push(kf);
-      }
-
-      for (var si = 0; si < segments.length; si++) {
-        var segLabel = segments.length > 1 ? 'Segment ' + (si + 1) + '/' + segments.length + ': ' : '';
-        progEl.textContent = segLabel + 'Submitting to Decart I2V...';
-
-        // Convert keyframe data URL to blob for multipart upload
-        var kfDataUrl = segments[si].dataUrl;
-        var kfBlob = await (await fetch(kfDataUrl)).blob();
-
-        var form = new FormData();
-        form.append('prompt', prompt);
-        form.append('data', kfBlob, 'keyframe.jpg');
-        form.append('resolution', resolution);
-        var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
-          method: 'POST',
-          headers: { 'X-API-KEY': apiKey },
-          body: form
-        });
-        if (!res.ok) { var errBody = await res.text(); throw new Error('Decart I2V (' + res.status + '): ' + errBody); }
-        var jobData = await res.json();
-        var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, segLabel);
-        segmentUrls.push(vidUrl);
-
-        if (segments.length > 1) {
-          segEl.style.display = 'block';
-          var segVid = document.createElement('video');
-          segVid.src = vidUrl; segVid.controls = true;
-          segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
-          var segTitle = document.createElement('div');
-          segTitle.textContent = 'Segment ' + (si + 1);
-          segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
-          segEl.appendChild(segTitle); segEl.appendChild(segVid);
-          segEl.appendChild(makeDownloadBtn(vidUrl, 'Download segment ' + (si + 1), 'decart-segment-' + (si + 1) + '.mp4'));
-        }
-      }
     }
 
     // Store segment URLs and display result
