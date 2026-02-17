@@ -1855,6 +1855,42 @@ function bestRecorderMime() {
   return 'video/webm';
 }
 
+// Upload a video blob to Runway via their ephemeral uploads endpoint.
+// Returns a runway:// URI that can be used as videoUri.
+// This avoids WebM duration metadata issues since Runway's server-side
+// tools (ffprobe) can determine duration from the actual video frames.
+async function uploadToRunway(blob, headers, progEl, prefix) {
+  prefix = prefix || '';
+  var ext = (blob.type && blob.type.indexOf('mp4') !== -1) ? 'mp4' : 'webm';
+
+  progEl.textContent = prefix + 'Requesting Runway upload URL...';
+  var initRes = await proxiedFetch('https://api.dev.runwayml.com/v1/uploads', {
+    method: 'POST', headers: headers,
+    body: JSON.stringify({ filename: 'flythrough.' + ext, type: 'ephemeral' })
+  });
+  if (!initRes.ok) {
+    var errText = await initRes.text();
+    throw new Error('Runway upload init failed (' + initRes.status + '): ' + errText);
+  }
+  var initData = await initRes.json();
+
+  progEl.textContent = prefix + 'Uploading video to Runway...';
+  var formData = new FormData();
+  var fields = initData.fields || {};
+  for (var key in fields) {
+    if (fields.hasOwnProperty(key)) formData.append(key, fields[key]);
+  }
+  formData.append('file', blob, 'flythrough.' + ext);
+
+  // Upload goes directly to the presigned URL (not proxied)
+  var upRes = await fetch(initData.uploadUrl, { method: 'POST', body: formData });
+  if (!upRes.ok && upRes.status !== 204) {
+    throw new Error('Runway file upload failed (' + upRes.status + ')');
+  }
+
+  return initData.runwayUri;
+}
+
 // Split a video blob into chunks of segDur seconds each.
 // Returns an array of { blob, duration } objects.
 async function splitVideoIntoChunks(videoBlob, segDur) {
@@ -1997,15 +2033,15 @@ if (isAleph) {
     var chunk = videoChunks[ci];
     var segLabel = numSegments > 1 ? 'Chunk ' + (ci + 1) + '/' + numSegments + ': ' : '';
 
-    progEl.textContent = segLabel + 'Encoding video chunk as data URI...';
-    var videoDataUrl = await blobToDataUrl(chunk.blob);
+    // Upload video to Runway (avoids WebM duration metadata issues with data URIs)
+    var runwayUri = await uploadToRunway(chunk.blob, headers, progEl, segLabel);
 
     progEl.textContent = segLabel + 'Submitting to Runway Aleph...';
     var res = await proxiedFetch('https://api.dev.runwayml.com/v1/video_to_video', {
       method: 'POST', headers: headers,
       body: JSON.stringify({
         model: 'gen4_aleph',
-        videoUri: videoDataUrl,
+        videoUri: runwayUri,
         promptText: alephPrompt,
         ratio: '1280:720',
         duration: Math.max(2, chunk.duration || segDuration)
