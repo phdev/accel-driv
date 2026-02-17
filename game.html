@@ -503,6 +503,9 @@ function buildTrack() {
   roadMesh = new THREE.Mesh(roadGeo, roadMat);
   scene.add(roadMesh);
 
+  // Dashed lane lines
+  buildLaneLines(divisions);
+
   // Edge barriers (neon rails)
   buildBarriers(divisions, halfWidth);
 
@@ -511,6 +514,82 @@ function buildTrack() {
 
   // Boost pads
   buildBoostPads();
+}
+
+function buildLaneLines(divisions) {
+  // Dashed center line + edge lines for V2V reference
+  const dashLen = 6;       // world-unit length of each dash
+  const gapLen = 8;        // world-unit gap between dashes
+  const dashWidth = 0.35;  // width of each dash
+  const edgeInset = 1.2;   // edge lines inset from barriers
+  const halfWidth = CFG.roadWidth / 2;
+  const cycleLen = dashLen + gapLen;
+
+  // Materials — flat white for strong silhouette, slight transparency
+  const centerMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, side: THREE.DoubleSide, depthWrite: false,
+    transparent: true, opacity: 0.6,
+  });
+  const edgeMat = new THREE.MeshBasicMaterial({
+    color: 0xffdd44, side: THREE.DoubleSide, depthWrite: false,
+    transparent: true, opacity: 0.5,
+  });
+
+  const dashGeo = new THREE.PlaneGeometry(dashWidth, dashLen);
+  const edgeDashGeo = new THREE.PlaneGeometry(dashWidth * 0.7, dashLen * 0.7);
+
+  // Walk along the curve placing dashes
+  const totalLen = curve.getLength();
+  let dist = 0;
+
+  while (dist < totalLen - dashLen) {
+    const t = dist / totalLen;
+    const tEnd = Math.min((dist + dashLen) / totalLen, 0.9999);
+    const tMid = (t + tEnd) / 2;
+
+    if (tMid > 0.9999) break;
+
+    const point = curve.getPointAt(tMid);
+    const tangent = curve.getTangentAt(tMid).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (right.length() < 0.1) { dist += cycleLen; continue; }
+
+    // Center dash
+    const cDash = new THREE.Mesh(dashGeo, centerMat);
+    cDash.position.copy(point);
+    cDash.position.y += 0.06;
+    cDash.up.copy(up);
+    cDash.lookAt(point.clone().add(tangent));
+    cDash.rotateX(-Math.PI / 2);
+    scene.add(cDash);
+
+    // Left edge dash
+    const lDash = new THREE.Mesh(edgeDashGeo, edgeMat);
+    lDash.position.set(
+      point.x - right.x * (halfWidth - edgeInset),
+      point.y + 0.06,
+      point.z - right.z * (halfWidth - edgeInset)
+    );
+    lDash.up.copy(up);
+    lDash.lookAt(lDash.position.clone().add(tangent));
+    lDash.rotateX(-Math.PI / 2);
+    scene.add(lDash);
+
+    // Right edge dash
+    const rDash = new THREE.Mesh(edgeDashGeo, edgeMat);
+    rDash.position.set(
+      point.x + right.x * (halfWidth - edgeInset),
+      point.y + 0.06,
+      point.z + right.z * (halfWidth - edgeInset)
+    );
+    rDash.up.copy(up);
+    rDash.lookAt(rDash.position.clone().add(tangent));
+    rDash.rotateX(-Math.PI / 2);
+    scene.add(rDash);
+
+    dist += cycleLen;
+  }
 }
 
 function buildBarriers(divisions, halfWidth) {
@@ -1062,8 +1141,40 @@ function buildEnvironment() {
   const stars = new THREE.Points(starGeo, starMat);
   scene.add(stars);
 
+  // Sky dome — gradient hemisphere for V2V sky reference
+  buildSkyDome(groundY);
+
   // Decorative neon pillars along the track
   buildTrackDecorations();
+
+  // Lightweight environment geometry for V2V reference
+  buildCityBlocks();
+  buildTreeClusters();
+}
+
+function buildSkyDome(groundY) {
+  const radius = 600;
+  const geo = new THREE.SphereGeometry(radius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+  // Vertex color gradient: dark purple at horizon → deep blue at zenith
+  const posAttr = geo.getAttribute('position');
+  const colors = new Float32Array(posAttr.count * 3);
+  const horizonColor = new THREE.Color(0x1a0533);
+  const zenithColor = new THREE.Color(0x050822);
+  for (let i = 0; i < posAttr.count; i++) {
+    const y = posAttr.getY(i);
+    const t = Math.max(0, y / radius);
+    const c = new THREE.Color().lerpColors(horizonColor, zenithColor, t);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors: true, side: THREE.BackSide, fog: false,
+  });
+  const dome = new THREE.Mesh(geo, mat);
+  dome.position.y = groundY;
+  scene.add(dome);
 }
 
 function buildTrackDecorations() {
@@ -1107,6 +1218,129 @@ function buildTrackDecorations() {
     const orb = new THREE.Mesh(glowOrbGeo, orbMats[ci]);
     orb.position.set(pillar.position.x, pillar.position.y + 4.3, pillar.position.z);
     scene.add(orb);
+  }
+}
+
+// ── CITY BLOCKS — boxes at varying heights along the track for V2V building silhouettes ──
+function buildCityBlocks() {
+  const halfWidth = CFG.roadWidth / 2;
+  const count = 80;
+  // Seeded random for deterministic placement
+  let seed = 42;
+  function srand() { seed = (seed * 16807 + 0) % 2147483647; return (seed - 1) / 2147483646; }
+
+  // Shared geometries for different building sizes
+  const buildingMat = new THREE.MeshStandardMaterial({
+    color: 0x0c0c1e,
+    emissive: new THREE.Color(0x1a0a30),
+    emissiveIntensity: 0.2,
+    metalness: 0.7,
+    roughness: 0.4,
+  });
+  // Window-lit accent material
+  const windowMat = new THREE.MeshBasicMaterial({
+    color: 0x332255, transparent: true, opacity: 0.6,
+  });
+
+  for (let i = 0; i < count; i++) {
+    const t = (i / count + srand() * 0.005) % 1;
+    const point = curve.getPointAt(Math.min(t, 0.9999));
+    const tangent = curve.getTangentAt(Math.min(t, 0.9999)).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (right.length() < 0.1) continue;
+
+    const side = (i % 2 === 0) ? -1 : 1;
+    // Buildings placed 30-80 units from track center
+    const dist = halfWidth + 10 + srand() * 50;
+    const height = 8 + srand() * 40;
+    const width = 4 + srand() * 10;
+    const depth = 4 + srand() * 10;
+
+    const geo = new THREE.BoxGeometry(width, height, depth);
+    const building = new THREE.Mesh(geo, buildingMat);
+    building.position.set(
+      point.x + right.x * dist * side,
+      point.y + height / 2 - 1,
+      point.z + right.z * dist * side
+    );
+    // Slight random rotation for variety
+    building.rotation.y = srand() * Math.PI * 0.3;
+    scene.add(building);
+
+    // Window strip accent on tall buildings
+    if (height > 20) {
+      const stripGeo = new THREE.PlaneGeometry(width * 0.8, height * 0.6);
+      const strip = new THREE.Mesh(stripGeo, windowMat);
+      strip.position.copy(building.position);
+      strip.position.x += right.x * side * (depth / 2 + 0.1) * -1;
+      strip.position.z += right.z * side * (depth / 2 + 0.1) * -1;
+      strip.lookAt(strip.position.clone().add(right.clone().multiplyScalar(side * -1)));
+      scene.add(strip);
+    }
+  }
+}
+
+// ── TREE CLUSTERS — cone+cylinder primitives for V2V vegetation silhouettes ──
+function buildTreeClusters() {
+  const halfWidth = CFG.roadWidth / 2;
+  const clusterCount = 40;
+  let seed = 137;
+  function srand() { seed = (seed * 16807 + 0) % 2147483647; return (seed - 1) / 2147483646; }
+
+  // Shared geometries
+  const trunkGeo = new THREE.CylinderGeometry(0.3, 0.4, 3, 5);
+  const canopyGeo = new THREE.ConeGeometry(2.5, 5, 6);
+
+  const trunkMat = new THREE.MeshStandardMaterial({
+    color: 0x1a0e08, roughness: 0.9, metalness: 0.1,
+  });
+  const canopyMat = new THREE.MeshStandardMaterial({
+    color: 0x0a1a0a,
+    emissive: new THREE.Color(0x051005),
+    emissiveIntensity: 0.3,
+    roughness: 0.8,
+    metalness: 0.1,
+  });
+
+  for (let i = 0; i < clusterCount; i++) {
+    const t = (i / clusterCount + srand() * 0.008) % 1;
+    const point = curve.getPointAt(Math.min(t, 0.9999));
+    const tangent = curve.getTangentAt(Math.min(t, 0.9999)).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (right.length() < 0.1) continue;
+
+    const side = (i % 2 === 0) ? -1 : 1;
+    // Trees placed 25-55 units from center (between road and distant buildings)
+    const baseDist = halfWidth + 5 + srand() * 30;
+    // Small cluster of 2-4 trees
+    const treesInCluster = 2 + Math.floor(srand() * 3);
+
+    for (let j = 0; j < treesInCluster; j++) {
+      const jitter = (srand() - 0.5) * 6;
+      const dist = baseDist + (srand() - 0.5) * 8;
+      const treeHeight = 3 + srand() * 4;
+      const scale = 0.6 + srand() * 0.8;
+
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.set(
+        point.x + right.x * dist * side + tangent.x * jitter,
+        point.y + 1.5 * scale - 1,
+        point.z + right.z * dist * side + tangent.z * jitter
+      );
+      trunk.scale.setScalar(scale);
+      scene.add(trunk);
+
+      const canopy = new THREE.Mesh(canopyGeo, canopyMat);
+      canopy.position.set(
+        trunk.position.x,
+        trunk.position.y + 2.5 * scale + treeHeight * 0.3,
+        trunk.position.z
+      );
+      canopy.scale.set(scale, scale * (0.8 + srand() * 0.4), scale);
+      scene.add(canopy);
+    }
   }
 }
 
