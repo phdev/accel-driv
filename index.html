@@ -1611,7 +1611,8 @@ var stream = offR.domElement.captureStream(0);
 var vTrack = stream.getVideoTracks()[0];
 var hasRF = typeof vTrack.requestFrame === 'function';
 if (!hasRF) { stream = offR.domElement.captureStream(fps); }
-var mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+var mimeType = bestRecorderMime();
+var blobType = mimeType.split(';')[0]; // clean MIME for blob/data URI
 var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
 var chunks = [];
 recorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
@@ -1676,9 +1677,19 @@ scene.fog = _origFog;
 // Restore hidden objects
 hidden.forEach(function(obj) { obj.visible = true; });
 
-return new Promise(function(resolve) {
+await new Promise(function(resolve) {
 recorder.onstop = function() {
-_flyBlob = new Blob(chunks, { type: 'video/webm' });
+_flyBlob = new Blob(chunks, { type: blobType });
+resolve();
+};
+recorder.stop();
+});
+
+// Fix WebM duration metadata so Runway can parse it (MP4 is fine as-is)
+if (blobType.startsWith('video/webm')) {
+_flyBlob = await fixWebmDuration(_flyBlob, duration * 1000);
+}
+
 var videoEl = document.getElementById('fly-video');
 videoEl.src = URL.createObjectURL(_flyBlob);
 videoEl.style.display = 'block';
@@ -1686,16 +1697,13 @@ progEl.textContent = 'Recorded ' + duration + 's flythrough (' + totalFrames + '
 offR.dispose();
 btn.disabled = false; btn.textContent = 'Record Flythrough';
 toast('Flythrough recorded');
-resolve();
-};
-recorder.stop();
-});
 }
 
 function downloadFlythrough() {
 if (!_flyBlob) { toast('Record a flythrough first'); return; }
 var a = document.createElement('a'); a.href = URL.createObjectURL(_flyBlob);
-a.download = 'flythrough.webm'; a.click();
+var ext = (_flyBlob.type && _flyBlob.type.indexOf('mp4') !== -1) ? 'mp4' : 'webm';
+a.download = 'flythrough.' + ext; a.click();
 }
 
 // ---- Download helpers ----
@@ -1836,6 +1844,17 @@ async function fixWebmDuration(blob, durationMs) {
   return blob;
 }
 
+// Prefer MP4 for MediaRecorder (reliable duration metadata).
+// Fall back to WebM (needs EBML duration patching for Runway).
+function bestRecorderMime() {
+  if (typeof MediaRecorder !== 'undefined') {
+    if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')) return 'video/mp4;codecs=avc1';
+    if (MediaRecorder.isTypeSupported('video/mp4')) return 'video/mp4';
+  }
+  if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) return 'video/webm;codecs=vp9';
+  return 'video/webm';
+}
+
 // Split a video blob into chunks of segDur seconds each.
 // Returns an array of { blob, duration } objects.
 async function splitVideoIntoChunks(videoBlob, segDur) {
@@ -1875,7 +1894,8 @@ async function splitVideoIntoChunks(videoBlob, segDur) {
 
     // Record this chunk via canvas + MediaRecorder
     var cStream = canvas.captureStream(30);
-    var mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+    var mimeType = bestRecorderMime();
+    var blobType = mimeType.split(';')[0]; // clean MIME for blob/data URI
     var rec = new MediaRecorder(cStream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
     var parts = [];
     rec.ondataavailable = function(e) { if (e.data.size) parts.push(e.data); };
@@ -1888,7 +1908,7 @@ async function splitVideoIntoChunks(videoBlob, segDur) {
         if (video.paused || video.ended || video.currentTime >= endT) {
           video.pause();
           rec.onstop = function() {
-            resolve(new Blob(parts, { type: mimeType }));
+            resolve(new Blob(parts, { type: blobType }));
           };
           rec.stop();
           return;
@@ -1906,8 +1926,10 @@ async function splitVideoIntoChunks(videoBlob, segDur) {
       drawLoop();
     });
 
-    // Fix duration metadata so Runway can determine video length
-    var fixedBlob = await fixWebmDuration(chunkBlob, chunkDur * 1000);
+    // Fix WebM duration metadata (MP4 has reliable duration already)
+    var fixedBlob = blobType.startsWith('video/webm')
+      ? await fixWebmDuration(chunkBlob, chunkDur * 1000)
+      : chunkBlob;
     chunks.push({ blob: fixedBlob, duration: Math.max(2, Math.round(chunkDur)) });
   }
 
@@ -1956,8 +1978,16 @@ if (isAleph) {
   // camera path exactly instead of hallucinating new curves/turns
   var alephPrompt = 'Preserve the exact camera motion, direction, and trajectory from the source video. Do not add turns, curves, or direction changes that are not in the original. ' + prompt;
 
-  progEl.textContent = 'Splitting flythrough into ' + segDuration + 's chunks...';
-  var videoChunks = await splitVideoIntoChunks(_flyBlob, segDuration);
+  // Check if flythrough fits in a single chunk — skip re-encoding
+  var flyDur = _flyFrames.length ? _flyFrames[_flyFrames.length - 1].time : segDuration;
+  var videoChunks;
+  if (flyDur <= segDuration + 0.5) {
+    // Single chunk: use the already-duration-fixed _flyBlob directly
+    videoChunks = [{ blob: _flyBlob, duration: Math.max(2, Math.round(flyDur)) }];
+  } else {
+    progEl.textContent = 'Splitting flythrough into ' + segDuration + 's chunks...';
+    videoChunks = await splitVideoIntoChunks(_flyBlob, segDuration);
+  }
   numSegments = videoChunks.length;
   progEl.textContent = numSegments === 1
     ? 'Submitting to Runway Aleph...'
@@ -2119,7 +2149,8 @@ var canvas = document.createElement('canvas');
 canvas.width = 1280; canvas.height = 720;
 var ctx = canvas.getContext('2d');
 var stream = canvas.captureStream(30);
-var mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+var mimeType = bestRecorderMime();
+var blobType = mimeType.split(';')[0];
 var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
 var recChunks = [];
 recorder.ondataavailable = function(e) { if (e.data.size) recChunks.push(e.data); };
@@ -2175,8 +2206,10 @@ for (var i = 0; i < blobs.length; i++) {
 // Stop recorder and build final blob with fixed duration
 var finalBlobUrl = await new Promise(function(resolve) {
   recorder.onstop = async function() {
-    var rawBlob = new Blob(recChunks, { type: mimeType });
-    var fixedBlob = await fixWebmDuration(rawBlob, totalRecordedSec * 1000);
+    var rawBlob = new Blob(recChunks, { type: blobType });
+    var fixedBlob = blobType.startsWith('video/webm')
+      ? await fixWebmDuration(rawBlob, totalRecordedSec * 1000)
+      : rawBlob;
     resolve(URL.createObjectURL(fixedBlob));
   };
   recorder.stop();
