@@ -410,6 +410,12 @@
         <button class="btn btn-accent" onclick="runMarbleFromVideo()" id="marble-vid-btn">Reconstruct 3D World</button>
       </div>
       <div id="marble-vid-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+      <div id="marble-vid-results" style="display:none;margin-top:6px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px">
+        <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Splat URL <span style="opacity:0.5">(tap to copy)</span></div>
+        <input type="text" id="marble-vid-splat-url" readonly style="width:100%;background:var(--surface);color:var(--accent);border:1px solid var(--border);padding:4px 6px;border-radius:3px;font-size:10px;font-family:monospace;cursor:pointer;margin-bottom:4px" onclick="this.select();navigator.clipboard.writeText(this.value);toast('URL copied')">
+        <div id="marble-vid-public-url" style="display:none;font-size:10px;color:var(--text-dim);margin-bottom:4px"></div>
+        <div class="btn-group" id="marble-vid-dl-bar"></div>
+      </div>
     </div>
     <div class="btn-group">
       <button class="btn btn-accent" onclick="runFullPipeline()" id="pipeline-full-btn" style="width:100%">Run Full Pipeline</button>
@@ -1468,9 +1474,8 @@ function handleMarbleResult(worldData, quality) {
 var progEl = document.getElementById('marble-progress');
 var assets = worldData.assets;
 var splatUrl = null;
-if (assets && assets.splats && assets.splats.spz_urls) {
-splatUrl = assets.splats.spz_urls[quality] || assets.splats.spz_urls['100k'] || assets.splats.spz_urls['full_res'];
-}
+var spzUrls = (assets && assets.splats && assets.splats.spz_urls) ? assets.splats.spz_urls : {};
+splatUrl = spzUrls[quality] || spzUrls['100k'] || spzUrls['full_res'];
 var colliderUrl = null;
 if (assets && assets.mesh) { colliderUrl = assets.mesh.collider_mesh_url; }
 if (splatUrl) {
@@ -1482,6 +1487,41 @@ if (colliderUrl) { window._marbleColliderUrl = colliderUrl; }
 progEl.textContent = 'World generated! View at: ' + (worldData.world_marble_url || '');
 if (worldData.world_marble_url) { window.open(worldData.world_marble_url, '_blank'); }
 }
+
+// Populate Stage 3 results panel (download buttons + public URL)
+var resultsEl = document.getElementById('marble-vid-results');
+var urlInput = document.getElementById('marble-vid-splat-url');
+var publicEl = document.getElementById('marble-vid-public-url');
+var dlBar = document.getElementById('marble-vid-dl-bar');
+if (resultsEl) {
+  resultsEl.style.display = splatUrl ? 'block' : 'none';
+  if (splatUrl) {
+    urlInput.value = splatUrl;
+    dlBar.innerHTML = '';
+    // Download button for selected quality
+    dlBar.appendChild(makeDownloadBtn(splatUrl, 'Download .spz (' + quality + ')', 'marble-world-' + quality + '.spz'));
+    // Additional quality options
+    var qualities = Object.keys(spzUrls);
+    for (var qi = 0; qi < qualities.length; qi++) {
+      var q = qualities[qi];
+      if (q !== quality && spzUrls[q]) {
+        dlBar.appendChild(makeDownloadBtn(spzUrls[q], q, 'marble-world-' + q + '.spz'));
+      }
+    }
+    // Collider mesh download
+    if (colliderUrl) {
+      dlBar.appendChild(makeDownloadBtn(colliderUrl, 'Collider mesh', 'marble-collider.glb'));
+    }
+  }
+  // Public Marble viewer URL
+  if (worldData.world_marble_url) {
+    publicEl.style.display = 'block';
+    publicEl.innerHTML = 'Public URL: <a href="' + worldData.world_marble_url + '" target="_blank" style="color:var(--accent)">' + worldData.world_marble_url + '</a>';
+  } else {
+    publicEl.style.display = 'none';
+  }
+}
+
 toast('World generated!');
 }
 async function pollMarbleOp(opId, apiKey, quality, progEl) {
