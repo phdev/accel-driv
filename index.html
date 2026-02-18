@@ -346,6 +346,7 @@
       </div>
       <div id="fly-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
       <video id="fly-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls muted></video>
+      <div id="fly-debug" style="display:none;margin-top:4px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:10px;color:var(--text-dim);line-height:1.6;white-space:pre-wrap"></div>
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 2 &mdash; AI Stylization</div>
@@ -390,6 +391,7 @@
       <div id="runway-segments" style="display:none;margin-top:6px"></div>
       <video id="runway-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls></video>
       <div id="runway-download-bar" style="display:none;margin-top:4px" class="btn-group"></div>
+      <div id="stylize-debug" style="display:none;margin-top:4px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:10px;color:var(--text-dim);line-height:1.6;white-space:pre-wrap"></div>
       <div id="runway-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
         <div style="color:var(--accent2);margin-bottom:4px" id="pending-title">Pending generation found</div>
         <div id="runway-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
@@ -1865,9 +1867,35 @@ scene.fog = _origFog;
 hidden.forEach(function(obj) { obj.visible = true; });
 
 var videoEl = document.getElementById('fly-video');
-videoEl.src = URL.createObjectURL(_flyBlob);
+var blobUrl = URL.createObjectURL(_flyBlob);
+videoEl.src = blobUrl;
 videoEl.style.display = 'block';
 progEl.textContent = 'Recorded ' + duration + 's flythrough (' + f + ' frames, ' + (canUseWebCodecs ? 'MP4' : 'fallback') + ')';
+
+// Populate debug panel after video metadata loads
+var debugEl = document.getElementById('fly-debug');
+debugEl.style.display = 'block';
+var blobSizeKB = (_flyBlob.size / 1024).toFixed(1);
+var blobSizeMB = (_flyBlob.size / (1024 * 1024)).toFixed(2);
+var debugLines = [
+  'Encoder:    ' + (canUseWebCodecs ? 'WebCodecs + mp4-muxer' : 'MediaRecorder (fallback)'),
+  'Codec:      ' + (canUseWebCodecs ? codecStr : (typeof blobType !== 'undefined' ? blobType : 'unknown')),
+  'Resolution: ' + w + 'x' + h,
+  'Frames:     ' + f + ' (' + fps + ' fps x ' + duration + 's)',
+  'Blob type:  ' + (_flyBlob.type || 'unknown'),
+  'Blob size:  ' + blobSizeKB + ' KB (' + blobSizeMB + ' MB)',
+  'Keyframes:  ' + _flyFrames.length
+];
+debugEl.textContent = debugLines.join('\n');
+videoEl.onloadedmetadata = function() {
+  var actualDur = videoEl.duration;
+  var durStr = isFinite(actualDur) ? actualDur.toFixed(2) + 's' : 'unknown';
+  var actualW = videoEl.videoWidth || '?';
+  var actualH = videoEl.videoHeight || '?';
+  debugEl.textContent = debugLines.join('\n')
+    + '\nVideo dur:  ' + durStr + (isFinite(actualDur) && Math.abs(actualDur - duration) > 0.5 ? '  ⚠ expected ' + duration + 's' : '')
+    + '\nVideo res:  ' + actualW + 'x' + actualH;
+};
 offR.dispose();
 btn.disabled = false; btn.textContent = 'Record Flythrough';
 toast('Flythrough recorded');
@@ -2130,6 +2158,15 @@ async function runDecartStylize() {
   segEl.style.display = 'none'; segEl.innerHTML = '';
   dlBar.style.display = 'none'; dlBar.innerHTML = '';
 
+  var sDbg = document.getElementById('stylize-debug');
+  sDbg.style.display = 'block';
+  var blobMB = _flyBlob ? (_flyBlob.size / (1024 * 1024)).toFixed(2) : '?';
+  sDbg.textContent = 'Model:      ' + model
+    + '\nProvider:   Decart'
+    + '\nInput blob: ' + blobMB + ' MB (' + (_flyBlob.type || 'unknown') + ')'
+    + '\nPrompt:     ' + (prompt || '(empty)')
+    + '\nProxy:      ' + (_proxyUrl || 'none');
+
   try {
     var segmentUrls = [];
     var isRestyle = (model === 'lucy-restyle-v2v');
@@ -2141,6 +2178,7 @@ async function runDecartStylize() {
       form.append('prompt', prompt);
       form.append('data', _flyBlob, 'flythrough.mp4');
       var jobData = await decartSubmitJob(model, apiKey, form, progEl, '');
+      sDbg.textContent += '\nJob ID:     ' + jobData.job_id;
       var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, '');
       segmentUrls = [vidUrl];
     } else {
@@ -2228,6 +2266,7 @@ async function runDecartStylize() {
     progEl.textContent = 'Error: ' + err.message;
     toast('Decart error: ' + err.message);
     console.error('Decart error:', err);
+    sDbg.textContent += '\n\n--- ERROR ---\n' + err.message + (err.stack ? '\n' + err.stack : '');
   } finally {
     btn.disabled = false; btn.textContent = 'Stylize with Decart';
   }
@@ -2489,6 +2528,16 @@ var headers = {
 };
 
 try {
+var sDbg = document.getElementById('stylize-debug');
+sDbg.style.display = 'block';
+var blobMB = _flyBlob ? (_flyBlob.size / (1024 * 1024)).toFixed(2) : 'N/A';
+sDbg.textContent = 'Model:      ' + model
+  + '\nProvider:   Runway'
+  + '\nSeg dur:    ' + segDuration + 's'
+  + '\nInput blob: ' + blobMB + ' MB (' + (_flyBlob ? _flyBlob.type : 'none') + ')'
+  + '\nKeyframes:  ' + _flyFrames.length
+  + '\nPrompt:     ' + (prompt || '(empty)')
+  + '\nProxy:      ' + (_proxyUrl || 'none');
 var segmentUrls = [];
 var numSegments;
 
@@ -2647,6 +2696,7 @@ toast('Runway video ready');
 progEl.textContent = 'Error: ' + err.message;
 toast('Runway error: ' + err.message);
 console.error('Runway error:', err);
+if (sDbg) sDbg.textContent += '\n\n--- ERROR ---\n' + err.message + (err.stack ? '\n' + err.stack : '');
 } finally {
 btn.disabled = false; btn.textContent = 'Stylize with Runway';
 }
