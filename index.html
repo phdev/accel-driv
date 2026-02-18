@@ -1933,13 +1933,14 @@ function onProviderChange() {
   var dcKeyRow = document.getElementById('apikey-decart-row');
 
   if (provider === 'decart') {
-    modelSel.innerHTML = '<option value="lucy-pro-v2v" selected>Lucy Pro V2V (video-to-video)</option>';
+    modelSel.innerHTML = '<option value="lucy-pro-v2v" selected>Lucy Pro V2V (edit, 5s chunks)</option>'
+      + '<option value="lucy-restyle-v2v">Lucy Restyle V2V (style, up to 30m)</option>';
     btn.textContent = 'Stylize with Decart';
     durRow.style.display = 'none';
     decResRow.style.display = 'none';
     rwKeyRow.style.display = 'none';
     dcKeyRow.style.display = '';
-    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Decart Lucy Pro V2V</span>. Sends the entire flythrough video in one call for style transfer.';
+    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Decart</span>. <strong>Lucy Pro V2V</strong> &mdash; targeted edit (max 5s/chunk, auto-chunked and concatenated for longer tracks). <strong>Lucy Restyle V2V</strong> &mdash; full style transfer, handles up to 30 min natively.';
   } else {
     modelSel.innerHTML = '<option value="gen4_turbo" selected>Gen-4 Turbo</option>'
       + '<option value="gen4_aleph">Gen-4 Aleph (video-to-video)</option>'
@@ -2085,7 +2086,7 @@ async function runDecartStylize() {
   var apiKey = document.getElementById('decart-apikey').value.trim();
   if (!apiKey) { toast('Enter a Decart API key'); return; }
   var prompt = document.getElementById('runway-prompt').value.trim();
-  var model = 'lucy-pro-v2v';
+  var model = document.getElementById('runway-model').value;
 
   if (!_flyBlob) { toast('Record a flythrough first'); return; }
 
@@ -2099,31 +2100,110 @@ async function runDecartStylize() {
   dlBar.style.display = 'none'; dlBar.innerHTML = '';
 
   try {
-    // Send entire flythrough as a single Decart V2V call
-    progEl.textContent = 'Submitting to Decart V2V...';
-    var form = new FormData();
-    form.append('prompt', prompt);
-    form.append('data', _flyBlob, 'flythrough.mp4');
-    var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
-      method: 'POST',
-      headers: { 'X-API-KEY': apiKey },
-      body: form
-    });
-    if (!res.ok) { var errBody = await res.text(); throw new Error('Decart V2V (' + res.status + '): ' + errBody); }
-    var jobData = await res.json();
-    var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, '');
+    var segmentUrls = [];
+    var isRestyle = (model === 'lucy-restyle-v2v');
 
-    _runwayVideoUrl = vidUrl;
-    _runwaySegmentUrls = [vidUrl];
+    if (isRestyle) {
+      // ---- Restyle V2V: handles up to 30 min natively, single call ----
+      progEl.textContent = 'Submitting to Decart Restyle V2V...';
+      var form = new FormData();
+      form.append('prompt', prompt);
+      form.append('data', _flyBlob, 'flythrough.mp4');
+      var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
+        method: 'POST',
+        headers: { 'X-API-KEY': apiKey },
+        body: form
+      });
+      if (!res.ok) { var errBody = await res.text(); throw new Error('Decart Restyle (' + res.status + '): ' + errBody); }
+      var jobData = await res.json();
+      var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, '');
+      segmentUrls = [vidUrl];
+    } else {
+      // ---- Lucy Pro V2V: 5-second output cap, chunk and concatenate ----
+      var DECART_SEG_DUR = 5; // Lucy Pro V2V max output is 5 seconds
+      var flyDur = _flyFrames.length ? _flyFrames[_flyFrames.length - 1].time : 0;
+      if (!flyDur && _flyBlob) {
+        // Estimate from blob: try loading into video element for duration
+        var tmpVid = document.createElement('video');
+        tmpVid.muted = true; tmpVid.preload = 'auto';
+        tmpVid.src = URL.createObjectURL(_flyBlob);
+        await new Promise(function(r) { tmpVid.onloadedmetadata = r; tmpVid.onerror = r; });
+        if (isFinite(tmpVid.duration)) flyDur = tmpVid.duration;
+        URL.revokeObjectURL(tmpVid.src);
+      }
+
+      var videoChunks;
+      if (flyDur <= DECART_SEG_DUR + 0.5) {
+        // Fits in one chunk — send as-is
+        videoChunks = [{ blob: _flyBlob, duration: Math.round(flyDur) || DECART_SEG_DUR }];
+      } else {
+        progEl.textContent = 'Splitting flythrough into ' + DECART_SEG_DUR + 's chunks...';
+        videoChunks = await splitVideoIntoChunks(_flyBlob, DECART_SEG_DUR);
+      }
+
+      var numChunks = videoChunks.length;
+      progEl.textContent = numChunks === 1
+        ? 'Submitting to Decart V2V...'
+        : 'Stylizing ' + numChunks + ' chunks with Decart V2V...';
+
+      for (var ci = 0; ci < videoChunks.length; ci++) {
+        var chunk = videoChunks[ci];
+        var segLabel = numChunks > 1 ? 'Chunk ' + (ci + 1) + '/' + numChunks + ': ' : '';
+
+        progEl.textContent = segLabel + 'Submitting to Decart V2V...';
+        var form = new FormData();
+        form.append('prompt', prompt);
+        form.append('data', chunk.blob, 'flythrough.mp4');
+        var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
+          method: 'POST',
+          headers: { 'X-API-KEY': apiKey },
+          body: form
+        });
+        if (!res.ok) { var errBody = await res.text(); throw new Error('Decart V2V (' + res.status + '): ' + errBody); }
+        var jobData = await res.json();
+        var segUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, segLabel);
+        segmentUrls.push(segUrl);
+
+        if (numChunks > 1) {
+          segEl.style.display = 'block';
+          var segVid = document.createElement('video');
+          segVid.src = segUrl; segVid.controls = true;
+          segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
+          var segTitle = document.createElement('div');
+          segTitle.textContent = 'Chunk ' + (ci + 1);
+          segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
+          segEl.appendChild(segTitle); segEl.appendChild(segVid);
+          segEl.appendChild(makeDownloadBtn(segUrl, 'Download chunk ' + (ci + 1), 'decart-chunk-' + (ci + 1) + '.mp4'));
+        }
+      }
+    }
+
+    // Store segment URLs for Marble pipeline
+    _runwaySegmentUrls = segmentUrls;
+    var numSegments = segmentUrls.length;
+
+    if (numSegments === 1) {
+      _runwayVideoUrl = segmentUrls[0];
+    } else {
+      // Concatenate chunks client-side
+      progEl.textContent = 'Downloading and concatenating ' + numSegments + ' chunks...';
+      _runwayVideoUrl = await concatenateSegments(segmentUrls, progEl);
+    }
+
     var videoEl = document.getElementById('runway-video');
-    videoEl.src = vidUrl;
+    videoEl.src = _runwayVideoUrl;
     videoEl.style.display = 'block';
 
     // Show download bar
     dlBar.style.display = 'flex'; dlBar.innerHTML = '';
-    dlBar.appendChild(makeDownloadBtn(vidUrl, 'Download video', 'decart-stylized.mp4'));
+    dlBar.appendChild(makeDownloadBtn(_runwayVideoUrl, numSegments > 1 ? 'Download full video' : 'Download video', 'decart-stylized.mp4'));
+    if (numSegments > 1) {
+      for (var di = 0; di < segmentUrls.length; di++) {
+        dlBar.appendChild(makeDownloadBtn(segmentUrls[di], 'Chunk ' + (di + 1), 'decart-chunk-' + (di + 1) + '.mp4'));
+      }
+    }
 
-    progEl.textContent = 'Decart stylization complete!';
+    progEl.textContent = 'Decart stylization complete!' + (numSegments > 1 ? ' (' + numSegments + ' chunks joined)' : '');
     toast('Decart video ready');
   } catch (err) {
     progEl.textContent = 'Error: ' + err.message;
