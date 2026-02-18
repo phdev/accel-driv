@@ -1748,28 +1748,16 @@ for (var kf = 0; kf <= duration; kf++) {
   });
 }
 
-// --- Main recording pass: wall-clock driven ---
-// Camera position is derived from elapsed wall-clock time, NOT frame count.
-// This guarantees the full track is traversed in exactly `duration` seconds
-// regardless of how long each render() takes. If rendering is slow, we get
-// fewer frames (lower effective fps) but correct duration and full traversal.
-var recordingDurationMs = duration * 1000;
-var frameInterval = 1000 / fps;
+// --- Main recording pass: frame-count driven ---
+// Renders exactly totalFrames frames (duration * fps) regardless of how long
+// each render() takes. This guarantees a true 30fps output even on slow GPUs.
+// The recording may take longer than `duration` in real time, but the output
+// video will be exactly `duration` seconds at `fps` frames per second.
 recorder.start();
-var recordingStart = performance.now();
 var f = 0;
 
-while (true) {
-  var elapsed = performance.now() - recordingStart;
-  if (elapsed >= recordingDurationMs) break;
-
-  // Camera position based on elapsed time, not frame count
-  var t = elapsed / recordingDurationMs;
-  if (isClosed) {
-    t = t % 1;
-  } else {
-    t = Math.min(t, 0.9999);
-  }
+for (f = 0; f < totalFrames; f++) {
+  var t = isClosed ? f / totalFrames : Math.min(f / Math.max(totalFrames - 1, 1), 0.9999);
   var lookT = t + 0.02;
   if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
 
@@ -1788,26 +1776,11 @@ while (true) {
   offR.clear(); offR.render(scene, offCam);
   if (hasRF) vTrack.requestFrame();
 
-  f++;
-  var pct = Math.min(100, Math.round(elapsed / recordingDurationMs * 100));
-  progEl.textContent = 'Recording ' + pct + '% (' + f + ' frames)';
+  var pct = Math.round((f + 1) / totalFrames * 100);
+  progEl.textContent = 'Recording ' + pct + '% (' + (f + 1) + '/' + totalFrames + ' frames)';
 
-  // Sleep remaining time until next frame interval
-  var nextFrameTime = recordingStart + f * frameInterval;
-  var sleepMs = nextFrameTime - performance.now();
-  if (sleepMs > 1) {
-    await new Promise(function(r) { setTimeout(r, sleepMs); });
-  } else {
-    // Render took longer than frame interval — just yield and continue.
-    // We'll get fewer frames but wall-clock stays correct.
-    await new Promise(function(r) { setTimeout(r, 0); });
-  }
-}
-
-// Ensure we hit exactly the target duration before stopping
-var remaining = recordingDurationMs - (performance.now() - recordingStart);
-if (remaining > 10) {
-  await new Promise(function(r) { setTimeout(r, remaining); });
+  // Yield to keep UI responsive
+  await new Promise(function(r) { setTimeout(r, 0); });
 }
 
 // Remove temporary environment objects and restore scene
