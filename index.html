@@ -1711,23 +1711,10 @@ var offCam = new THREE.PerspectiveCamera(60, w / h, 1, 20000);
 // Copy editor scene lighting
 // (scene is shared, so lighting already exists)
 
-// MediaRecorder setup
-var stream = offR.domElement.captureStream(0);
-var vTrack = stream.getVideoTracks()[0];
-var hasRF = typeof vTrack.requestFrame === 'function';
-if (!hasRF) { stream = offR.domElement.captureStream(fps); }
-var mimeType = bestRecorderMime();
-var blobType = mimeType.split(';')[0]; // clean MIME for blob/data URI
-var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
-var chunks = [];
-recorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
-
 _flyFrames = [];
 _flyBlob = null;
 
 // --- Pre-pass: capture keyframe images for Runway segment chaining ---
-// Done BEFORE recorder.start() so the expensive toDataURL calls don't
-// add wall-clock time to the recording (MediaRecorder uses wall-clock for timestamps).
 progEl.textContent = 'Capturing keyframes...';
 for (var kf = 0; kf <= duration; kf++) {
   var kfFrame = kf === duration ? totalFrames - 1 : kf * fps;
@@ -1748,39 +1735,123 @@ for (var kf = 0; kf <= duration; kf++) {
   });
 }
 
-// --- Main recording pass: frame-count driven ---
-// Renders exactly totalFrames frames (duration * fps) regardless of how long
-// each render() takes. This guarantees a true 30fps output even on slow GPUs.
-// The recording may take longer than `duration` in real time, but the output
-// video will be exactly `duration` seconds at `fps` frames per second.
-recorder.start();
+// --- Detect WebCodecs + H.264 encoding support ---
+// WebCodecs gives us explicit per-frame timestamps, so the output is always
+// exactly `duration` seconds at `fps` fps regardless of how fast/slow the GPU
+// renders. MediaRecorder uses wall-clock timestamps which causes fast GPUs to
+// produce short videos and slow GPUs to produce long videos.
+var canUseWebCodecs = false;
+if (typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined') {
+  try {
+    var codecStr = (w > 1280) ? 'avc1.4d0028' : 'avc1.4d001f'; // Main Profile L4.0 / L3.1
+    var support = await VideoEncoder.isConfigSupported({
+      codec: codecStr, width: w, height: h, bitrate: 8000000, framerate: fps
+    });
+    canUseWebCodecs = support.supported === true;
+  } catch(e) { canUseWebCodecs = false; }
+}
+
 var f = 0;
 
-for (f = 0; f < totalFrames; f++) {
-  var t = isClosed ? f / totalFrames : Math.min(f / Math.max(totalFrames - 1, 1), 0.9999);
-  var lookT = t + 0.02;
-  if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
+if (canUseWebCodecs) {
+  // --- WebCodecs + mp4-muxer path: precise frame timestamps ---
+  progEl.textContent = 'Loading MP4 encoder...';
+  var Mp4Muxer = await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs');
+  var target = new Mp4Muxer.ArrayBufferTarget();
+  var muxer = new Mp4Muxer.Muxer({
+    target: target,
+    video: { codec: 'avc', width: w, height: h },
+    fastStart: 'in-memory',
+    firstTimestampBehavior: 'offset'
+  });
 
-  var point = flyCurve.getPointAt(t);
-  var lookPt = flyCurve.getPointAt(lookT);
-  var tangent = flyCurve.getTangentAt(t).normalize();
+  var encError = null;
+  var encoder = new VideoEncoder({
+    output: function(chunk, meta) { muxer.addVideoChunk(chunk, meta); },
+    error: function(e) { encError = e; }
+  });
+  encoder.configure({
+    codec: codecStr, width: w, height: h,
+    bitrate: 8000000, framerate: fps
+  });
 
-  offCam.position.set(
-    point.x - tangent.x * 10,
-    point.y + camH,
-    point.z - tangent.z * 10
-  );
-  offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
-  offCam.updateMatrixWorld(true);
+  var frameDurUs = Math.round(1000000 / fps); // microseconds per frame
 
-  offR.clear(); offR.render(scene, offCam);
-  if (hasRF) vTrack.requestFrame();
+  for (f = 0; f < totalFrames; f++) {
+    if (encError) throw encError;
 
-  var pct = Math.round((f + 1) / totalFrames * 100);
-  progEl.textContent = 'Recording ' + pct + '% (' + (f + 1) + '/' + totalFrames + ' frames)';
+    var t = isClosed ? f / totalFrames : Math.min(f / Math.max(totalFrames - 1, 1), 0.9999);
+    var lookT = t + 0.02;
+    if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
 
-  // Yield to keep UI responsive
-  await new Promise(function(r) { setTimeout(r, 0); });
+    var point = flyCurve.getPointAt(t);
+    var lookPt = flyCurve.getPointAt(lookT);
+    var tangent = flyCurve.getTangentAt(t).normalize();
+    offCam.position.set(point.x - tangent.x * 10, point.y + camH, point.z - tangent.z * 10);
+    offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
+    offCam.updateMatrixWorld(true);
+    offR.clear(); offR.render(scene, offCam);
+
+    var frame = new VideoFrame(offR.domElement, {
+      timestamp: f * frameDurUs,
+      duration: frameDurUs
+    });
+    encoder.encode(frame, { keyFrame: f % (fps * 2) === 0 }); // keyframe every 2s
+    frame.close();
+
+    // Backpressure: wait if encoder queue is deep (prevents OOM on mobile)
+    while (encoder.encodeQueueSize > 8) {
+      await new Promise(function(r) { setTimeout(r, 5); });
+    }
+
+    var pct = Math.round((f + 1) / totalFrames * 100);
+    progEl.textContent = 'Recording ' + pct + '% (' + (f + 1) + '/' + totalFrames + ' frames)';
+    // Yield every 4 frames to keep UI responsive without excessive overhead
+    if (f % 4 === 3) await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  await encoder.flush();
+  encoder.close();
+  muxer.finalize();
+  _flyBlob = new Blob([target.buffer], { type: 'video/mp4' });
+
+} else {
+  // --- MediaRecorder fallback (browsers without WebCodecs) ---
+  var stream = offR.domElement.captureStream(0);
+  var vTrack = stream.getVideoTracks()[0];
+  var hasRF = typeof vTrack.requestFrame === 'function';
+  if (!hasRF) { stream = offR.domElement.captureStream(fps); }
+  var mimeType = bestRecorderMime();
+  var blobType = mimeType.split(';')[0];
+  var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
+  var chunks = [];
+  recorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
+
+  recorder.start();
+  for (f = 0; f < totalFrames; f++) {
+    var t = isClosed ? f / totalFrames : Math.min(f / Math.max(totalFrames - 1, 1), 0.9999);
+    var lookT = t + 0.02;
+    if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
+    var point = flyCurve.getPointAt(t);
+    var lookPt = flyCurve.getPointAt(lookT);
+    var tangent = flyCurve.getTangentAt(t).normalize();
+    offCam.position.set(point.x - tangent.x * 10, point.y + camH, point.z - tangent.z * 10);
+    offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
+    offCam.updateMatrixWorld(true);
+    offR.clear(); offR.render(scene, offCam);
+    if (hasRF) vTrack.requestFrame();
+    var pct = Math.round((f + 1) / totalFrames * 100);
+    progEl.textContent = 'Recording ' + pct + '% (' + (f + 1) + '/' + totalFrames + ' frames, fallback)';
+    await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  await new Promise(function(resolve) {
+    recorder.onstop = function() { _flyBlob = new Blob(chunks, { type: blobType }); resolve(); };
+    recorder.stop();
+  });
+  if (blobType.startsWith('video/webm')) {
+    _flyBlob = await fixWebmDuration(_flyBlob, duration * 1000);
+  }
 }
 
 // Remove temporary environment objects and restore scene
@@ -1793,23 +1864,10 @@ scene.fog = _origFog;
 // Restore hidden objects
 hidden.forEach(function(obj) { obj.visible = true; });
 
-await new Promise(function(resolve) {
-recorder.onstop = function() {
-_flyBlob = new Blob(chunks, { type: blobType });
-resolve();
-};
-recorder.stop();
-});
-
-// Fix WebM duration metadata so Runway can parse it (MP4 is fine as-is)
-if (blobType.startsWith('video/webm')) {
-_flyBlob = await fixWebmDuration(_flyBlob, duration * 1000);
-}
-
 var videoEl = document.getElementById('fly-video');
 videoEl.src = URL.createObjectURL(_flyBlob);
 videoEl.style.display = 'block';
-progEl.textContent = 'Recorded ' + duration + 's flythrough (' + f + ' frames)';
+progEl.textContent = 'Recorded ' + duration + 's flythrough (' + f + ' frames, ' + (canUseWebCodecs ? 'MP4' : 'fallback') + ')';
 offR.dispose();
 btn.disabled = false; btn.textContent = 'Record Flythrough';
 toast('Flythrough recorded');
