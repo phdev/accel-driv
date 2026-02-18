@@ -2045,6 +2045,37 @@ async function checkDecartOperation() {
   }
 }
 
+// Submit a video to a Decart V2V model with retry + direct fallback.
+// Safari can throw "Load failed" if the proxy times out or blocks the route.
+async function decartSubmitJob(model, apiKey, formData, progEl, label) {
+  var url = 'https://api.decart.ai/v1/jobs/' + model;
+  var attempts = [
+    function() { return proxiedFetch(url, { method: 'POST', headers: { 'X-API-KEY': apiKey }, body: formData }); },
+    function() { // Retry proxy after a short delay
+      return new Promise(function(r) { setTimeout(r, 1500); }).then(function() {
+        return proxiedFetch(url, { method: 'POST', headers: { 'X-API-KEY': apiKey }, body: formData });
+      });
+    },
+    function() { // Direct fetch (bypasses proxy, works if Decart allows CORS)
+      console.log('Decart: trying direct fetch (bypassing proxy)');
+      return fetch(url, { method: 'POST', headers: { 'X-API-KEY': apiKey }, body: formData });
+    }
+  ];
+  for (var i = 0; i < attempts.length; i++) {
+    try {
+      if (i > 0) progEl.textContent = label + 'Retrying Decart submit (attempt ' + (i + 1) + ')...';
+      var res = await attempts[i]();
+      if (!res.ok) { var errBody = await res.text(); throw new Error('Decart ' + model + ' (' + res.status + '): ' + errBody); }
+      return await res.json();
+    } catch (e) {
+      console.warn('Decart submit attempt ' + (i + 1) + ' failed:', e.message);
+      if (i === attempts.length - 1) throw e; // All attempts exhausted
+      // Network errors ("Load failed", "Failed to fetch") → retry; HTTP errors → throw immediately
+      if (e.message && !e.message.match(/load failed|failed to fetch|network/i)) throw e;
+    }
+  }
+}
+
 async function pollDecartJob(jobId, apiKey, progEl, prefix) {
   prefix = prefix || '';
   saveDecartPending(jobId, apiKey);
@@ -2109,13 +2140,7 @@ async function runDecartStylize() {
       var form = new FormData();
       form.append('prompt', prompt);
       form.append('data', _flyBlob, 'flythrough.mp4');
-      var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
-        method: 'POST',
-        headers: { 'X-API-KEY': apiKey },
-        body: form
-      });
-      if (!res.ok) { var errBody = await res.text(); throw new Error('Decart Restyle (' + res.status + '): ' + errBody); }
-      var jobData = await res.json();
+      var jobData = await decartSubmitJob(model, apiKey, form, progEl, '');
       var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, '');
       segmentUrls = [vidUrl];
     } else {
@@ -2154,13 +2179,7 @@ async function runDecartStylize() {
         var form = new FormData();
         form.append('prompt', prompt);
         form.append('data', chunk.blob, 'flythrough.mp4');
-        var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
-          method: 'POST',
-          headers: { 'X-API-KEY': apiKey },
-          body: form
-        });
-        if (!res.ok) { var errBody = await res.text(); throw new Error('Decart V2V (' + res.status + '): ' + errBody); }
-        var jobData = await res.json();
+        var jobData = await decartSubmitJob(model, apiKey, form, progEl, segLabel);
         var segUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, segLabel);
         segmentUrls.push(segUrl);
 
