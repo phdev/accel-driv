@@ -400,7 +400,12 @@
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 3 &mdash; Marble from Video</div>
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Uploads the styled video to Marble for 3D Gaussian splat reconstruction.</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Uploads the styled video to Marble for 3D Gaussian splat reconstruction. Uses the Stage 2 output, or upload your own video.</div>
+      <div class="btn-group" style="margin-bottom:4px">
+        <button class="btn" onclick="document.getElementById('marble-vid-upload').click()" style="font-size:10px">Upload Video</button>
+        <span id="marble-vid-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px"></span>
+      </div>
+      <input type="file" id="marble-vid-upload" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" style="display:none">
       <div class="btn-group">
         <button class="btn btn-accent" onclick="runMarbleFromVideo()" id="marble-vid-btn">Reconstruct 3D World</button>
       </div>
@@ -2812,10 +2817,26 @@ if (e.message.includes('Runway failed') || e.message.includes('canceled')) throw
 throw new Error('Runway timed out (10 min)');
 }
 
+// Handle local video upload for Stage 3 Marble
+document.getElementById('marble-vid-upload').addEventListener('change', function(e) {
+  var file = e.target.files && e.target.files[0];
+  if (!file) return;
+  if (_runwayVideoUrl && _runwayVideoUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(_runwayVideoUrl);
+  }
+  _runwayVideoUrl = URL.createObjectURL(file);
+  _runwaySegmentUrls = [_runwayVideoUrl];
+  var nameEl = document.getElementById('marble-vid-name');
+  var sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+  nameEl.textContent = file.name + ' (' + sizeMB + ' MB)';
+  nameEl.title = file.name;
+  toast('Video loaded for Marble');
+});
+
 async function runMarbleFromVideo() {
 var marbleKey = document.getElementById('marble-apikey').value.trim();
 if (!marbleKey) { toast('Enter a Marble API key (panel 1)'); return; }
-if (!_runwayVideoUrl) { toast('Run Runway stylization first (stage 2)'); return; }
+if (!_runwayVideoUrl) { toast('Upload a video or run Stage 2 stylization first'); return; }
 var quality = document.getElementById('marble-quality').value;
 var prompt = document.getElementById('marble-prompt').value.trim();
 var btn = document.getElementById('marble-vid-btn');
@@ -2826,10 +2847,11 @@ progEl.style.display = 'block';
 var headers = { 'Content-Type': 'application/json', 'WLT-Api-Key': marbleKey };
 
 try {
-// Download the Runway video and re-upload to Marble as a media asset
-progEl.textContent = 'Downloading styled video...';
-var vidRes = await proxiedFetch(_runwayVideoUrl);
-if (!vidRes.ok) throw new Error('Video download failed: ' + vidRes.status);
+// Fetch the video (blob URL for local/uploaded, remote URL for Stage 2 output)
+var isLocal = _runwayVideoUrl.startsWith('blob:');
+progEl.textContent = isLocal ? 'Reading uploaded video...' : 'Downloading styled video...';
+var vidRes = isLocal ? await fetch(_runwayVideoUrl) : await proxiedFetch(_runwayVideoUrl);
+if (!vidRes.ok) throw new Error('Video fetch failed: ' + vidRes.status);
 var videoBlob = await vidRes.blob();
 
 progEl.textContent = 'Uploading video to Marble...';
