@@ -1908,7 +1908,7 @@ function onProviderChange() {
     decResRow.style.display = 'none';
     rwKeyRow.style.display = 'none';
     dcKeyRow.style.display = '';
-    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Decart Lucy Pro V2V</span>. Sends the flythrough video for style transfer. Output is ~5s per segment.';
+    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Decart Lucy Pro V2V</span>. Sends the entire flythrough video in one call for style transfer.';
   } else {
     modelSel.innerHTML = '<option value="gen4_turbo" selected>Gen-4 Turbo</option>'
       + '<option value="gen4_aleph">Gen-4 Aleph (video-to-video)</option>'
@@ -2068,82 +2068,31 @@ async function runDecartStylize() {
   dlBar.style.display = 'none'; dlBar.innerHTML = '';
 
   try {
-    var segmentUrls = [];
+    // Send entire flythrough as a single Decart V2V call
+    progEl.textContent = 'Submitting to Decart V2V...';
+    var form = new FormData();
+    form.append('prompt', prompt);
+    form.append('data', _flyBlob, 'flythrough.mp4');
+    var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
+      method: 'POST',
+      headers: { 'X-API-KEY': apiKey },
+      body: form
+    });
+    if (!res.ok) { var errBody = await res.text(); throw new Error('Decart V2V (' + res.status + '): ' + errBody); }
+    var jobData = await res.json();
+    var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, '');
 
-    {
-      // ---- VIDEO-TO-VIDEO: send flythrough chunks ----
-      // Decart V2V output is ~5s, so chunk the flythrough accordingly
-      var segDuration = 5;
-      var flyDur = _flyFrames.length ? _flyFrames[_flyFrames.length - 1].time : segDuration;
-      var videoChunks;
-      if (flyDur <= segDuration + 0.5) {
-        videoChunks = [_flyBlob];
-      } else {
-        progEl.textContent = 'Splitting flythrough into ~5s chunks...';
-        var rawChunks = await splitVideoIntoChunks(_flyBlob, segDuration);
-        videoChunks = rawChunks.map(function(c) { return c.blob; });
-      }
-      var numChunks = videoChunks.length;
-
-      for (var ci = 0; ci < numChunks; ci++) {
-        var segLabel = numChunks > 1 ? 'Chunk ' + (ci + 1) + '/' + numChunks + ': ' : '';
-        progEl.textContent = segLabel + 'Submitting to Decart V2V...';
-
-        var form = new FormData();
-        form.append('prompt', prompt);
-        form.append('data', videoChunks[ci], 'flythrough.mp4');
-        var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + model, {
-          method: 'POST',
-          headers: { 'X-API-KEY': apiKey },
-          body: form
-        });
-        if (!res.ok) { var errBody = await res.text(); throw new Error('Decart V2V (' + res.status + '): ' + errBody); }
-        var jobData = await res.json();
-        var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, segLabel);
-        segmentUrls.push(vidUrl);
-
-        if (numChunks > 1) {
-          segEl.style.display = 'block';
-          var segVid = document.createElement('video');
-          segVid.src = vidUrl; segVid.controls = true;
-          segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
-          var segTitle = document.createElement('div');
-          segTitle.textContent = 'Chunk ' + (ci + 1);
-          segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
-          segEl.appendChild(segTitle); segEl.appendChild(segVid);
-          segEl.appendChild(makeDownloadBtn(vidUrl, 'Download chunk ' + (ci + 1), 'decart-chunk-' + (ci + 1) + '.mp4'));
-        }
-      }
-
-    }
-
-    // Store segment URLs and display result
-    _runwaySegmentUrls = segmentUrls;
-    var numSegments = segmentUrls.length;
-
-    if (numSegments === 1) {
-      _runwayVideoUrl = segmentUrls[0];
-      var videoEl = document.getElementById('runway-video');
-      videoEl.src = _runwayVideoUrl;
-      videoEl.style.display = 'block';
-    } else {
-      progEl.textContent = 'Downloading and concatenating ' + numSegments + ' segments...';
-      _runwayVideoUrl = await concatenateSegments(segmentUrls, progEl);
-      var videoEl = document.getElementById('runway-video');
-      videoEl.src = _runwayVideoUrl;
-      videoEl.style.display = 'block';
-    }
+    _runwayVideoUrl = vidUrl;
+    _runwaySegmentUrls = [vidUrl];
+    var videoEl = document.getElementById('runway-video');
+    videoEl.src = vidUrl;
+    videoEl.style.display = 'block';
 
     // Show download bar
     dlBar.style.display = 'flex'; dlBar.innerHTML = '';
-    dlBar.appendChild(makeDownloadBtn(_runwayVideoUrl, numSegments > 1 ? 'Download full video' : 'Download video', 'decart-stylized.mp4'));
-    if (numSegments > 1) {
-      for (var di = 0; di < segmentUrls.length; di++) {
-        dlBar.appendChild(makeDownloadBtn(segmentUrls[di], 'Seg ' + (di + 1), 'decart-part-' + (di + 1) + '.mp4'));
-      }
-    }
+    dlBar.appendChild(makeDownloadBtn(vidUrl, 'Download video', 'decart-stylized.mp4'));
 
-    progEl.textContent = 'Decart stylization complete!' + (numSegments > 1 ? ' (' + numSegments + ' segments joined)' : '');
+    progEl.textContent = 'Decart stylization complete!';
     toast('Decart video ready');
   } catch (err) {
     progEl.textContent = 'Error: ' + err.message;
