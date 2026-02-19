@@ -253,7 +253,15 @@
     </div>
     <div class="slider-group">
       <div class="slider-label"><span>Sections</span><span id="v-pano-sections">8</span></div>
-      <input type="range" id="s-pano-sections" min="4" max="20" step="1" value="8">
+      <input type="range" id="s-pano-sections" min="1" max="20" step="1" value="8">
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>Range start</span><span id="v-pano-start">0%</span></div>
+      <input type="range" id="s-pano-start" min="0" max="100" step="1" value="0">
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>Range end</span><span id="v-pano-end">100%</span></div>
+      <input type="range" id="s-pano-end" min="0" max="100" step="1" value="100">
     </div>
     <div class="slider-group">
       <div class="slider-label"><span>Camera height</span><span id="v-pano-height">15</span></div>
@@ -1700,10 +1708,13 @@ var gap = Math.hypot(first[0] - last[0], first[1] - last[1], first[2] - last[2])
 return new THREE.CatmullRomCurve3(pts, gap < 50, 'catmullrom', 0.5);
 }
 
-function capturePanoramasAlongTrack(numSections, camHeight, cubeRes) {
+function capturePanoramasAlongTrack(numSections, camHeight, cubeRes, rangeStart, rangeEnd) {
 var spline = buildTrackSpline();
 if (!spline) { toast('Load a track first'); return null; }
 var isClosed = spline.closed;
+var tStart = (rangeStart || 0) / 100;
+var tEnd = (rangeEnd != null ? rangeEnd : 100) / 100;
+if (tEnd <= tStart) { toast('Range end must be greater than start'); return null; }
 
 // CubeCamera setup
 var cubeRT = new THREE.WebGLCubeRenderTarget(cubeRes, {
@@ -1756,7 +1767,8 @@ canvas.width = eqW; canvas.height = eqH;
 var ctx = canvas.getContext('2d');
 
 for (var i = 0; i < numSections; i++) {
-var t = isClosed ? i / numSections : i / Math.max(numSections - 1, 1);
+var frac = numSections > 1 ? i / (numSections - 1) : 0;
+var t = tStart + (tEnd - tStart) * frac;
 t = Math.min(t, 0.9999);
 
 var pos = spline.getPointAt(t);
@@ -1805,14 +1817,16 @@ function previewPanoCaptures() {
 var numSections = parseInt(document.getElementById('s-pano-sections').value);
 var camHeight = parseFloat(document.getElementById('s-pano-height').value);
 var cubeRes = parseInt(document.getElementById('s-pano-cuberes').value);
+var rangeStart = parseInt(document.getElementById('s-pano-start').value);
+var rangeEnd = parseInt(document.getElementById('s-pano-end').value);
 var progEl = document.getElementById('pano-progress');
 var previewEl = document.getElementById('pano-preview');
 
 progEl.style.display = 'block';
-progEl.textContent = 'Capturing ' + numSections + ' panoramas...';
+progEl.textContent = 'Capturing ' + numSections + ' panoramas (' + rangeStart + '%-' + rangeEnd + '%)...';
 
 setTimeout(function() {
-var captures = capturePanoramasAlongTrack(numSections, camHeight, cubeRes);
+var captures = capturePanoramasAlongTrack(numSections, camHeight, cubeRes, rangeStart, rangeEnd);
 if (!captures) { progEl.style.display = 'none'; return; }
 
 _panoCaptures = captures;
@@ -1865,6 +1879,8 @@ var quality = document.getElementById('marble-quality').value;
 var numSections = parseInt(document.getElementById('s-pano-sections').value);
 var camHeight = parseFloat(document.getElementById('s-pano-height').value);
 var cubeRes = parseInt(document.getElementById('s-pano-cuberes').value);
+var rangeStart = parseInt(document.getElementById('s-pano-start').value);
+var rangeEnd = parseInt(document.getElementById('s-pano-end').value);
 var progEl = document.getElementById('pano-progress');
 var btn = document.getElementById('pano-gen-btn');
 
@@ -1875,9 +1891,9 @@ try {
 // Step 1: Capture panoramas (reuse cached if settings match)
 var captures = _panoCaptures;
 if (!captures || captures.length !== numSections) {
-progEl.textContent = 'Capturing ' + numSections + ' panoramas...';
+progEl.textContent = 'Capturing ' + numSections + ' panoramas (' + rangeStart + '%-' + rangeEnd + '%)...';
 await new Promise(function(r) { setTimeout(r, 50); });
-captures = capturePanoramasAlongTrack(numSections, camHeight, cubeRes);
+captures = capturePanoramasAlongTrack(numSections, camHeight, cubeRes, rangeStart, rangeEnd);
 if (!captures) throw new Error('Failed to capture panoramas');
 _panoCaptures = captures;
 }
@@ -1885,7 +1901,7 @@ _panoCaptures = captures;
 var headers = { 'Content-Type': 'application/json', 'WLT-Api-Key': apiKey };
 var operations = [];
 
-// Step 2: Upload each panorama and start Marble generation
+// Step 2: Upload each panorama and start Marble generation (with 429 retry)
 for (var i = 0; i < captures.length; i++) {
 var cap = captures[i];
 progEl.textContent = 'Uploading panorama ' + (i + 1) + '/' + captures.length + '...';
@@ -1900,13 +1916,25 @@ image_prompt: { source: 'media_asset', media_asset_id: mediaAssetId },
 text_prompt: prompt
 };
 
-var genRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/worlds:generate', {
+// Retry with exponential backoff on 429 rate limit
+var genRes = null;
+var backoff = [5000, 15000, 30000, 60000]; // 5s, 15s, 30s, 60s
+for (var attempt = 0; attempt <= backoff.length; attempt++) {
+genRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/worlds:generate', {
 method: 'POST', headers: headers,
 body: JSON.stringify({ display_name: 'Track Section ' + i, model: 'Marble 0.1-plus', world_prompt: worldPrompt })
 });
+if (genRes.status !== 429) break;
+if (attempt < backoff.length) {
+var wait = backoff[attempt] / 1000;
+progEl.textContent = 'Rate limited — waiting ' + wait + 's before retrying section ' + (i + 1) + '...';
+await new Promise(function(r) { setTimeout(r, backoff[attempt]); });
+}
+}
 
 if (!genRes.ok) {
 if (genRes.status === 401) throw new Error('Invalid API key');
+if (genRes.status === 429) throw new Error('Rate limit exceeded after retries — try fewer sections or wait a few minutes');
 var errText = await genRes.text();
 throw new Error('Generation ' + i + ' failed (' + genRes.status + '): ' + errText);
 }
@@ -1918,6 +1946,11 @@ if (genData.done && genData.response) {
 operations.push({ capture: cap, worldData: genData.response, done: true });
 } else if (opId) {
 operations.push({ capture: cap, opId: opId, done: false });
+}
+
+// Brief delay between requests to avoid hitting rate limits
+if (i < captures.length - 1) {
+await new Promise(function(r) { setTimeout(r, 2000); });
 }
 }
 
@@ -3541,6 +3574,11 @@ if (el) el.addEventListener('input', applySplatSettings);
 var sl=document.getElementById(id);if(!sl)return;
 var vlbl=document.getElementById('v-'+id.slice(2));
 if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
+});
+['s-pano-start','s-pano-end'].forEach(function(id){
+var sl=document.getElementById(id);if(!sl)return;
+var vlbl=document.getElementById('v-'+id.slice(2));
+if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value+'%'});
 });
 // Training view sliders
 ['s-trainviews','s-trainres'].forEach(function(id){
