@@ -275,8 +275,14 @@
         <option value="2048">2048px (high quality)</option>
       </select>
     </div>
+    <div class="slider-group" style="margin-bottom:6px">
+      <div class="slider-label"><span>Generation mode</span></div>
+      <select id="s-pano-genmode" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+        <option value="text">Text only — use prompt to imagine each viewpoint</option>
+        <option value="image">Image + text — panorama screenshot guides geometry</option>
+      </select>
+    </div>
     <div class="btn-group">
-      <button class="btn btn-accent2" onclick="previewPanoCaptures()">Preview Captures</button>
       <button class="btn" onclick="clearPanoMarkers();toast('Markers cleared')" style="font-size:10px">Clear Markers</button>
       <button class="btn btn-accent" onclick="batchPanoMarble()" id="pano-gen-btn">Generate All Sections</button>
     </div>
@@ -1954,6 +1960,7 @@ if (!apiKey) { toast('Enter a Marble API key in the Generate World panel'); retu
 var prompt = document.getElementById('marble-prompt').value.trim();
 if (!prompt) { toast('Enter an environment prompt in the Generate World panel'); return; }
 var quality = document.getElementById('marble-quality').value;
+var genMode = document.getElementById('s-pano-genmode').value; // 'text' or 'image'
 
 var numSections = parseInt(document.getElementById('s-pano-sections').value);
 var camHeight = parseFloat(document.getElementById('s-pano-height').value);
@@ -1983,17 +1990,27 @@ var operations = [];
 // Step 2: Upload each panorama and start Marble generation (with 429 retry)
 for (var i = 0; i < captures.length; i++) {
 var cap = captures[i];
+var worldPrompt;
+
+if (genMode === 'image') {
 progEl.textContent = 'Uploading panorama ' + (i + 1) + '/' + captures.length + '...';
-
 var mediaAssetId = await uploadImageToMarble(cap.dataUrl, apiKey, 'pano-section-' + i + '.jpg');
-
-progEl.textContent = 'Starting generation ' + (i + 1) + '/' + captures.length + '...';
-
-var worldPrompt = {
+worldPrompt = {
 type: 'image',
 image_prompt: { source: 'media_asset', media_asset_id: mediaAssetId },
 text_prompt: prompt
 };
+} else {
+// Text-only: describe the viewpoint with spatial context so each section is unique
+var pct = Math.round(cap.t * 100);
+var sectionPrompt = prompt + '. This is section ' + (i + 1) + ' of ' + captures.length + ' along a racing track, at ' + pct + '% progress.';
+worldPrompt = {
+type: 'text',
+text_prompt: sectionPrompt
+};
+}
+
+progEl.textContent = 'Starting generation ' + (i + 1) + '/' + captures.length + ' (' + genMode + ')...';
 
 // Retry with exponential backoff on 429 rate limit
 var genRes = null;
