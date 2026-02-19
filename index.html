@@ -247,6 +247,41 @@
     </div>
   </div>
 
+  <div class="panel"><div class="panel-title">Track Panorama Pipeline</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
+      Capture <span style="color:var(--accent2)">equirectangular panoramas</span> at points along the track via CubeCamera, then batch-generate 3D environments via Marble.
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>Sections</span><span id="v-pano-sections">8</span></div>
+      <input type="range" id="s-pano-sections" min="4" max="20" step="1" value="8">
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>Camera height</span><span id="v-pano-height">15</span></div>
+      <input type="range" id="s-pano-height" min="5" max="50" step="1" value="15">
+    </div>
+    <div class="slider-group">
+      <div class="slider-label"><span>Cube face resolution</span></div>
+      <select id="s-pano-cuberes" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+        <option value="512">512px (fast preview)</option>
+        <option value="1024" selected>1024px (balanced)</option>
+        <option value="2048">2048px (high quality)</option>
+      </select>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-accent2" onclick="previewPanoCaptures()">Preview Captures</button>
+      <button class="btn btn-accent" onclick="batchPanoMarble()" id="pano-gen-btn">Generate All Sections</button>
+    </div>
+    <div id="pano-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+    <div id="pano-preview" style="display:none"></div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
+      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
+      <div>1. CubeCamera captures 6-face cube map at each track point</div>
+      <div>2. Cube map → equirectangular panorama via shader</div>
+      <div>3. Each panorama uploaded to Marble as image prompt</div>
+      <div>4. Marble generates a 3D splat for each section</div>
+    </div>
+  </div>
+
   <div class="panel"><div class="panel-title">2. Preview and Load Splat</div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
       Load a splat file into the 3D viewport via <span style="color:var(--accent2)">Spark.js</span>. Supports <b>.spz</b>, <b>.ply</b>, <b>.splat</b>, <b>.sog</b>.
@@ -1642,6 +1677,369 @@ console.error('Marble generation error:', err);
 btn.disabled = false;
 btn.textContent = 'Generate World';
 }
+}
+
+// ============================================================
+// PANORAMA CAPTURE PIPELINE (CubeCamera → equirect → Marble)
+// ============================================================
+var _panoCaptures = null;
+
+function buildTrackSpline() {
+if (trackData.length < 20) return null;
+var pts = [];
+var step = Math.max(1, Math.floor(trackData.length / 500));
+for (var i = 0; i < trackData.length; i += step) {
+pts.push(new THREE.Vector3(trackData[i][0][0], trackData[i][0][1], trackData[i][0][2]));
+}
+var last = trackData[trackData.length - 1][0];
+if (pts.length < 2 || pts[pts.length - 1].distanceTo(new THREE.Vector3(last[0], last[1], last[2])) > 1) {
+pts.push(new THREE.Vector3(last[0], last[1], last[2]));
+}
+var first = trackData[0][0];
+var gap = Math.hypot(first[0] - last[0], first[1] - last[1], first[2] - last[2]);
+return new THREE.CatmullRomCurve3(pts, gap < 50, 'catmullrom', 0.5);
+}
+
+function capturePanoramasAlongTrack(numSections, camHeight, cubeRes) {
+var spline = buildTrackSpline();
+if (!spline) { toast('Load a track first'); return null; }
+var isClosed = spline.closed;
+
+// CubeCamera setup
+var cubeRT = new THREE.WebGLCubeRenderTarget(cubeRes, {
+format: THREE.RGBAFormat, generateMipmaps: false
+});
+var cubeCamera = new THREE.CubeCamera(1, 20000, cubeRT);
+
+// Equirect render target (same GL context as main renderer)
+var eqW = cubeRes * 2, eqH = cubeRes;
+var equirectRT = new THREE.WebGLRenderTarget(eqW, eqH);
+
+// Equirect conversion shader: cubemap UV → spherical direction lookup
+var equirectMat = new THREE.ShaderMaterial({
+uniforms: { cubeMap: { value: null } },
+vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position,1.0);}',
+fragmentShader: [
+'uniform samplerCube cubeMap;',
+'varying vec2 vUv;',
+'#define PI 3.14159265359',
+'void main(){',
+'  float lon=vUv.x*2.0*PI-PI;',
+'  float lat=vUv.y*PI-PI*0.5;',
+'  vec3 dir=vec3(cos(lat)*sin(lon),sin(lat),cos(lat)*cos(lon));',
+'  gl_FragColor=textureCube(cubeMap,dir);',
+'}'
+].join('\n'),
+depthTest: false, depthWrite: false
+});
+var eqScene = new THREE.Scene();
+var eqCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+eqScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), equirectMat));
+
+// Hide editor overlays during capture
+var hidden = [];
+[ptCloud, selHL, cpGrp, splineLine].forEach(function(obj) {
+if (obj && obj.visible) { obj.visible = false; hidden.push(obj); }
+});
+scene.traverse(function(obj) {
+if (obj.type === 'GridHelper' && obj.visible) { obj.visible = false; hidden.push(obj); }
+});
+
+// Enable autoClear for clean cube face renders
+var savedAutoClear = rndr.autoClear;
+rndr.autoClear = true;
+
+var results = [];
+var pixels = new Uint8Array(eqW * eqH * 4);
+var canvas = document.createElement('canvas');
+canvas.width = eqW; canvas.height = eqH;
+var ctx = canvas.getContext('2d');
+
+for (var i = 0; i < numSections; i++) {
+var t = isClosed ? i / numSections : i / Math.max(numSections - 1, 1);
+t = Math.min(t, 0.9999);
+
+var pos = spline.getPointAt(t);
+var tangent = spline.getTangentAt(t).normalize();
+
+// Capture cube map at this track position
+cubeCamera.position.set(pos.x, pos.y + camHeight, pos.z);
+cubeCamera.update(rndr, scene);
+
+// Convert cubemap → equirectangular via fullscreen quad shader
+equirectMat.uniforms.cubeMap.value = cubeRT.texture;
+rndr.setRenderTarget(equirectRT);
+rndr.clear();
+rndr.render(eqScene, eqCam);
+rndr.setRenderTarget(null);
+
+// Read pixels from render target (WebGL is bottom-up, flip to top-down)
+rndr.readRenderTargetPixels(equirectRT, 0, 0, eqW, eqH, pixels);
+var imageData = ctx.createImageData(eqW, eqH);
+for (var row = 0; row < eqH; row++) {
+var src = (eqH - 1 - row) * eqW * 4;
+var dst2 = row * eqW * 4;
+imageData.data.set(pixels.subarray(src, src + eqW * 4), dst2);
+}
+ctx.putImageData(imageData, 0, 0);
+
+results.push({
+index: i, t: t,
+position: { x: pos.x, y: pos.y, z: pos.z },
+tangent: { x: tangent.x, y: tangent.y, z: tangent.z },
+dataUrl: canvas.toDataURL('image/jpeg', 0.92)
+});
+}
+
+// Restore state
+rndr.autoClear = savedAutoClear;
+hidden.forEach(function(obj) { obj.visible = true; });
+cubeRT.dispose();
+equirectRT.dispose();
+equirectMat.dispose();
+
+return results;
+}
+
+function previewPanoCaptures() {
+var numSections = parseInt(document.getElementById('s-pano-sections').value);
+var camHeight = parseFloat(document.getElementById('s-pano-height').value);
+var cubeRes = parseInt(document.getElementById('s-pano-cuberes').value);
+var progEl = document.getElementById('pano-progress');
+var previewEl = document.getElementById('pano-preview');
+
+progEl.style.display = 'block';
+progEl.textContent = 'Capturing ' + numSections + ' panoramas...';
+
+setTimeout(function() {
+var captures = capturePanoramasAlongTrack(numSections, camHeight, cubeRes);
+if (!captures) { progEl.style.display = 'none'; return; }
+
+_panoCaptures = captures;
+
+// Build preview grid
+var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-top:8px">';
+for (var i = 0; i < captures.length; i++) {
+var c = captures[i];
+html += '<div style="position:relative;border:1px solid var(--border);border-radius:4px;overflow:hidden">';
+html += '<img src="' + c.dataUrl + '" style="width:100%;display:block">';
+html += '<div style="position:absolute;bottom:2px;left:4px;font-size:9px;color:var(--accent);font-family:monospace;background:rgba(0,0,0,.7);padding:1px 4px;border-radius:2px">';
+html += '#' + i + ' t=' + c.t.toFixed(3);
+html += '</div></div>';
+}
+html += '</div>';
+previewEl.innerHTML = html;
+previewEl.style.display = 'block';
+
+progEl.textContent = 'Captured ' + captures.length + ' panoramas (' + cubeRes + 'px faces → ' + (cubeRes * 2) + 'x' + cubeRes + ' equirect)';
+toast('Panoramas captured');
+}, 50);
+}
+
+async function uploadImageToMarble(dataUrl, apiKey, fileName) {
+var headers = { 'Content-Type': 'application/json', 'WLT-Api-Key': apiKey };
+var blob = await (await fetch(dataUrl)).blob();
+
+var uploadRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/media-assets:prepare_upload', {
+method: 'POST', headers: headers,
+body: JSON.stringify({ file_name: fileName, kind: 'image', extension: 'png' })
+});
+if (!uploadRes.ok) throw new Error(uploadRes.status === 401 ? 'Invalid API key' : 'Media upload failed: ' + uploadRes.status);
+var uploadData = await uploadRes.json();
+var mediaAssetId = uploadData.media_asset.media_asset_id;
+var uploadUrl = uploadData.upload_info.upload_url;
+var uploadMethod = uploadData.upload_info.upload_method || 'PUT';
+var uploadHeaders = uploadData.upload_info.required_headers || {};
+
+await proxiedFetch(uploadUrl, { method: uploadMethod, headers: uploadHeaders, body: blob });
+return mediaAssetId;
+}
+
+async function batchPanoMarble() {
+var apiKey = document.getElementById('marble-apikey').value.trim();
+if (!apiKey) { toast('Enter a Marble API key in the Generate World panel'); return; }
+var prompt = document.getElementById('marble-prompt').value.trim();
+if (!prompt) { toast('Enter an environment prompt in the Generate World panel'); return; }
+var quality = document.getElementById('marble-quality').value;
+
+var numSections = parseInt(document.getElementById('s-pano-sections').value);
+var camHeight = parseFloat(document.getElementById('s-pano-height').value);
+var cubeRes = parseInt(document.getElementById('s-pano-cuberes').value);
+var progEl = document.getElementById('pano-progress');
+var btn = document.getElementById('pano-gen-btn');
+
+btn.disabled = true; btn.textContent = 'Generating...';
+progEl.style.display = 'block';
+
+try {
+// Step 1: Capture panoramas (reuse cached if settings match)
+var captures = _panoCaptures;
+if (!captures || captures.length !== numSections) {
+progEl.textContent = 'Capturing ' + numSections + ' panoramas...';
+await new Promise(function(r) { setTimeout(r, 50); });
+captures = capturePanoramasAlongTrack(numSections, camHeight, cubeRes);
+if (!captures) throw new Error('Failed to capture panoramas');
+_panoCaptures = captures;
+}
+
+var headers = { 'Content-Type': 'application/json', 'WLT-Api-Key': apiKey };
+var operations = [];
+
+// Step 2: Upload each panorama and start Marble generation
+for (var i = 0; i < captures.length; i++) {
+var cap = captures[i];
+progEl.textContent = 'Uploading panorama ' + (i + 1) + '/' + captures.length + '...';
+
+var mediaAssetId = await uploadImageToMarble(cap.dataUrl, apiKey, 'pano-section-' + i + '.jpg');
+
+progEl.textContent = 'Starting generation ' + (i + 1) + '/' + captures.length + '...';
+
+var worldPrompt = {
+type: 'image',
+image_prompt: { source: 'media_asset', media_asset_id: mediaAssetId },
+text_prompt: prompt
+};
+
+var genRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/worlds:generate', {
+method: 'POST', headers: headers,
+body: JSON.stringify({ display_name: 'Track Section ' + i, model: 'Marble 0.1-plus', world_prompt: worldPrompt })
+});
+
+if (!genRes.ok) {
+if (genRes.status === 401) throw new Error('Invalid API key');
+var errText = await genRes.text();
+throw new Error('Generation ' + i + ' failed (' + genRes.status + '): ' + errText);
+}
+
+var genData = await genRes.json();
+var opId = genData.operation_id || genData.name;
+
+if (genData.done && genData.response) {
+operations.push({ capture: cap, worldData: genData.response, done: true });
+} else if (opId) {
+operations.push({ capture: cap, opId: opId, done: false });
+}
+}
+
+// Step 3: Poll all pending operations until complete
+var allDone = operations.every(function(op) { return op.done; });
+var startTime = Date.now();
+var maxMs = 15 * 60 * 1000;
+
+while (!allDone && Date.now() - startTime < maxMs) {
+await new Promise(function(r) { setTimeout(r, 5000); });
+var pending = operations.filter(function(op) { return !op.done; });
+var elapsed = Math.round((Date.now() - startTime) / 1000);
+progEl.textContent = 'Generating... ' + (operations.length - pending.length) + '/' + operations.length + ' done (' + elapsed + 's)';
+
+for (var j = 0; j < pending.length; j++) {
+try {
+var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + pending[j].opId, {
+headers: { 'WLT-Api-Key': apiKey }
+});
+if (!pollRes.ok) continue;
+var pollData = await pollRes.json();
+if (pollData.done) {
+if (pollData.error) {
+pending[j].error = pollData.error.message || 'Generation failed';
+} else {
+pending[j].worldData = pollData.response;
+}
+pending[j].done = true;
+}
+} catch (e) { /* continue polling */ }
+}
+
+allDone = operations.every(function(op) { return op.done; });
+}
+
+// Step 4: Collect results and build section data
+var successful = operations.filter(function(op) { return op.worldData && !op.error; });
+var failed = operations.filter(function(op) { return op.error; });
+
+if (successful.length === 0) throw new Error('All generations failed');
+
+var sectionData = successful.map(function(op) {
+var assets = op.worldData.assets;
+var spzUrls = (assets && assets.splats && assets.splats.spz_urls) ? assets.splats.spz_urls : {};
+var splatUrl = spzUrls[quality] || spzUrls['100k'] || spzUrls['full_res'];
+return {
+t: op.capture.t,
+position: op.capture.position,
+tangent: op.capture.tangent,
+splatUrl: splatUrl,
+colliderUrl: assets && assets.mesh ? assets.mesh.collider_mesh_url : null,
+publicUrl: op.worldData.world_marble_url
+};
+});
+
+window._panoSections = sectionData;
+
+// Show results UI
+var previewEl = document.getElementById('pano-preview');
+var html = '<div style="margin-top:8px;border:1px solid var(--accent2);border-radius:6px;padding:8px">';
+html += '<div style="color:var(--accent2);font-size:11px;font-weight:600;margin-bottom:6px">' + successful.length + '/' + operations.length + ' sections generated</div>';
+for (var k = 0; k < sectionData.length; k++) {
+var sec = sectionData[k];
+html += '<div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;display:flex;gap:6px;align-items:center">';
+html += '<span style="color:var(--accent)">Section ' + k + '</span>';
+html += '<span>t=' + sec.t.toFixed(3) + '</span>';
+if (sec.splatUrl) {
+html += '<button class="btn" style="padding:2px 6px;font-size:9px;flex:0" onclick="loadPanoSection(' + k + ')">Load</button>';
+}
+if (sec.publicUrl) {
+html += '<a href="' + sec.publicUrl + '" target="_blank" style="color:var(--accent2);font-size:9px">View</a>';
+}
+html += '</div>';
+}
+if (failed.length > 0) {
+html += '<div style="color:var(--danger);font-size:10px;margin-top:4px">' + failed.length + ' section(s) failed</div>';
+}
+html += '<div class="btn-group" style="margin-top:6px">';
+html += '<button class="btn btn-accent2" onclick="exportPanoSections()">Export Section Data</button>';
+html += '</div></div>';
+previewEl.innerHTML = html;
+previewEl.style.display = 'block';
+
+progEl.textContent = 'Done! ' + successful.length + ' splats generated.';
+toast(successful.length + ' track sections generated');
+
+} catch (err) {
+progEl.textContent = 'Error: ' + err.message;
+toast('Error: ' + err.message);
+console.error('Panorama batch error:', err);
+} finally {
+btn.disabled = false;
+btn.textContent = 'Generate All Sections';
+}
+}
+
+function loadPanoSection(index) {
+if (!window._panoSections || !window._panoSections[index]) return;
+var sec = window._panoSections[index];
+if (!sec.splatUrl) { toast('No splat URL for section ' + index); return; }
+document.getElementById('splat-url').value = sec.splatUrl;
+loadSplatFromURL();
+// Position splat at the capture point on the track
+['px','py','pz'].forEach(function(axis, ai) {
+var val = Math.round(axis === 'px' ? sec.position.x : axis === 'py' ? sec.position.y : sec.position.z);
+var sl = document.getElementById('s-splat' + axis);
+var vl = document.getElementById('v-splat' + axis);
+if (sl) { sl.value = val; }
+if (vl) { vl.textContent = val; }
+});
+applySplatSettings();
+toast('Loading section ' + index + ' splat');
+}
+
+function exportPanoSections() {
+if (!window._panoSections) { toast('No section data'); return; }
+var data = JSON.stringify(window._panoSections, null, 2);
+var blob = new Blob([data], { type: 'application/json' });
+var url = URL.createObjectURL(blob);
+var a = document.createElement('a'); a.href = url; a.download = 'pano-sections.json'; a.click();
+URL.revokeObjectURL(url);
+toast('Section data exported');
 }
 
 // ============================================================
@@ -3138,6 +3536,12 @@ if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 var el = document.getElementById(id);
 if (el) el.addEventListener('input', applySplatSettings);
 });
+// Panorama capture sliders
+['s-pano-sections','s-pano-height'].forEach(function(id){
+var sl=document.getElementById(id);if(!sl)return;
+var vlbl=document.getElementById('v-'+id.slice(2));
+if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
+});
 // Training view sliders
 ['s-trainviews','s-trainres'].forEach(function(id){
 var sl=document.getElementById(id);if(!sl)return;
@@ -3311,7 +3715,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline,onProviderChange,onModelChange,runStylize,checkPendingOperation,clearAllPending});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,previewPanoCaptures,batchPanoMarble,loadPanoSection,exportPanoSections,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline,onProviderChange,onModelChange,runStylize,checkPendingOperation,clearAllPending});
 init();fitView();showMarblePending();showRunwayPending();showDecartPending();onRunwayModelChange();
 </script>
 
