@@ -355,7 +355,63 @@
       <div>3. Train 3DGS → download <b>.ply</b> → load in Splat tab</div>
     </div>
   </div>
-  <div class="panel"><div class="panel-title">4. Convert Splats</div>
+  <div class="panel"><div class="panel-title">4. KIRI Engine &mdash; 3DGS from Video / Photos</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
+      Upload a <span style="color:var(--accent2)">video</span> or <span style="color:var(--accent2)">20-300 photos</span> to <span style="color:var(--accent2)">KIRI Engine</span> for 3D Gaussian Splatting reconstruction. Returns a PLY splat file.
+    </div>
+    <div class="slider-group" style="margin-bottom:6px">
+      <div class="slider-label"><span>KIRI API Key</span></div>
+      <input type="password" id="kiri-apikey" placeholder="kiri-xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+    </div>
+    <div class="slider-group" style="margin-bottom:6px">
+      <div class="slider-label"><span>Input mode</span></div>
+      <select id="kiri-mode" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+        <option value="video" selected>Video (max 3 min, 1080p)</option>
+        <option value="images">Photos (20-300 images)</option>
+      </select>
+    </div>
+    <div class="slider-group" style="margin-bottom:6px">
+      <div class="slider-label"><span>Options</span></div>
+      <label style="font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:4px;margin-bottom:3px"><input type="checkbox" id="kiri-mesh"> Also generate mesh (GLB)</label>
+      <label style="font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kiri-mask"> Background masking</label>
+    </div>
+    <div id="kiri-video-row">
+      <div class="btn-group" style="margin-bottom:4px">
+        <button class="btn" onclick="document.getElementById('kiri-video-input').click()" style="font-size:10px">Choose Video</button>
+        <span id="kiri-video-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px"></span>
+      </div>
+      <input type="file" id="kiri-video-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" style="display:none">
+    </div>
+    <div id="kiri-images-row" style="display:none">
+      <div class="btn-group" style="margin-bottom:4px">
+        <button class="btn" onclick="document.getElementById('kiri-images-input').click()" style="font-size:10px">Choose Photos</button>
+        <span id="kiri-images-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px"></span>
+      </div>
+      <input type="file" id="kiri-images-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple style="display:none">
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-accent" onclick="generateKiri()" id="kiri-gen-btn">Generate 3DGS</button>
+      <button class="btn" onclick="checkKiriStatus()" style="font-size:10px">Check Status</button>
+    </div>
+    <div id="kiri-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+    <div id="kiri-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
+      <div style="color:var(--accent2);margin-bottom:4px">Pending KIRI generation</div>
+      <div id="kiri-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
+      <div class="btn-group"><button class="btn btn-accent2" onclick="checkKiriStatus()">Check Status</button><button class="btn" onclick="clearKiriPending()">Dismiss</button></div>
+    </div>
+    <div id="kiri-results" style="display:none;margin-top:6px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px">
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Download URL <span style="opacity:0.5">(tap to copy)</span></div>
+      <input type="text" id="kiri-result-url" readonly style="width:100%;background:var(--surface);color:var(--accent);border:1px solid var(--border);padding:4px 6px;border-radius:3px;font-size:10px;font-family:monospace;cursor:pointer;margin-bottom:4px" onclick="this.select();navigator.clipboard.writeText(this.value);toast('URL copied')">
+      <div class="btn-group" id="kiri-dl-bar"></div>
+    </div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
+      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
+      <div>1. Upload video or 20-300 photos to KIRI Engine</div>
+      <div>2. KIRI reconstructs 3D Gaussian Splatting (7-20 min)</div>
+      <div>3. Download PLY → auto-load in splat viewer</div>
+    </div>
+  </div>
+  <div class="panel"><div class="panel-title">5. Convert Splats</div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
       Convert to <span style="color:var(--accent2)">.sog</span> format for optimal web delivery (~95% smaller than raw PLY).
     </div>
@@ -364,7 +420,7 @@
       <button class="btn" onclick="window.open('https://marble.worldlabs.ai','_blank')">Marble Studio</button>
     </div>
   </div>
-  <div class="panel"><div class="panel-title">5. Flythrough &rarr; Stylize &rarr; Marble</div>
+  <div class="panel"><div class="panel-title">6. Flythrough &rarr; Stylize &rarr; Marble</div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
       Record a camera flythrough along the track spline, stylize with <span style="color:var(--accent2)">Runway</span> or <span style="color:var(--accent2)">Decart</span>, then reconstruct 3D Gaussian splats with <span style="color:var(--accent2)">Marble</span>.
     </div>
@@ -1310,6 +1366,7 @@ var _proxyUrl = 'https://accel-driv-proxy.phhowell.workers.dev';
 var _RUNWAY_PREFIX = 'https://api.dev.runwayml.com/v1/';
 var _MARBLE_PREFIX = 'https://api.worldlabs.ai/marble/v1/';
 var _DECART_PREFIX = 'https://api.decart.ai/v1/';
+var _KIRI_PREFIX = 'https://api.kiriengine.app/api/';
 async function proxiedFetch(url, opts) {
   opts = opts || {};
   if (_proxyUrl) {
@@ -1317,6 +1374,7 @@ async function proxiedFetch(url, opts) {
     if (url.indexOf(_RUNWAY_PREFIX) === 0) workerPath = '/runway/' + url.slice(_RUNWAY_PREFIX.length);
     else if (url.indexOf(_MARBLE_PREFIX) === 0) workerPath = '/marble/' + url.slice(_MARBLE_PREFIX.length);
     else if (url.indexOf(_DECART_PREFIX) === 0) workerPath = '/decart/' + url.slice(_DECART_PREFIX.length);
+    else if (url.indexOf(_KIRI_PREFIX) === 0) workerPath = '/kiri/' + url.slice(_KIRI_PREFIX.length);
     if (workerPath) {
       // Strip auth headers — Worker adds them server-side
       var h = {};
@@ -3900,7 +3958,7 @@ if (_proxyParam === '' || _proxyParam === 'clear') { localStorage.removeItem('pr
 else if (_proxyParam) { var _pu = _proxyParam.replace(/\/+$/, ''); localStorage.setItem('proxy_url', _pu); _proxyUrl = _pu; }
 else { var _stored = localStorage.getItem('proxy_url'); if (_stored) _proxyUrl = _stored; }
 // API key persistence: load from localStorage, URL params override
-var _apiKeyIds = ['runway-apikey', 'decart-apikey', 'marble-apikey'];
+var _apiKeyIds = ['runway-apikey', 'decart-apikey', 'marble-apikey', 'kiri-apikey'];
 if (_proxyUrl) {
   _apiKeyIds.forEach(function(id) {
     var el = document.getElementById(id); if (!el) return;
@@ -3927,7 +3985,303 @@ if (_proxyUrl) {
   if(dkParam){var dkEl=document.getElementById('decart-apikey');if(dkEl)dkEl.value=dkParam}
   var mkParam=new URLSearchParams(window.location.search).get('mk');
   if(mkParam){var mkEl=document.getElementById('marble-apikey');if(mkEl)mkEl.value=mkParam}
+  var kkParam=new URLSearchParams(window.location.search).get('kk');
+  if(kkParam){var kkEl=document.getElementById('kiri-apikey');if(kkEl)kkEl.value=kkParam}
 }
+}
+
+// ============================================================
+// KIRI ENGINE — 3DGS FROM VIDEO / PHOTOS
+// ============================================================
+var _kiriSerialize = null;
+
+// Toggle video/images row based on mode selection
+document.getElementById('kiri-mode').addEventListener('change', function() {
+  var mode = this.value;
+  document.getElementById('kiri-video-row').style.display = mode === 'video' ? '' : 'none';
+  document.getElementById('kiri-images-row').style.display = mode === 'images' ? '' : 'none';
+});
+
+// File input display names
+document.getElementById('kiri-video-input').addEventListener('change', function() {
+  var nameEl = document.getElementById('kiri-video-name');
+  if (this.files[0]) nameEl.textContent = this.files[0].name;
+  else nameEl.textContent = '';
+});
+document.getElementById('kiri-images-input').addEventListener('change', function() {
+  var nameEl = document.getElementById('kiri-images-name');
+  if (this.files.length) nameEl.textContent = this.files.length + ' photos selected';
+  else nameEl.textContent = '';
+});
+
+function saveKiriPending(serialize, apiKey) {
+  localStorage.setItem('kiri_pending', JSON.stringify({ serialize: serialize, apiKey: apiKey, time: Date.now() }));
+}
+function clearKiriPending() {
+  localStorage.removeItem('kiri_pending');
+  _kiriSerialize = null;
+  var el = document.getElementById('kiri-pending'); if (el) el.style.display = 'none';
+}
+function showKiriPending() {
+  var raw = localStorage.getItem('kiri_pending'); if (!raw) return;
+  try { var p = JSON.parse(raw); } catch(e) { return; }
+  var age = Math.round((Date.now() - p.time) / 60000);
+  if (age > 60) { clearKiriPending(); return; } // expire after 1 hour
+  _kiriSerialize = p.serialize;
+  var el = document.getElementById('kiri-pending'); if (!el) return;
+  document.getElementById('kiri-pending-info').textContent = 'Serial: ' + p.serialize.substring(0, 20) + '... (' + age + ' min ago)';
+  el.style.display = '';
+}
+
+async function generateKiri() {
+  var apiKey = document.getElementById('kiri-apikey').value.trim();
+  if (!apiKey) { toast('Enter a KIRI API key'); return; }
+  var mode = document.getElementById('kiri-mode').value;
+  var isMesh = document.getElementById('kiri-mesh').checked ? '1' : '0';
+  var isMask = document.getElementById('kiri-mask').checked ? '1' : '0';
+  var progEl = document.getElementById('kiri-progress');
+  var btn = document.getElementById('kiri-gen-btn');
+
+  var formData = new FormData();
+  formData.append('isMesh', isMesh);
+  formData.append('isMask', isMask);
+
+  var endpoint;
+  if (mode === 'video') {
+    var videoInput = document.getElementById('kiri-video-input');
+    if (!videoInput.files[0]) { toast('Select a video file first'); return; }
+    formData.append('videoFile', videoInput.files[0]);
+    endpoint = 'https://api.kiriengine.app/api/v1/open/3dgs/video';
+  } else {
+    var imagesInput = document.getElementById('kiri-images-input');
+    if (!imagesInput.files.length) { toast('Select photos first'); return; }
+    if (imagesInput.files.length < 20) { toast('KIRI requires at least 20 photos'); return; }
+    if (imagesInput.files.length > 300) { toast('KIRI supports max 300 photos'); return; }
+    for (var i = 0; i < imagesInput.files.length; i++) {
+      formData.append('imagesFiles', imagesInput.files[i]);
+    }
+    endpoint = 'https://api.kiriengine.app/api/v1/open/3dgs/image';
+  }
+
+  progEl.style.display = 'block';
+  progEl.textContent = 'Uploading to KIRI Engine...';
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+
+  try {
+    var uploadRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + apiKey },
+      body: formData
+    });
+    if (!uploadRes.ok) {
+      if (uploadRes.status === 401) throw new Error('Invalid KIRI API key');
+      if (uploadRes.status === 402) throw new Error('Insufficient KIRI credits');
+      var errText = await uploadRes.text();
+      throw new Error('Upload failed (' + uploadRes.status + '): ' + errText);
+    }
+    var uploadData = await uploadRes.json();
+    var serialize = uploadData.data && uploadData.data.serialize || uploadData.serialize;
+    if (!serialize) throw new Error('No serial number returned — check API response');
+
+    _kiriSerialize = serialize;
+    saveKiriPending(serialize, apiKey);
+    progEl.textContent = 'Processing 3DGS... (serial: ' + serialize.substring(0, 16) + '...)';
+    btn.textContent = 'Processing...';
+
+    // Poll for completion
+    var result = await pollKiriStatus(serialize, apiKey, progEl);
+    handleKiriResult(result, apiKey);
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('KIRI error: ' + err.message);
+    console.error('KIRI generation error:', err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate 3DGS';
+  }
+}
+
+async function pollKiriStatus(serialize, apiKey, progEl) {
+  var maxAttempts = 120; // 20 min max (10s intervals)
+  for (var i = 0; i < maxAttempts; i++) {
+    await pollSleep(10000);
+    try {
+      var statusRes = await fetch('https://api.kiriengine.app/api/v1/open/model/getStatus?serialize=' + encodeURIComponent(serialize), {
+        headers: { 'Authorization': 'Bearer ' + apiKey }
+      });
+      if (!statusRes.ok) throw new Error('Status check failed: ' + statusRes.status);
+      var statusData = await statusRes.json();
+      var status = statusData.data && statusData.data.status !== undefined ? statusData.data.status : statusData.status;
+
+      if (status === 2 || status === 4) {
+        // Success or Exported
+        clearKiriPending();
+        return statusData;
+      } else if (status === 1) {
+        throw new Error('KIRI processing failed');
+      } else {
+        var statusLabels = { '-1': 'Uploading', '0': 'Processing', '3': 'Queuing' };
+        var label = statusLabels[String(status)] || 'Status ' + status;
+        progEl.textContent = label + '... (' + Math.round((i + 1) * 10 / 60) + ' min)';
+      }
+    } catch (err) {
+      if (err.message === 'KIRI processing failed') throw err;
+      console.warn('KIRI poll error (retrying):', err);
+    }
+  }
+  throw new Error('KIRI processing timed out after 20 minutes');
+}
+
+async function handleKiriResult(statusData, apiKey) {
+  var progEl = document.getElementById('kiri-progress');
+  var resultsEl = document.getElementById('kiri-results');
+  var urlInput = document.getElementById('kiri-result-url');
+  var dlBar = document.getElementById('kiri-dl-bar');
+
+  progEl.textContent = 'Downloading model ZIP...';
+
+  try {
+    var serialize = _kiriSerialize || (statusData.data && statusData.data.serialize);
+    var dlRes = await fetch('https://api.kiriengine.app/api/v1/open/model/getModelZip?serialize=' + encodeURIComponent(serialize), {
+      headers: { 'Authorization': 'Bearer ' + apiKey }
+    });
+    if (!dlRes.ok) throw new Error('Download failed: ' + dlRes.status);
+    var dlData = await dlRes.json();
+    var zipUrl = dlData.data && dlData.data.url || dlData.url;
+    if (!zipUrl) throw new Error('No download URL in response');
+
+    urlInput.value = zipUrl;
+    dlBar.innerHTML = '';
+    resultsEl.style.display = '';
+
+    // Download the ZIP and extract PLY
+    progEl.textContent = 'Fetching ZIP and extracting PLY...';
+    var zipResp = await fetch(zipUrl);
+    if (!zipResp.ok) throw new Error('Failed to fetch ZIP: ' + zipResp.status);
+    var zipBlob = await zipResp.blob();
+    var zip = await JSZip.loadAsync(zipBlob);
+
+    // Find PLY file in ZIP
+    var plyFile = null;
+    zip.forEach(function(path, entry) {
+      if (!entry.dir && path.toLowerCase().endsWith('.ply') && !plyFile) {
+        plyFile = entry;
+      }
+    });
+
+    if (plyFile) {
+      var plyBytes = await plyFile.async('uint8array');
+      progEl.textContent = 'Loading PLY into splat viewer...';
+
+      // Load into Spark.js viewer
+      await ensureSparkLoaded();
+      if (_splatMesh) { scene.remove(_splatMesh); if (_splatMesh.dispose) _splatMesh.dispose(); _splatMesh = null; }
+      var Spark = window.Spark;
+      _splatMesh = new Spark.SplatMesh({
+        fileBytes: plyBytes,
+        onLoad: function(mesh) {
+          var numSplats = mesh.numSplats || 'unknown';
+          progEl.textContent = 'KIRI 3DGS loaded! ' + numSplats + ' splats';
+          toast('KIRI splat loaded (' + numSplats + ' splats)');
+          document.getElementById('splat-info').textContent = 'KIRI: ' + numSplats + ' splats (' + (plyBytes.length / 1e6).toFixed(1) + ' MB)';
+          syncSplatSlidersToMesh();
+        }
+      });
+      scene.add(_splatMesh);
+
+      // Add download button
+      var dlBtn = document.createElement('button');
+      dlBtn.className = 'btn';
+      dlBtn.textContent = 'Download PLY';
+      dlBtn.onclick = function() {
+        var blob = new Blob([plyBytes], { type: 'application/octet-stream' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'kiri-3dgs.ply';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      dlBar.appendChild(dlBtn);
+
+      // Add download ZIP button
+      var zipBtn = document.createElement('button');
+      zipBtn.className = 'btn';
+      zipBtn.textContent = 'Download Full ZIP';
+      zipBtn.onclick = function() {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(zipBlob);
+        a.download = 'kiri-3dgs.zip';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      dlBar.appendChild(zipBtn);
+    } else {
+      progEl.textContent = 'ZIP downloaded but no PLY found — check ZIP contents';
+      toast('No PLY in KIRI ZIP');
+      // Still offer the ZIP download
+      var zipBtn2 = document.createElement('button');
+      zipBtn2.className = 'btn';
+      zipBtn2.textContent = 'Download ZIP';
+      zipBtn2.onclick = function() {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(zipBlob);
+        a.download = 'kiri-3dgs.zip';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      dlBar.appendChild(zipBtn2);
+    }
+  } catch (err) {
+    progEl.textContent = 'Download error: ' + err.message;
+    toast('KIRI download error: ' + err.message);
+    console.error('KIRI download error:', err);
+  }
+}
+
+async function checkKiriStatus() {
+  var raw = localStorage.getItem('kiri_pending');
+  if (!raw && !_kiriSerialize) { toast('No pending KIRI job'); return; }
+  var p = raw ? JSON.parse(raw) : { serialize: _kiriSerialize };
+  var apiKey = p.apiKey || document.getElementById('kiri-apikey').value.trim();
+  if (!apiKey) { toast('Enter a KIRI API key'); return; }
+  var serialize = p.serialize || _kiriSerialize;
+  if (!serialize) { toast('No serial number found'); return; }
+
+  var progEl = document.getElementById('kiri-progress');
+  var pendEl = document.getElementById('kiri-pending');
+  progEl.style.display = 'block';
+  progEl.textContent = 'Checking KIRI status...';
+
+  try {
+    var statusRes = await fetch('https://api.kiriengine.app/api/v1/open/model/getStatus?serialize=' + encodeURIComponent(serialize), {
+      headers: { 'Authorization': 'Bearer ' + apiKey }
+    });
+    if (!statusRes.ok) throw new Error('Status check failed: ' + statusRes.status);
+    var statusData = await statusRes.json();
+    var status = statusData.data && statusData.data.status !== undefined ? statusData.data.status : statusData.status;
+
+    var statusLabels = { '-1': 'Uploading', '0': 'Processing', '1': 'Failed', '2': 'Successful', '3': 'Queuing', '4': 'Exported' };
+    var label = statusLabels[String(status)] || 'Unknown (' + status + ')';
+
+    if (status === 2 || status === 4) {
+      progEl.textContent = 'KIRI job complete! Downloading...';
+      if (pendEl) pendEl.style.display = 'none';
+      _kiriSerialize = serialize;
+      handleKiriResult(statusData, apiKey);
+    } else if (status === 1) {
+      progEl.textContent = 'KIRI job failed';
+      clearKiriPending();
+      toast('KIRI processing failed');
+    } else {
+      progEl.textContent = 'KIRI status: ' + label;
+      toast('KIRI: ' + label);
+    }
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('KIRI check error: ' + err.message);
+    console.error('KIRI check error:', err);
+  }
 }
 
 // ============================================================
@@ -4061,8 +4415,8 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,previewPanoCaptures,batchPanoMarble,loadPanoSection,exportPanoSections,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline,onProviderChange,onModelChange,runStylize,checkPendingOperation,clearAllPending});
-init();fitView();showMarblePending();showRunwayPending();showDecartPending();onRunwayModelChange();
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,previewPanoCaptures,batchPanoMarble,loadPanoSection,exportPanoSections,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline,onProviderChange,onModelChange,runStylize,checkPendingOperation,clearAllPending,generateKiri,checkKiriStatus,clearKiriPending});
+init();fitView();showMarblePending();showRunwayPending();showDecartPending();showKiriPending();onRunwayModelChange();
 </script>
 
 </body>
