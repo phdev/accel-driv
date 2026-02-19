@@ -277,6 +277,7 @@
     </div>
     <div class="btn-group">
       <button class="btn btn-accent2" onclick="previewPanoCaptures()">Preview Captures</button>
+      <button class="btn" onclick="clearPanoMarkers();toast('Markers cleared')" style="font-size:10px">Clear Markers</button>
       <button class="btn btn-accent" onclick="batchPanoMarble()" id="pano-gen-btn">Generate All Sections</button>
     </div>
     <div id="pano-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
@@ -1691,6 +1692,62 @@ btn.textContent = 'Generate World';
 // PANORAMA CAPTURE PIPELINE (CubeCamera → equirect → Marble)
 // ============================================================
 var _panoCaptures = null;
+var _panoMarkerGroup = null;
+
+function clearPanoMarkers() {
+if (_panoMarkerGroup) { scene.remove(_panoMarkerGroup); _panoMarkerGroup = null; }
+}
+
+function showPanoMarkers(captures, camHeight) {
+clearPanoMarkers();
+if (!captures || !captures.length) return;
+_panoMarkerGroup = new THREE.Group();
+_panoMarkerGroup.name = 'panoMarkers';
+
+var sphereGeo = new THREE.SphereGeometry(4, 12, 8);
+var coneGeo = new THREE.ConeGeometry(3, 10, 8);
+
+for (var i = 0; i < captures.length; i++) {
+var c = captures[i];
+var px = c.position.x, py = c.position.y, pz = c.position.z;
+var camY = py + camHeight;
+
+// Camera position sphere (cyan)
+var sphere = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: 0x00ffcc }));
+sphere.position.set(px, camY, pz);
+_panoMarkerGroup.add(sphere);
+
+// Vertical pole from track to camera
+var poleGeo = new THREE.BufferGeometry().setFromPoints([
+new THREE.Vector3(px, py, pz), new THREE.Vector3(px, camY, pz)
+]);
+var pole = new THREE.Line(poleGeo, new THREE.LineBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.5 }));
+_panoMarkerGroup.add(pole);
+
+// Direction arrow (cone pointing along tangent)
+var cone = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({ color: 0xff44cc }));
+cone.position.set(px + c.tangent.x * 12, camY, pz + c.tangent.z * 12);
+cone.lookAt(px, camY, pz);
+cone.rotateX(Math.PI / 2);
+_panoMarkerGroup.add(cone);
+
+// Index label sprite
+var cv = document.createElement('canvas');
+cv.width = 64; cv.height = 32;
+var ctx = cv.getContext('2d');
+ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 64, 32);
+ctx.fillStyle = '#00ffcc'; ctx.font = 'bold 20px monospace'; ctx.textAlign = 'center';
+ctx.fillText('#' + i, 32, 22);
+var tex = new THREE.CanvasTexture(cv);
+var spriteMat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+var sprite = new THREE.Sprite(spriteMat);
+sprite.position.set(px, camY + 8, pz);
+sprite.scale.set(20, 10, 1);
+_panoMarkerGroup.add(sprite);
+}
+
+scene.add(_panoMarkerGroup);
+}
 
 function buildTrackSpline() {
 if (trackData.length < 20) return null;
@@ -1749,7 +1806,7 @@ eqScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), equirectMat));
 
 // Hide editor overlays during capture
 var hidden = [];
-[ptCloud, selHL, cpGrp, splineLine].forEach(function(obj) {
+[ptCloud, selHL, cpGrp, splineLine, _panoMarkerGroup].forEach(function(obj) {
 if (obj && obj.visible) { obj.visible = false; hidden.push(obj); }
 });
 scene.traverse(function(obj) {
@@ -1830,6 +1887,9 @@ var captures = capturePanoramasAlongTrack(numSections, camHeight, cubeRes, range
 if (!captures) { progEl.style.display = 'none'; return; }
 
 _panoCaptures = captures;
+
+// Show 3D markers in editor viewport
+showPanoMarkers(captures, camHeight);
 
 // Build preview grid
 var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-top:8px">';
@@ -2114,7 +2174,7 @@ var flyCurve = new THREE.CatmullRomCurve3(pts, isClosed, 'catmullrom', 0.5);
 
 // Hide editor-only overlays during recording
 var hidden = [];
-[ptCloud, selHL, cpGrp, splineLine].forEach(function(obj) {
+[ptCloud, selHL, cpGrp, splineLine, _panoMarkerGroup].forEach(function(obj) {
 if (obj && obj.visible) { obj.visible = false; hidden.push(obj); }
 });
 scene.traverse(function(obj) {
