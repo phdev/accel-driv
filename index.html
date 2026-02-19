@@ -1573,6 +1573,9 @@ if (resultsEl) {
 toast('World generated!');
 }
 async function pollMarbleOp(opId, apiKey, quality, progEl) {
+// Strip leading "operations/" if present to avoid double-path
+var cleanId = opId;
+if (cleanId && cleanId.indexOf('operations/') === 0) cleanId = cleanId.slice('operations/'.length);
 var startTime = Date.now();
 var maxMs = 9 * 60 * 1000; // 9 min wall-clock timeout
 while (Date.now() - startTime < maxMs) {
@@ -1580,8 +1583,15 @@ await pollSleep(3000);
 var elapsed = Math.round((Date.now() - startTime) / 1000);
 progEl.textContent = 'Generating 3D world... (' + elapsed + 's)';
 try {
-var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + opId, { headers: { 'WLT-Api-Key': apiKey } });
-if (!pollRes.ok) continue;
+var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + cleanId, { headers: { 'WLT-Api-Key': apiKey } });
+if (!pollRes.ok) {
+console.warn('Poll failed (status ' + pollRes.status + ') for op:', cleanId);
+if (pollRes.status === 429) {
+progEl.textContent = 'Rate limited — waiting... (' + elapsed + 's)';
+await pollSleep(10000);
+}
+continue;
+}
 var pollData = await pollRes.json();
 if (pollData.done) {
 clearMarblePending();
@@ -1589,10 +1599,11 @@ if (pollData.error) throw new Error('Generation error: ' + (pollData.error.messa
 return pollData.response;
 }
 if (pollData.metadata && pollData.metadata.progress) {
-progEl.textContent = 'Generating: ' + (pollData.metadata.progress.description || pollData.metadata.progress.status);
+progEl.textContent = 'Generating: ' + (pollData.metadata.progress.description || pollData.metadata.progress.status) + ' (' + elapsed + 's)';
 }
 } catch (e) {
 if (e.message.includes('Generation error')) throw e;
+console.warn('Poll exception:', e.message);
 }
 }
 throw new Error('Timeout waiting for world generation');
@@ -2009,11 +2020,14 @@ throw new Error('Generation ' + i + ' failed (' + genRes.status + '): ' + errTex
 
 var genData = await genRes.json();
 var opId = genData.operation_id || genData.name;
+console.log('Section ' + i + ' generation response:', { opId: opId, done: genData.done, keys: Object.keys(genData) });
 
 if (genData.done && genData.response) {
 operations.push({ capture: cap, worldData: genData.response, done: true });
 } else if (opId) {
 operations.push({ capture: cap, opId: opId, done: false });
+} else {
+console.warn('Section ' + i + ': no operation_id or name in response', genData);
 }
 
 // Brief delay between requests to avoid hitting rate limits
@@ -2026,6 +2040,7 @@ await new Promise(function(r) { setTimeout(r, 2000); });
 var allDone = operations.every(function(op) { return op.done; });
 var startTime = Date.now();
 var maxMs = 15 * 60 * 1000;
+var pollErrors = 0;
 
 while (!allDone && Date.now() - startTime < maxMs) {
 await new Promise(function(r) { setTimeout(r, 5000); });
@@ -2035,10 +2050,23 @@ progEl.textContent = 'Generating... ' + (operations.length - pending.length) + '
 
 for (var j = 0; j < pending.length; j++) {
 try {
-var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + pending[j].opId, {
+// Strip leading "operations/" if present to avoid double-path
+var pollId = pending[j].opId;
+if (pollId && pollId.indexOf('operations/') === 0) pollId = pollId.slice('operations/'.length);
+var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + pollId, {
 headers: { 'WLT-Api-Key': apiKey }
 });
-if (!pollRes.ok) continue;
+if (!pollRes.ok) {
+pollErrors++;
+var errStatus = pollRes.status;
+console.warn('Poll failed for section (status ' + errStatus + '):', pollId);
+if (errStatus === 429) {
+progEl.textContent = 'Rate limited during polling — backing off... (' + elapsed + 's)';
+await new Promise(function(r) { setTimeout(r, 10000); }); // extra 10s backoff
+}
+continue;
+}
+pollErrors = 0;
 var pollData = await pollRes.json();
 if (pollData.done) {
 if (pollData.error) {
@@ -2047,8 +2075,17 @@ pending[j].error = pollData.error.message || 'Generation failed';
 pending[j].worldData = pollData.response;
 }
 pending[j].done = true;
+} else if (pollData.metadata && pollData.metadata.progress) {
+var desc = pollData.metadata.progress.description || pollData.metadata.progress.status || '';
+if (desc) progEl.textContent = (operations.length - pending.length) + '/' + operations.length + ' done — ' + desc + ' (' + elapsed + 's)';
 }
-} catch (e) { /* continue polling */ }
+} catch (e) {
+console.warn('Poll exception:', e.message);
+}
+// Stagger polls: brief pause between each operation to avoid rate limits
+if (j < pending.length - 1) {
+await new Promise(function(r) { setTimeout(r, 1000); });
+}
 }
 
 allDone = operations.every(function(op) { return op.done; });
