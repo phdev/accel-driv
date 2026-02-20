@@ -9,6 +9,7 @@
 //        wrangler secret put RUNWAY_KEY
 //        wrangler secret put MARBLE_KEY
 //        wrangler secret put DECART_KEY
+//        wrangler secret put KIRI_KEY
 //
 // Then set the Worker URL in the editor (one-time):
 //   https://phdev.github.io/accel-driv/?proxy=https://accel-driv-proxy.<you>.workers.dev
@@ -17,6 +18,7 @@
 //   /runway/*  -> https://api.dev.runwayml.com/v1/*  (adds Authorization + X-Runway-Version)
 //   /marble/*  -> https://api.worldlabs.ai/marble/v1/*  (adds WLT-Api-Key)
 //   /decart/*  -> https://api.decart.ai/v1/*  (adds X-API-KEY)
+//   /kiri/*    -> https://api.kiriengine.app/api/*  (adds Authorization: Bearer)
 //   /fetch?url=<encoded>  -> generic CORS proxy (no auth added)
 //   /health    -> health check
 
@@ -40,6 +42,12 @@ const API_ROUTES = {
     target: 'https://api.decart.ai/v1/',
     authFn: function(env) {
       return { 'X-API-KEY': env.DECART_KEY };
+    }
+  },
+  '/kiri/': {
+    target: 'https://api.kiriengine.app/api/',
+    authFn: function(env) {
+      return { 'Authorization': 'Bearer ' + env.KIRI_KEY };
     }
   }
 };
