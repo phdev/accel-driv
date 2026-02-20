@@ -355,6 +355,54 @@
       <div>3. Train 3DGS → download <b>.ply</b> → load in Splat tab</div>
     </div>
   </div>
+  <div class="panel"><div class="panel-title">3b. Video &rarr; Splat Training</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
+      Export flythrough frames with <span style="color:var(--accent2)">known camera poses</span> for 3DGS training &mdash; skips SfM entirely.
+      Pair a <span style="color:var(--accent2)">stylized video</span> with stored poses for AI-enhanced splat reconstruction.
+    </div>
+    <div id="v2s-pose-info" style="font-size:10px;color:var(--text-dim);margin-bottom:8px;padding:4px 8px;background:var(--surface2);border-radius:4px;font-family:'JetBrains Mono',monospace">No flythrough poses recorded yet</div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:4px">Option A &mdash; Raw Flythrough Frames</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Re-render scene at each stored camera pose and export as training ZIP.</div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Frame step</span><span id="v-flystep">1</span></div>
+        <input type="range" id="s-flystep" min="1" max="10" value="1" step="1">
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-accent2" onclick="exportFlythroughTraining()" id="btn-export-fly-train">Export Training ZIP</button>
+      </div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:4px">Option B &mdash; Stylized Video + Poses</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Extract frames from a stylized video and pair with stored flythrough poses.</div>
+      <div class="btn-group" style="margin-bottom:4px">
+        <button class="btn" onclick="document.getElementById('v2s-video-input').click()" style="font-size:10px">Choose Stylized Video</button>
+        <span id="v2s-video-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px"></span>
+      </div>
+      <input type="file" id="v2s-video-input" accept="video/mp4,video/webm,.mp4,.webm" style="display:none">
+      <div class="slider-group">
+        <div class="slider-label"><span>Frame sampling</span></div>
+        <select id="v2s-sampling" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="match" selected>Match all flythrough poses</option>
+          <option value="2fps">2 fps (every 0.5s)</option>
+          <option value="5fps">5 fps (every 0.2s)</option>
+          <option value="10fps">10 fps (every 0.1s)</option>
+        </select>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-accent2" onclick="extractStylizedTraining()" id="btn-extract-stylized">Extract &amp; Export ZIP</button>
+      </div>
+    </div>
+    <div id="v2s-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
+      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
+      <div>1. Record flythrough (captures exact camera poses)</div>
+      <div>2. Optionally stylize with Runway / Decart</div>
+      <div>3. Export training ZIP (frames + transforms.json)</div>
+      <div>4. Upload to Colab &rarr; train 3DGS &rarr; download <b>.ply</b></div>
+      <div>5. Load PLY in Splat tab above</div>
+    </div>
+  </div>
   <div class="panel"><div class="panel-title">4. KIRI Engine &mdash; 3DGS from Video / Photos</div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
       Upload a <span style="color:var(--accent2)">video</span> or <span style="color:var(--accent2)">20-300 photos</span> to <span style="color:var(--accent2)">KIRI Engine</span> for 3D Gaussian Splatting reconstruction. Returns a PLY splat file.
@@ -2442,6 +2490,8 @@ input.click();
 // ============================================================
 var _flyBlob = null;
 var _flyFrames = [];
+var _flyPoses = [];
+var _flyCamParams = null;
 var _runwayVideoUrl = null;
 
 async function recordFlythrough() {
@@ -2557,6 +2607,8 @@ var offCam = new THREE.PerspectiveCamera(60, w / h, 1, 20000);
 
 _flyFrames = [];
 _flyBlob = null;
+_flyPoses = [];
+_flyCamParams = { fov: 60, w: w, h: h };
 
 // --- Pre-pass: capture keyframe images for Runway segment chaining ---
 progEl.textContent = 'Capturing keyframes...';
@@ -2634,6 +2686,7 @@ if (canUseWebCodecs) {
     offCam.position.set(point.x - tangent.x * 10, point.y + camH, point.z - tangent.z * 10);
     offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
     offCam.updateMatrixWorld(true);
+    _flyPoses.push({ t: t, time: f / fps, elements: Array.from(offCam.matrixWorld.elements) });
     offR.clear(); offR.render(scene, offCam);
 
     var frame = new VideoFrame(offR.domElement, {
@@ -2682,6 +2735,7 @@ if (canUseWebCodecs) {
     offCam.position.set(point.x - tangent.x * 10, point.y + camH, point.z - tangent.z * 10);
     offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
     offCam.updateMatrixWorld(true);
+    _flyPoses.push({ t: t, time: f / fps, elements: Array.from(offCam.matrixWorld.elements) });
     offR.clear(); offR.render(scene, offCam);
     if (hasRF) vTrack.requestFrame();
     var pct = Math.round((f + 1) / totalFrames * 100);
@@ -2726,8 +2780,11 @@ var debugLines = [
   'Frames:     ' + f + ' (' + fps + ' fps x ' + duration + 's)',
   'Blob type:  ' + (_flyBlob.type || 'unknown'),
   'Blob size:  ' + blobSizeKB + ' KB (' + blobSizeMB + ' MB)',
-  'Keyframes:  ' + _flyFrames.length
+  'Keyframes:  ' + _flyFrames.length,
+  'Cam poses:  ' + _flyPoses.length
 ];
+var poseInfoEl = document.getElementById('v2s-pose-info');
+if (poseInfoEl) poseInfoEl.textContent = _flyPoses.length + ' camera poses captured (' + w + 'x' + h + ', FOV 60)';
 debugEl.textContent = debugLines.join('\n');
 videoEl.onloadedmetadata = function() {
   var actualDur = videoEl.duration;
@@ -4014,6 +4071,16 @@ document.getElementById('kiri-images-input').addEventListener('change', function
   else nameEl.textContent = '';
 });
 
+// Video-to-Splat training: file input + slider handlers
+document.getElementById('v2s-video-input').addEventListener('change', function() {
+  var nameEl = document.getElementById('v2s-video-name');
+  if (this.files[0]) nameEl.textContent = this.files[0].name;
+  else nameEl.textContent = '';
+});
+document.getElementById('s-flystep').addEventListener('input', function() {
+  document.getElementById('v-flystep').textContent = this.value;
+});
+
 function saveKiriPending(serialize, apiKey) {
   localStorage.setItem('kiri_pending', JSON.stringify({ serialize: serialize, apiKey: apiKey, time: Date.now() }));
 }
@@ -4405,6 +4472,214 @@ toast('Training views exported');
 }
 
 // ============================================================
+// VIDEO → SPLAT TRAINING EXPORT
+// ============================================================
+function _buildTransformsJson(poses, w, h, fov) {
+  var fl = w / (2 * Math.tan(fov * Math.PI / 360));
+  var transforms = {
+    camera_model: 'OPENCV',
+    fl_x: fl,
+    fl_y: fl,
+    cx: w / 2,
+    cy: h / 2,
+    w: w,
+    h: h,
+    frames: []
+  };
+  for (var i = 0; i < poses.length; i++) {
+    var me = poses[i].elements;
+    var c2w = [
+      [me[0], me[4], me[8], me[12]],
+      [me[1], me[5], me[9], me[13]],
+      [me[2], me[6], me[10], me[14]],
+      [me[3], me[7], me[11], me[15]]
+    ];
+    transforms.frames.push({
+      file_path: 'images/frame_' + String(i).padStart(5, '0') + '.png',
+      transform_matrix: c2w
+    });
+  }
+  return transforms;
+}
+
+async function exportFlythroughTraining() {
+  if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first'); return; }
+  var step = parseInt(document.getElementById('s-flystep').value) || 1;
+  var btn = document.getElementById('btn-export-fly-train');
+  var prog = document.getElementById('v2s-progress');
+  btn.disabled = true; btn.textContent = 'Rendering...';
+  prog.style.display = 'block';
+
+  var cp = _flyCamParams;
+  var selectedPoses = [];
+  for (var i = 0; i < _flyPoses.length; i += step) {
+    selectedPoses.push(_flyPoses[i]);
+  }
+
+  // Rebuild spline for re-rendering
+  var pts = [];
+  var spStep = Math.max(1, Math.floor(trackData.length / 500));
+  for (var i = 0; i < trackData.length; i += spStep) {
+    pts.push(new THREE.Vector3(trackData[i][0][0], trackData[i][0][1], trackData[i][0][2]));
+  }
+  var last = trackData[trackData.length - 1][0];
+  if (pts.length < 2 || pts[pts.length - 1].distanceTo(new THREE.Vector3(last[0], last[1], last[2])) > 1) {
+    pts.push(new THREE.Vector3(last[0], last[1], last[2]));
+  }
+
+  // Offscreen renderer
+  var offRndr = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  offRndr.setSize(cp.w, cp.h); offRndr.setPixelRatio(1);
+  offRndr.outputColorSpace = THREE.LinearSRGBColorSpace;
+  var offCam = new THREE.PerspectiveCamera(cp.fov, cp.w / cp.h, 1, 20000);
+
+  var zip = new JSZip();
+  var imgFolder = zip.folder('images');
+
+  // Re-render at each stored pose
+  var newPoses = [];
+  for (var i = 0; i < selectedPoses.length; i++) {
+    prog.textContent = 'Rendering frame ' + (i + 1) + ' / ' + selectedPoses.length;
+    var me = selectedPoses[i].elements;
+    offCam.matrixWorld.fromArray(me);
+    offCam.matrixWorld.decompose(offCam.position, offCam.quaternion, offCam.scale);
+    offCam.updateMatrixWorld(true);
+
+    offRndr.clear(); offRndr.render(scene, offCam);
+
+    newPoses.push({ elements: me });
+    var dataUrl = offRndr.domElement.toDataURL('image/png');
+    var b64 = dataUrl.split(',')[1];
+    imgFolder.file('frame_' + String(i).padStart(5, '0') + '.png', b64, { base64: true });
+
+    if (i % 4 === 0) await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  offRndr.dispose();
+
+  var transforms = _buildTransformsJson(newPoses, cp.w, cp.h, cp.fov);
+  prog.textContent = 'Compressing ZIP...';
+  zip.file('transforms.json', JSON.stringify(transforms, null, 2));
+
+  var blob = await zip.generateAsync({ type: 'blob' }, function(meta) {
+    prog.textContent = 'Compressing... ' + Math.round(meta.percent) + '%';
+  });
+
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a'); a.href = url; a.download = 'flythrough_training.zip'; a.click();
+  URL.revokeObjectURL(url);
+
+  btn.disabled = false; btn.textContent = 'Export Training ZIP';
+  prog.textContent = 'Done — ' + newPoses.length + ' frames at ' + cp.w + 'x' + cp.h + ' with camera poses';
+  toast('Flythrough training views exported');
+}
+
+async function extractStylizedTraining() {
+  if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first to capture camera poses'); return; }
+  var fileInput = document.getElementById('v2s-video-input');
+  if (!fileInput.files[0]) { toast('Choose a stylized video first'); return; }
+  var videoFile = fileInput.files[0];
+  var sampling = document.getElementById('v2s-sampling').value;
+  var btn = document.getElementById('btn-extract-stylized');
+  var prog = document.getElementById('v2s-progress');
+  btn.disabled = true; btn.textContent = 'Extracting...';
+  prog.style.display = 'block';
+  prog.textContent = 'Loading video...';
+
+  var cp = _flyCamParams;
+
+  // Create video element for frame extraction
+  var video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  var blobUrl = URL.createObjectURL(videoFile);
+  video.src = blobUrl;
+
+  await new Promise(function(resolve, reject) {
+    video.onloadedmetadata = resolve;
+    video.onerror = function() { reject(new Error('Failed to load video')); };
+  });
+
+  var vidDuration = video.duration;
+  if (!isFinite(vidDuration) || vidDuration <= 0) {
+    btn.disabled = false; btn.textContent = 'Extract & Export ZIP';
+    prog.textContent = 'Error: could not read video duration';
+    URL.revokeObjectURL(blobUrl);
+    toast('Cannot read video duration'); return;
+  }
+
+  // Determine which poses/timestamps to extract
+  var extractPoses = [];
+  if (sampling === 'match') {
+    // Match all flythrough poses — distribute them evenly across video duration
+    for (var i = 0; i < _flyPoses.length; i++) {
+      var frac = i / Math.max(_flyPoses.length - 1, 1);
+      extractPoses.push({ poseIdx: i, time: frac * vidDuration, elements: _flyPoses[i].elements });
+    }
+  } else {
+    // Fixed FPS sampling
+    var targetFps = parseInt(sampling); // '2fps' -> 2, '5fps' -> 5, '10fps' -> 10
+    var interval = 1 / targetFps;
+    var totalPoses = _flyPoses.length;
+    for (var t = 0; t < vidDuration; t += interval) {
+      var frac = t / vidDuration;
+      var poseIdx = Math.min(Math.round(frac * (totalPoses - 1)), totalPoses - 1);
+      extractPoses.push({ poseIdx: poseIdx, time: t, elements: _flyPoses[poseIdx].elements });
+    }
+  }
+
+  prog.textContent = 'Extracting ' + extractPoses.length + ' frames...';
+
+  // Canvas for frame capture
+  var canvas = document.createElement('canvas');
+  canvas.width = cp.w;
+  canvas.height = cp.h;
+  var ctx = canvas.getContext('2d');
+
+  var zip = new JSZip();
+  var imgFolder = zip.folder('images');
+  var finalPoses = [];
+
+  for (var i = 0; i < extractPoses.length; i++) {
+    var ep = extractPoses[i];
+    prog.textContent = 'Extracting frame ' + (i + 1) + ' / ' + extractPoses.length;
+
+    // Seek to timestamp
+    video.currentTime = Math.min(ep.time, vidDuration - 0.01);
+    await new Promise(function(resolve) {
+      video.onseeked = resolve;
+    });
+
+    // Draw frame to canvas at the target resolution
+    ctx.drawImage(video, 0, 0, cp.w, cp.h);
+    var dataUrl = canvas.toDataURL('image/png');
+    var b64 = dataUrl.split(',')[1];
+    imgFolder.file('frame_' + String(i).padStart(5, '0') + '.png', b64, { base64: true });
+    finalPoses.push({ elements: ep.elements });
+
+    if (i % 4 === 0) await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  URL.revokeObjectURL(blobUrl);
+
+  var transforms = _buildTransformsJson(finalPoses, cp.w, cp.h, cp.fov);
+  prog.textContent = 'Compressing ZIP...';
+  zip.file('transforms.json', JSON.stringify(transforms, null, 2));
+
+  var blob = await zip.generateAsync({ type: 'blob' }, function(meta) {
+    prog.textContent = 'Compressing... ' + Math.round(meta.percent) + '%';
+  });
+
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a'); a.href = url; a.download = 'stylized_training.zip'; a.click();
+  URL.revokeObjectURL(url);
+
+  btn.disabled = false; btn.textContent = 'Extract & Export ZIP';
+  prog.textContent = 'Done — ' + finalPoses.length + ' stylized frames at ' + cp.w + 'x' + cp.h + ' with camera poses';
+  toast('Stylized training ZIP exported');
+}
+
+// ============================================================
 // DRAWER (mobile)
 // ============================================================
 function setupDrawer(){}
@@ -4423,7 +4698,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,previewPanoCaptures,batchPanoMarble,loadPanoSection,exportPanoSections,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline,onProviderChange,onModelChange,runStylize,checkPendingOperation,clearAllPending,generateKiri,checkKiriStatus,clearKiriPending});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,previewPanoCaptures,batchPanoMarble,loadPanoSection,exportPanoSections,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline,onProviderChange,onModelChange,runStylize,checkPendingOperation,clearAllPending,generateKiri,checkKiriStatus,clearKiriPending,exportFlythroughTraining,extractStylizedTraining});
 init();fitView();showMarblePending();showRunwayPending();showDecartPending();showKiriPending();onRunwayModelChange();
 </script>
 
