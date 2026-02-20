@@ -9,7 +9,7 @@
 //        wrangler secret put RUNWAY_KEY
 //        wrangler secret put MARBLE_KEY
 //        wrangler secret put DECART_KEY
-//        wrangler secret put KIRI_KEY
+//        wrangler secret put KIRI_API_KEY
 //
 // Then set the Worker URL in the editor (one-time):
 //   https://phdev.github.io/accel-driv/?proxy=https://accel-driv-proxy.<you>.workers.dev
@@ -47,7 +47,7 @@ const API_ROUTES = {
   '/kiri/': {
     target: 'https://api.kiriengine.app/api/',
     authFn: function(env) {
-      return { 'Authorization': 'Bearer ' + env.KIRI_KEY };
+      return { 'Authorization': 'Bearer ' + env.KIRI_API_KEY };
     }
   }
 };
