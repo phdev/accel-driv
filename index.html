@@ -4035,7 +4035,7 @@ function showKiriPending() {
 
 async function generateKiri() {
   var apiKey = document.getElementById('kiri-apikey').value.trim();
-  if (!apiKey) { toast('Enter a KIRI API key'); return; }
+  if (!apiKey && !_proxyUrl) { toast('Enter a KIRI API key'); return; }
   var mode = document.getElementById('kiri-mode').value;
   var isMesh = document.getElementById('kiri-mesh').checked ? '1' : '0';
   var isMask = document.getElementById('kiri-mask').checked ? '1' : '0';
@@ -4069,9 +4069,11 @@ async function generateKiri() {
   btn.textContent = 'Uploading...';
 
   try {
-    var uploadRes = await fetch(endpoint, {
+    var uploadHeaders = {};
+    if (apiKey) uploadHeaders['Authorization'] = 'Bearer ' + apiKey;
+    var uploadRes = await proxiedFetch(endpoint, {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + apiKey },
+      headers: uploadHeaders,
       body: formData
     });
     if (!uploadRes.ok) {
@@ -4107,8 +4109,10 @@ async function pollKiriStatus(serialize, apiKey, progEl) {
   for (var i = 0; i < maxAttempts; i++) {
     await pollSleep(10000);
     try {
-      var statusRes = await fetch('https://api.kiriengine.app/api/v1/open/model/getStatus?serialize=' + encodeURIComponent(serialize), {
-        headers: { 'Authorization': 'Bearer ' + apiKey }
+      var pollHeaders = {};
+      if (apiKey) pollHeaders['Authorization'] = 'Bearer ' + apiKey;
+      var statusRes = await proxiedFetch('https://api.kiriengine.app/api/v1/open/model/getStatus?serialize=' + encodeURIComponent(serialize), {
+        headers: pollHeaders
       });
       if (!statusRes.ok) throw new Error('Status check failed: ' + statusRes.status);
       var statusData = await statusRes.json();
@@ -4143,8 +4147,10 @@ async function handleKiriResult(statusData, apiKey) {
 
   try {
     var serialize = _kiriSerialize || (statusData.data && statusData.data.serialize);
-    var dlRes = await fetch('https://api.kiriengine.app/api/v1/open/model/getModelZip?serialize=' + encodeURIComponent(serialize), {
-      headers: { 'Authorization': 'Bearer ' + apiKey }
+    var dlHeaders = {};
+    if (apiKey) dlHeaders['Authorization'] = 'Bearer ' + apiKey;
+    var dlRes = await proxiedFetch('https://api.kiriengine.app/api/v1/open/model/getModelZip?serialize=' + encodeURIComponent(serialize), {
+      headers: dlHeaders
     });
     if (!dlRes.ok) throw new Error('Download failed: ' + dlRes.status);
     var dlData = await dlRes.json();
@@ -4244,7 +4250,7 @@ async function checkKiriStatus() {
   if (!raw && !_kiriSerialize) { toast('No pending KIRI job'); return; }
   var p = raw ? JSON.parse(raw) : { serialize: _kiriSerialize };
   var apiKey = p.apiKey || document.getElementById('kiri-apikey').value.trim();
-  if (!apiKey) { toast('Enter a KIRI API key'); return; }
+  if (!apiKey && !_proxyUrl) { toast('Enter a KIRI API key'); return; }
   var serialize = p.serialize || _kiriSerialize;
   if (!serialize) { toast('No serial number found'); return; }
 
@@ -4254,8 +4260,10 @@ async function checkKiriStatus() {
   progEl.textContent = 'Checking KIRI status...';
 
   try {
-    var statusRes = await fetch('https://api.kiriengine.app/api/v1/open/model/getStatus?serialize=' + encodeURIComponent(serialize), {
-      headers: { 'Authorization': 'Bearer ' + apiKey }
+    var chkHeaders = {};
+    if (apiKey) chkHeaders['Authorization'] = 'Bearer ' + apiKey;
+    var statusRes = await proxiedFetch('https://api.kiriengine.app/api/v1/open/model/getStatus?serialize=' + encodeURIComponent(serialize), {
+      headers: chkHeaders
     });
     if (!statusRes.ok) throw new Error('Status check failed: ' + statusRes.status);
     var statusData = await statusRes.json();
