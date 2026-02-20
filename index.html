@@ -205,10 +205,7 @@
 <!-- ===== SPLAT TAB ===== -->
 <div class="tab-content" id="tab-splat">
   <div class="panel"><div class="panel-title">1. Flythrough &rarr; Stylize</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
-      Record a camera flythrough along the track spline, then stylize with <span style="color:var(--accent2)">Runway</span> or <span style="color:var(--accent2)">Decart</span>.
-    </div>
-    <div class="slider-group" style="margin-bottom:6px" id="apikey-runway-row">
+    <div class="slider-group" style="margin-bottom:6px;display:none" id="apikey-runway-row">
       <div class="slider-label"><span>Runway API Key</span></div>
       <input type="password" id="runway-apikey" placeholder="rw_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
     </div>
@@ -244,7 +241,7 @@
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 2 &mdash; AI Stylization</div>
-      <div id="stylize-desc" style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Stylizes the flythrough using <span style="color:var(--accent2)">Runway</span>. Gen-4 Turbo/Gen-3 use image-to-video with keyframes per segment. <strong>Aleph</strong> uses video-to-video &mdash; sends actual flythrough chunks preserving camera motion (max 5s/segment). Longer tracks are auto-chunked and concatenated.</div>
+      <div id="stylize-desc" style="display:none"></div>
       <div class="slider-group">
         <div class="slider-label"><span>Provider</span></div>
         <select id="stylize-provider" onchange="onProviderChange()" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
