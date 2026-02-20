@@ -204,273 +204,9 @@
 
 <!-- ===== SPLAT TAB ===== -->
 <div class="tab-content" id="tab-splat">
-  <div class="panel"><div class="panel-title">1. Generate World - Marble</div>
+  <div class="panel"><div class="panel-title">1. Flythrough &rarr; Stylize</div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
-      Sends a screenshot or prompt to <span style="color:var(--accent2)">World Labs Marble</span> to generate a full 3D environment as Gaussian splats.
-    </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>API Key</span></div>
-      <input type="password" id="marble-apikey" placeholder="WLT-xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
-    </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Environment Prompt</span></div>
-      <textarea id="marble-prompt" rows="3" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">neon-lit cyberpunk racing track through a mountain valley at night, futuristic buildings with holographic signs, glowing bioluminescent vegetation, dramatic clouds, volumetric lighting</textarea>
-    </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Input mode</span></div>
-      <select id="marble-mode" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-        <option value="text">Text prompt only</option>
-        <option value="screenshot" selected>Screenshot of current view + prompt</option>
-      </select>
-      <button class="btn btn-accent2" style="margin-top:4px;width:100%;font-size:11px" onclick="trackAwarePrompt()">Screenshot + Track-Aware Prompt</button>
-      <div id="marble-screenshot-preview" style="display:none;margin-top:6px;text-align:center">
-        <img id="marble-screenshot-img" style="max-width:100%;border-radius:4px;border:1px solid var(--border)">
-        <div style="font-size:10px;color:var(--text-dim);margin-top:2px">Viewport captured — will be sent with prompt</div>
-      </div>
-    </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Splat quality</span></div>
-      <select id="marble-quality" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-        <option value="100k" selected>100k splats (fast, ~3 MB)</option>
-        <option value="500k">500k splats (balanced, ~15 MB)</option>
-        <option value="full_res">Full resolution (~30+ MB)</option>
-      </select>
-    </div>
-    <div class="btn-group">
-      <button class="btn btn-accent" onclick="generateMarbleWorld()" id="marble-gen-btn">Generate World</button>
-    </div>
-    <div id="marble-progress" style="font-size:11px;color:var(--accent2);display:none"></div>
-    <div id="marble-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
-      <div style="color:var(--accent2);margin-bottom:4px">Pending generation found</div>
-      <div id="marble-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
-      <div class="btn-group"><button class="btn btn-accent2" onclick="checkMarbleOperation()">Check Status</button><button class="btn" onclick="clearMarblePending()">Dismiss</button></div>
-    </div>
-  </div>
-
-  <div class="panel"><div class="panel-title">Track Panorama Pipeline</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
-      Capture <span style="color:var(--accent2)">equirectangular panoramas</span> at points along the track via CubeCamera, then batch-generate 3D environments via Marble.
-    </div>
-    <div class="slider-group">
-      <div class="slider-label"><span>Sections</span><span id="v-pano-sections">8</span></div>
-      <input type="range" id="s-pano-sections" min="1" max="20" step="1" value="8">
-    </div>
-    <div class="slider-group">
-      <div class="slider-label"><span>Range start</span><span id="v-pano-start">0%</span></div>
-      <input type="range" id="s-pano-start" min="0" max="100" step="1" value="0">
-    </div>
-    <div class="slider-group">
-      <div class="slider-label"><span>Range end</span><span id="v-pano-end">100%</span></div>
-      <input type="range" id="s-pano-end" min="0" max="100" step="1" value="100">
-    </div>
-    <div class="slider-group">
-      <div class="slider-label"><span>Camera height</span><span id="v-pano-height">15</span></div>
-      <input type="range" id="s-pano-height" min="5" max="50" step="1" value="15">
-    </div>
-    <div class="slider-group">
-      <div class="slider-label"><span>Cube face resolution</span></div>
-      <select id="s-pano-cuberes" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-        <option value="512">512px (fast preview)</option>
-        <option value="1024" selected>1024px (balanced)</option>
-        <option value="2048">2048px (high quality)</option>
-      </select>
-    </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Generation mode</span></div>
-      <select id="s-pano-genmode" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-        <option value="text">Text only — use prompt to imagine each viewpoint</option>
-        <option value="image">Image + text — panorama screenshot guides geometry</option>
-      </select>
-    </div>
-    <div class="btn-group">
-      <button class="btn" onclick="clearPanoMarkers();toast('Markers cleared')" style="font-size:10px">Clear Markers</button>
-      <button class="btn btn-accent" onclick="batchPanoMarble()" id="pano-gen-btn">Generate All Sections</button>
-    </div>
-    <div class="btn-group" style="margin-top:4px">
-      <button class="btn" onclick="loadSectionBundle()">Load Bundle</button>
-      <button class="btn" onclick="clearSectionSplats();toast('Section splats removed')" style="font-size:10px">Remove Splats</button>
-    </div>
-    <div id="pano-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
-    <div id="pano-preview" style="display:none"></div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
-      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
-      <div>1. CubeCamera captures 6-face cube map at each track point</div>
-      <div>2. Cube map → equirectangular panorama via shader</div>
-      <div>3. Each panorama uploaded to Marble as image prompt</div>
-      <div>4. Marble generates a 3D splat for each section</div>
-    </div>
-  </div>
-
-  <div class="panel"><div class="panel-title">2. Preview and Load Splat</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
-      Load a splat file into the 3D viewport via <span style="color:var(--accent2)">Spark.js</span>. Supports <b>.spz</b>, <b>.ply</b>, <b>.splat</b>, <b>.sog</b>.
-    </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Splat URL</span></div>
-      <input type="text" id="splat-url" placeholder="https://... .spz / .ply / .sog" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
-    </div>
-    <div class="btn-group">
-      <button class="btn" onclick="loadSplatFromURL()">Load from URL</button>
-      <button class="btn" onclick="loadSplatFromFile()">Load File</button>
-      <button class="btn" onclick="removeSplat()">Remove</button>
-    </div>
-    <input type="file" id="splat-file-input" accept=".spz,.ply,.splat,.sog,.ksplat" style="display:none">
-    <div class="slider-group"><div class="slider-label"><span>Splat opacity</span><span id="v-splatopacity">1.0</span></div><input type="range" id="s-splatopacity" min="0" max="1" value="1" step="0.05"></div>
-    <div class="slider-group"><div class="slider-label"><span>Splat scale</span><span id="v-splatscale">1.0</span></div><input type="range" id="s-splatscale" min="0.01" max="100" value="1" step="0.1"></div>
-    <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
-      <div class="slider-label" style="margin-bottom:4px"><span style="color:var(--accent)">Transform</span></div>
-      <div class="slider-group"><div class="slider-label"><span>Position X</span><span id="v-splatpx">0</span></div><input type="range" id="s-splatpx" min="-500" max="500" value="0" step="1"></div>
-      <div class="slider-group"><div class="slider-label"><span>Position Y</span><span id="v-splatpy">0</span></div><input type="range" id="s-splatpy" min="-500" max="500" value="0" step="1"></div>
-      <div class="slider-group"><div class="slider-label"><span>Position Z</span><span id="v-splatpz">0</span></div><input type="range" id="s-splatpz" min="-500" max="500" value="0" step="1"></div>
-      <div class="slider-group"><div class="slider-label"><span>Rotation X</span><span id="v-splatrx">0</span></div><input type="range" id="s-splatrx" min="-180" max="180" value="0" step="1"></div>
-      <div class="slider-group"><div class="slider-label"><span>Rotation Y</span><span id="v-splatry">0</span></div><input type="range" id="s-splatry" min="-180" max="180" value="0" step="1"></div>
-    </div>
-    <div class="btn-group" style="margin-top:6px">
-      <button class="btn btn-accent2" onclick="splatBackdropPreset()">Use as Backdrop</button>
-      <button class="btn" onclick="splatResetTransform()">Reset Transform</button>
-    </div>
-    <div id="splat-info" style="font-size:10px;color:var(--text-dim);margin-top:4px"></div>
-  </div>
-
-  <div class="panel"><div class="panel-title">3. Export Training Views</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
-      Render multi-view images of the current scene for <span style="color:var(--accent2)">3D Gaussian Splatting</span> training via Google Colab.
-    </div>
-    <div class="slider-group">
-      <div class="slider-label"><span>Views</span><span id="v-trainviews">72</span></div>
-      <input type="range" id="s-trainviews" min="24" max="200" step="4" value="72">
-    </div>
-    <div class="slider-group">
-      <div class="slider-label"><span>Resolution</span><span id="v-trainres">1024</span></div>
-      <input type="range" id="s-trainres" min="512" max="2048" step="256" value="1024">
-    </div>
-    <div class="btn-group">
-      <button class="btn btn-accent2" onclick="exportTrainingViews()" id="btn-export-views">Export Views ZIP</button>
-    </div>
-    <div id="export-views-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
-      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
-      <div>1. Export views ZIP (images + transforms.json)</div>
-      <div>2. Upload to Google Colab notebook</div>
-      <div>3. Train 3DGS → download <b>.ply</b> → load in Splat tab</div>
-    </div>
-  </div>
-  <div class="panel"><div class="panel-title">3b. Video &rarr; Splat Training</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
-      Export flythrough frames with <span style="color:var(--accent2)">known camera poses</span> for 3DGS training &mdash; skips SfM entirely.
-      Pair a <span style="color:var(--accent2)">stylized video</span> with stored poses for AI-enhanced splat reconstruction.
-    </div>
-    <div id="v2s-pose-info" style="font-size:10px;color:var(--text-dim);margin-bottom:8px;padding:4px 8px;background:var(--surface2);border-radius:4px;font-family:'JetBrains Mono',monospace">No flythrough poses recorded yet</div>
-    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
-      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:4px">Option A &mdash; Raw Flythrough Frames</div>
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Re-render scene at each stored camera pose and export as training ZIP.</div>
-      <div class="slider-group">
-        <div class="slider-label"><span>Frame step</span><span id="v-flystep">1</span></div>
-        <input type="range" id="s-flystep" min="1" max="10" value="1" step="1">
-      </div>
-      <div class="btn-group">
-        <button class="btn btn-accent2" onclick="exportFlythroughTraining()" id="btn-export-fly-train">Export Training ZIP</button>
-      </div>
-    </div>
-    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
-      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:4px">Option B &mdash; Stylized Video + Poses</div>
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Extract frames from a stylized video and pair with stored flythrough poses.</div>
-      <div class="btn-group" style="margin-bottom:4px">
-        <button class="btn" onclick="document.getElementById('v2s-video-input').click()" style="font-size:10px">Choose Stylized Video</button>
-        <span id="v2s-video-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px"></span>
-      </div>
-      <input type="file" id="v2s-video-input" accept="video/mp4,video/webm,.mp4,.webm" style="display:none">
-      <div class="slider-group">
-        <div class="slider-label"><span>Frame sampling</span></div>
-        <select id="v2s-sampling" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-          <option value="match" selected>Match all flythrough poses</option>
-          <option value="2fps">2 fps (every 0.5s)</option>
-          <option value="5fps">5 fps (every 0.2s)</option>
-          <option value="10fps">10 fps (every 0.1s)</option>
-        </select>
-      </div>
-      <div class="btn-group">
-        <button class="btn btn-accent2" onclick="extractStylizedTraining()" id="btn-extract-stylized">Extract &amp; Export ZIP</button>
-      </div>
-    </div>
-    <div id="v2s-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
-      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
-      <div>1. Record flythrough (captures exact camera poses)</div>
-      <div>2. Optionally stylize with Runway / Decart</div>
-      <div>3. Export training ZIP (frames + transforms.json)</div>
-      <div>4. Upload to Colab &rarr; train 3DGS &rarr; download <b>.ply</b></div>
-      <div>5. Load PLY in Splat tab above</div>
-    </div>
-  </div>
-  <div class="panel"><div class="panel-title">4. KIRI Engine &mdash; 3DGS from Video / Photos</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
-      Upload a <span style="color:var(--accent2)">video</span> or <span style="color:var(--accent2)">20-300 photos</span> to <span style="color:var(--accent2)">KIRI Engine</span> for 3D Gaussian Splatting reconstruction. Returns a PLY splat file.
-    </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>KIRI API Key</span></div>
-      <input type="password" id="kiri-apikey" placeholder="kiri-xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
-    </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Input mode</span></div>
-      <select id="kiri-mode" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-        <option value="video" selected>Video (max 3 min, 1080p)</option>
-        <option value="images">Photos (20-300 images)</option>
-      </select>
-    </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Options</span></div>
-      <label style="font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:4px;margin-bottom:3px"><input type="checkbox" id="kiri-mesh"> Also generate mesh (GLB)</label>
-      <label style="font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kiri-mask"> Background masking</label>
-    </div>
-    <div id="kiri-video-row">
-      <div class="btn-group" style="margin-bottom:4px">
-        <button class="btn" onclick="document.getElementById('kiri-video-input').click()" style="font-size:10px">Choose Video</button>
-        <span id="kiri-video-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px"></span>
-      </div>
-      <input type="file" id="kiri-video-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" style="display:none">
-    </div>
-    <div id="kiri-images-row" style="display:none">
-      <div class="btn-group" style="margin-bottom:4px">
-        <button class="btn" onclick="document.getElementById('kiri-images-input').click()" style="font-size:10px">Choose Photos</button>
-        <span id="kiri-images-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px"></span>
-      </div>
-      <input type="file" id="kiri-images-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple style="display:none">
-    </div>
-    <div class="btn-group">
-      <button class="btn btn-accent" onclick="generateKiri()" id="kiri-gen-btn">Generate 3DGS</button>
-      <button class="btn" onclick="checkKiriStatus()" style="font-size:10px">Check Status</button>
-    </div>
-    <div id="kiri-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
-    <div id="kiri-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
-      <div style="color:var(--accent2);margin-bottom:4px">Pending KIRI generation</div>
-      <div id="kiri-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
-      <div class="btn-group"><button class="btn btn-accent2" onclick="checkKiriStatus()">Check Status</button><button class="btn" onclick="clearKiriPending()">Dismiss</button></div>
-    </div>
-    <div id="kiri-results" style="display:none;margin-top:6px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px">
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Download URL <span style="opacity:0.5">(tap to copy)</span></div>
-      <input type="text" id="kiri-result-url" readonly style="width:100%;background:var(--surface);color:var(--accent);border:1px solid var(--border);padding:4px 6px;border-radius:3px;font-size:10px;font-family:monospace;cursor:pointer;margin-bottom:4px" onclick="this.select();navigator.clipboard.writeText(this.value);toast('URL copied')">
-      <div class="btn-group" id="kiri-dl-bar"></div>
-    </div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
-      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
-      <div>1. Upload video or 20-300 photos to KIRI Engine</div>
-      <div>2. KIRI reconstructs 3D Gaussian Splatting (7-20 min)</div>
-      <div>3. Download PLY → auto-load in splat viewer</div>
-    </div>
-  </div>
-  <div class="panel"><div class="panel-title">5. Convert Splats</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
-      Convert to <span style="color:var(--accent2)">.sog</span> format for optimal web delivery (~95% smaller than raw PLY).
-    </div>
-    <div class="btn-group">
-      <button class="btn" onclick="window.open('https://supersplat.io','_blank')">SuperSplat (SPZ to SOG)</button>
-      <button class="btn" onclick="window.open('https://marble.worldlabs.ai','_blank')">Marble Studio</button>
-    </div>
-  </div>
-  <div class="panel"><div class="panel-title">6. Flythrough &rarr; Stylize &rarr; Marble</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
-      Record a camera flythrough along the track spline, stylize with <span style="color:var(--accent2)">Runway</span> or <span style="color:var(--accent2)">Decart</span>, then reconstruct 3D Gaussian splats with <span style="color:var(--accent2)">Marble</span>.
+      Record a camera flythrough along the track spline, then stylize with <span style="color:var(--accent2)">Runway</span> or <span style="color:var(--accent2)">Decart</span>.
     </div>
     <div class="slider-group" style="margin-bottom:6px" id="apikey-runway-row">
       <div class="slider-label"><span>Runway API Key</span></div>
@@ -556,29 +292,96 @@
         <div class="btn-group"><button class="btn btn-accent2" onclick="checkPendingOperation()">Check Status</button><button class="btn" onclick="clearAllPending()">Dismiss</button></div>
       </div>
     </div>
+    <div id="pipeline-progress" style="display:none;font-size:11px;color:var(--accent);margin-top:4px"></div>
+  </div>
+
+  <div class="panel"><div class="panel-title">2. Video &rarr; Splat Training</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
+      Export flythrough frames with <span style="color:var(--accent2)">known camera poses</span> for 3DGS training &mdash; skips SfM entirely.
+      Pair a <span style="color:var(--accent2)">stylized video</span> with stored poses for AI-enhanced splat reconstruction.
+    </div>
+    <div id="v2s-pose-info" style="font-size:10px;color:var(--text-dim);margin-bottom:8px;padding:4px 8px;background:var(--surface2);border-radius:4px;font-family:'JetBrains Mono',monospace">No flythrough poses recorded yet</div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
-      <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 3 &mdash; Marble from Video</div>
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Uploads the styled video to Marble for 3D Gaussian splat reconstruction. Uses the Stage 2 output, or upload your own video.</div>
-      <div class="btn-group" style="margin-bottom:4px">
-        <button class="btn" onclick="document.getElementById('marble-vid-upload').click()" style="font-size:10px">Upload Video</button>
-        <span id="marble-vid-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px"></span>
+      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:4px">Option A &mdash; Raw Flythrough Frames</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Re-render scene at each stored camera pose and export as training ZIP.</div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Frame step</span><span id="v-flystep">1</span></div>
+        <input type="range" id="s-flystep" min="1" max="10" value="1" step="1">
       </div>
-      <input type="file" id="marble-vid-upload" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" style="display:none">
       <div class="btn-group">
-        <button class="btn btn-accent" onclick="runMarbleFromVideo()" id="marble-vid-btn">Reconstruct 3D World</button>
+        <button class="btn btn-accent2" onclick="exportFlythroughTraining()" id="btn-export-fly-train">Export Training ZIP</button>
       </div>
-      <div id="marble-vid-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
-      <div id="marble-vid-results" style="display:none;margin-top:6px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px">
-        <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Splat URL <span style="opacity:0.5">(tap to copy)</span></div>
-        <input type="text" id="marble-vid-splat-url" readonly style="width:100%;background:var(--surface);color:var(--accent);border:1px solid var(--border);padding:4px 6px;border-radius:3px;font-size:10px;font-family:monospace;cursor:pointer;margin-bottom:4px" onclick="this.select();navigator.clipboard.writeText(this.value);toast('URL copied')">
-        <div id="marble-vid-public-url" style="display:none;font-size:10px;color:var(--text-dim);margin-bottom:4px"></div>
-        <div class="btn-group" id="marble-vid-dl-bar"></div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:4px">Option B &mdash; Stylized Video + Poses</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Extract frames from a stylized video and pair with stored flythrough poses.</div>
+      <div class="btn-group" style="margin-bottom:4px">
+        <button class="btn" onclick="document.getElementById('v2s-video-input').click()" style="font-size:10px">Choose Stylized Video</button>
+        <span id="v2s-video-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px"></span>
       </div>
+      <input type="file" id="v2s-video-input" accept="video/mp4,video/webm,.mp4,.webm" style="display:none">
+      <div class="slider-group">
+        <div class="slider-label"><span>Frame sampling</span></div>
+        <select id="v2s-sampling" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="match" selected>Match all flythrough poses</option>
+          <option value="2fps">2 fps (every 0.5s)</option>
+          <option value="5fps">5 fps (every 0.2s)</option>
+          <option value="10fps">10 fps (every 0.1s)</option>
+        </select>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-accent2" onclick="extractStylizedTraining()" id="btn-extract-stylized">Extract &amp; Export ZIP</button>
+      </div>
+    </div>
+    <div id="v2s-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
+      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
+      <div>1. Record flythrough (captures exact camera poses)</div>
+      <div>2. Optionally stylize with Runway / Decart</div>
+      <div>3. Export training ZIP (frames + transforms.json)</div>
+      <div>4. Train 3DGS on RunPod &rarr; download <b>.ply</b></div>
+      <div>5. Load PLY in step 4 below</div>
+    </div>
+  </div>
+
+  <div class="panel"><div class="panel-title">3. Convert Splats</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
+      Convert to <span style="color:var(--accent2)">.sog</span> format for optimal web delivery (~95% smaller than raw PLY).
     </div>
     <div class="btn-group">
-      <button class="btn btn-accent" onclick="runFullPipeline()" id="pipeline-full-btn" style="width:100%">Run Full Pipeline</button>
+      <button class="btn" onclick="window.open('https://supersplat.io','_blank')">SuperSplat (SPZ to SOG)</button>
     </div>
-    <div id="pipeline-progress" style="display:none;font-size:11px;color:var(--accent);margin-top:4px"></div>
+  </div>
+
+  <div class="panel"><div class="panel-title">4. Preview and Load Splat</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
+      Load a splat file into the 3D viewport via <span style="color:var(--accent2)">Spark.js</span>. Supports <b>.spz</b>, <b>.ply</b>, <b>.splat</b>, <b>.sog</b>.
+    </div>
+    <div class="slider-group" style="margin-bottom:6px">
+      <div class="slider-label"><span>Splat URL</span></div>
+      <input type="text" id="splat-url" placeholder="https://... .spz / .ply / .sog" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+    </div>
+    <div class="btn-group">
+      <button class="btn" onclick="loadSplatFromURL()">Load from URL</button>
+      <button class="btn" onclick="loadSplatFromFile()">Load File</button>
+      <button class="btn" onclick="removeSplat()">Remove</button>
+    </div>
+    <input type="file" id="splat-file-input" accept=".spz,.ply,.splat,.sog,.ksplat" style="display:none">
+    <div class="slider-group"><div class="slider-label"><span>Splat opacity</span><span id="v-splatopacity">1.0</span></div><input type="range" id="s-splatopacity" min="0" max="1" value="1" step="0.05"></div>
+    <div class="slider-group"><div class="slider-label"><span>Splat scale</span><span id="v-splatscale">1.0</span></div><input type="range" id="s-splatscale" min="0.01" max="100" value="1" step="0.1"></div>
+    <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+      <div class="slider-label" style="margin-bottom:4px"><span style="color:var(--accent)">Transform</span></div>
+      <div class="slider-group"><div class="slider-label"><span>Position X</span><span id="v-splatpx">0</span></div><input type="range" id="s-splatpx" min="-500" max="500" value="0" step="1"></div>
+      <div class="slider-group"><div class="slider-label"><span>Position Y</span><span id="v-splatpy">0</span></div><input type="range" id="s-splatpy" min="-500" max="500" value="0" step="1"></div>
+      <div class="slider-group"><div class="slider-label"><span>Position Z</span><span id="v-splatpz">0</span></div><input type="range" id="s-splatpz" min="-500" max="500" value="0" step="1"></div>
+      <div class="slider-group"><div class="slider-label"><span>Rotation X</span><span id="v-splatrx">0</span></div><input type="range" id="s-splatrx" min="-180" max="180" value="0" step="1"></div>
+      <div class="slider-group"><div class="slider-label"><span>Rotation Y</span><span id="v-splatry">0</span></div><input type="range" id="s-splatry" min="-180" max="180" value="0" step="1"></div>
+    </div>
+    <div class="btn-group" style="margin-top:6px">
+      <button class="btn btn-accent2" onclick="splatBackdropPreset()">Use as Backdrop</button>
+      <button class="btn" onclick="splatResetTransform()">Reset Transform</button>
+    </div>
+    <div id="splat-info" style="font-size:10px;color:var(--text-dim);margin-top:4px"></div>
   </div>
 </div>
 
@@ -3712,7 +3515,8 @@ throw new Error('Runway timed out (10 min)');
 }
 
 // Handle local video upload for Stage 3 Marble
-document.getElementById('marble-vid-upload').addEventListener('change', function(e) {
+var _marbleVidEl = document.getElementById('marble-vid-upload');
+if (_marbleVidEl) _marbleVidEl.addEventListener('change', function(e) {
   var file = e.target.files && e.target.files[0];
   if (!file) return;
   if (_runwayVideoUrl && _runwayVideoUrl.startsWith('blob:')) {
@@ -4053,19 +3857,22 @@ if (_proxyUrl) {
 var _kiriSerialize = null;
 
 // Toggle video/images row based on mode selection
-document.getElementById('kiri-mode').addEventListener('change', function() {
+var _kiriModeEl = document.getElementById('kiri-mode');
+if (_kiriModeEl) _kiriModeEl.addEventListener('change', function() {
   var mode = this.value;
   document.getElementById('kiri-video-row').style.display = mode === 'video' ? '' : 'none';
   document.getElementById('kiri-images-row').style.display = mode === 'images' ? '' : 'none';
 });
 
 // File input display names
-document.getElementById('kiri-video-input').addEventListener('change', function() {
+var _kiriVideoEl = document.getElementById('kiri-video-input');
+if (_kiriVideoEl) _kiriVideoEl.addEventListener('change', function() {
   var nameEl = document.getElementById('kiri-video-name');
   if (this.files[0]) nameEl.textContent = this.files[0].name;
   else nameEl.textContent = '';
 });
-document.getElementById('kiri-images-input').addEventListener('change', function() {
+var _kiriImagesEl = document.getElementById('kiri-images-input');
+if (_kiriImagesEl) _kiriImagesEl.addEventListener('change', function() {
   var nameEl = document.getElementById('kiri-images-name');
   if (this.files.length) nameEl.textContent = this.files.length + ' photos selected';
   else nameEl.textContent = '';
