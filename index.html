@@ -4163,7 +4163,7 @@ async function handleKiriResult(statusData, apiKey) {
 
     // Download the ZIP and extract PLY
     progEl.textContent = 'Fetching ZIP and extracting PLY...';
-    var zipResp = await fetch(zipUrl);
+    var zipResp = await proxiedFetch(zipUrl);
     if (!zipResp.ok) throw new Error('Failed to fetch ZIP: ' + zipResp.status);
     var zipBlob = await zipResp.blob();
     var zip = await JSZip.loadAsync(zipBlob);
