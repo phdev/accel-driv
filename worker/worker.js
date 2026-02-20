@@ -99,6 +99,16 @@ export default {
         var route = API_ROUTES[prefix];
         targetUrl = route.target + path.slice(prefix.length) + url.search;
         authHeaders = route.authFn(env);
+        // Guard: check that all auth values are actually set
+        var authVals = Object.values(authHeaders);
+        for (var v = 0; v < authVals.length; v++) {
+          if (!authVals[v] || authVals[v].indexOf('undefined') !== -1) {
+            return new Response(JSON.stringify({ error: 'API key not configured for ' + prefix + ' — run wrangler secret put' }), {
+              status: 500,
+              headers: Object.assign({ 'Content-Type': 'application/json' }, corsHeaders(origin))
+            });
+          }
+        }
         break;
       }
     }
