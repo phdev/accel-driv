@@ -294,27 +294,15 @@
 
   <div class="panel"><div class="panel-title">2. Video &rarr; Splat Training</div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
-      Export flythrough frames with <span style="color:var(--accent2)">known camera poses</span> for 3DGS training &mdash; skips SfM entirely.
-      Pair a <span style="color:var(--accent2)">stylized video</span> with stored poses for AI-enhanced splat reconstruction.
+      Extract frames from a stylized video, pair with <span style="color:var(--accent2)">known camera poses</span>, and train 3DGS on <span style="color:var(--accent2)">RunPod</span> — no SfM needed.
     </div>
     <div id="v2s-pose-info" style="font-size:10px;color:var(--text-dim);margin-bottom:8px;padding:4px 8px;background:var(--surface2);border-radius:4px;font-family:'JetBrains Mono',monospace">No flythrough poses recorded yet</div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
-      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:4px">Option A &mdash; Raw Flythrough Frames</div>
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Re-render scene at each stored camera pose and export as training ZIP.</div>
-      <div class="slider-group">
-        <div class="slider-label"><span>Frame step</span><span id="v-flystep">1</span></div>
-        <input type="range" id="s-flystep" min="1" max="10" value="1" step="1">
-      </div>
-      <div class="btn-group">
-        <button class="btn btn-accent2" onclick="exportFlythroughTraining()" id="btn-export-fly-train">Export Training ZIP</button>
-      </div>
-    </div>
-    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
-      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:4px">Option B &mdash; Stylized Video + Poses</div>
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Extract frames from a stylized video and pair with stored flythrough poses.</div>
+      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:6px">Stylized Video Input</div>
       <div class="btn-group" style="margin-bottom:4px">
         <button class="btn" onclick="document.getElementById('v2s-video-input').click()" style="font-size:10px">Choose Stylized Video</button>
-        <span id="v2s-video-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px"></span>
+        <button class="btn" onclick="useStylizedVideo()" style="font-size:10px" id="btn-use-stylized" title="Use the video from Stage 2 stylization">Use Stage 2 Output</button>
+        <span id="v2s-video-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px"></span>
       </div>
       <input type="file" id="v2s-video-input" accept="video/mp4,video/webm,.mp4,.webm" style="display:none">
       <div class="slider-group">
@@ -326,19 +314,36 @@
           <option value="10fps">10 fps (every 0.1s)</option>
         </select>
       </div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:6px">RunPod 3DGS Training</div>
+      <div class="slider-group" style="margin-bottom:6px">
+        <div class="slider-label"><span>RunPod API Key</span></div>
+        <input type="password" id="runpod-apikey" placeholder="rpa_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>GPU</span></div>
+        <select id="runpod-gpu" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="NVIDIA GeForce RTX 4090" selected>RTX 4090 (24GB, ~$0.40/hr)</option>
+          <option value="NVIDIA GeForce RTX 3090">RTX 3090 (24GB, ~$0.25/hr)</option>
+          <option value="NVIDIA RTX A5000">RTX A5000 (24GB, ~$0.25/hr)</option>
+        </select>
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Training iterations</span><span id="v-runpod-iters">30000</span></div>
+        <input type="range" id="s-runpod-iters" min="7000" max="60000" value="30000" step="1000">
+      </div>
       <div class="btn-group">
-        <button class="btn btn-accent2" onclick="extractStylizedTraining()" id="btn-extract-stylized">Extract &amp; Export ZIP</button>
+        <button class="btn btn-accent" onclick="runpodTrain()" id="btn-runpod-train" style="width:100%">Train on RunPod</button>
+      </div>
+      <div class="btn-group" style="margin-top:4px">
+        <button class="btn" onclick="runpodCheckStatus()" style="font-size:10px">Check Status</button>
+        <button class="btn btn-danger" onclick="runpodTerminate()" style="font-size:10px">Terminate Pod</button>
+        <button class="btn" onclick="extractStylizedTraining()" style="font-size:10px" id="btn-extract-stylized" title="Manual: download training ZIP">Export ZIP</button>
       </div>
     </div>
-    <div id="v2s-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
-      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
-      <div>1. Record flythrough (captures exact camera poses)</div>
-      <div>2. Optionally stylize with Runway / Decart</div>
-      <div>3. Export training ZIP (frames + transforms.json)</div>
-      <div>4. Train 3DGS on RunPod &rarr; download <b>.ply</b></div>
-      <div>5. Load PLY in step 4 below</div>
-    </div>
+    <div id="v2s-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px;line-height:1.6"></div>
+    <div id="runpod-status" style="display:none;margin-top:6px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:10px;color:var(--text-dim);line-height:1.6;white-space:pre-wrap"></div>
   </div>
 
   <div class="panel"><div class="panel-title">3. Convert Splats</div>
@@ -3884,6 +3889,9 @@ document.getElementById('v2s-video-input').addEventListener('change', function()
 document.getElementById('s-flystep').addEventListener('input', function() {
   document.getElementById('v-flystep').textContent = this.value;
 });
+document.getElementById('s-runpod-iters').addEventListener('input', function() {
+  document.getElementById('v-runpod-iters').textContent = this.value;
+});
 
 function saveKiriPending(serialize, apiKey) {
   localStorage.setItem('kiri_pending', JSON.stringify({ serialize: serialize, apiKey: apiKey, time: Date.now() }));
@@ -4484,6 +4492,425 @@ async function extractStylizedTraining() {
 }
 
 // ============================================================
+// RUNPOD 3DGS TRAINING PIPELINE
+// ============================================================
+var _runpodState = { podId: null, token: null, apiKey: null, phase: null };
+
+function _runpodLog(msg) {
+  var el = document.getElementById('runpod-status');
+  if (el) { el.style.display = ''; el.textContent = msg; }
+}
+
+async function _runpodApi(method, path, apiKey, body) {
+  var opts = {
+    method: method,
+    headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  return proxiedFetch('https://rest.runpod.io/v1' + path, opts);
+}
+
+async function _jupyterApi(podId, token, method, path, body) {
+  var sep = path.indexOf('?') >= 0 ? '&' : '?';
+  var url = 'https://' + podId + '-8888.proxy.runpod.net' + path + sep + 'token=' + token;
+  var opts = { method: method };
+  if (body !== undefined) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = typeof body === 'string' ? body : JSON.stringify(body);
+  }
+  return proxiedFetch(url, opts);
+}
+
+async function _jupyterPut(podId, token, filePath, content) {
+  var isText = typeof content === 'string';
+  var body = { type: 'file', format: isText ? 'text' : 'base64', content: content };
+  return _jupyterApi(podId, token, 'PUT', '/api/contents/' + filePath, body);
+}
+
+async function _jupyterMkdir(podId, token, dirPath) {
+  return _jupyterApi(podId, token, 'PUT', '/api/contents/' + dirPath, { type: 'directory' });
+}
+
+async function _jupyterFileExists(podId, token, filePath) {
+  try {
+    var res = await _jupyterApi(podId, token, 'GET', '/api/contents/' + filePath + '?content=0');
+    return res.ok;
+  } catch(e) { return false; }
+}
+
+async function _jupyterGetText(podId, token, filePath) {
+  var res = await _jupyterApi(podId, token, 'GET', '/api/contents/' + filePath);
+  if (!res.ok) return null;
+  var data = await res.json();
+  return data.content || null;
+}
+
+async function _jupyterDownloadBinary(podId, token, filePath) {
+  var sep = filePath.indexOf('?') >= 0 ? '&' : '?';
+  var url = 'https://' + podId + '-8888.proxy.runpod.net/files/' + filePath + sep + 'token=' + token;
+  var res = await proxiedFetch(url);
+  if (!res.ok) throw new Error('Download failed: ' + res.status);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+function _arrayBufferToBase64(buffer) {
+  var bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  var binary = '';
+  for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+// Build training data from video + poses (shared logic)
+async function _buildTrainingFrames(prog) {
+  if (!_flyPoses.length || !_flyCamParams) throw new Error('Record a flythrough first');
+
+  var videoFile = null;
+  var fileInput = document.getElementById('v2s-video-input');
+  if (fileInput && fileInput.files[0]) {
+    videoFile = fileInput.files[0];
+  } else if (_runwayVideoUrl) {
+    // Use stylized video from Stage 2
+    prog('Fetching stylized video from Stage 2...');
+    var resp = await fetch(_runwayVideoUrl);
+    videoFile = await resp.blob();
+  }
+  if (!videoFile) throw new Error('Choose a stylized video or run Stage 2 first');
+
+  var sampling = document.getElementById('v2s-sampling').value;
+  var cp = _flyCamParams;
+
+  // Create video element
+  var video = document.createElement('video');
+  video.muted = true; video.playsInline = true;
+  var blobUrl = URL.createObjectURL(videoFile);
+  video.src = blobUrl;
+  await new Promise(function(resolve, reject) {
+    video.onloadedmetadata = resolve;
+    video.onerror = function() { reject(new Error('Failed to load video')); };
+  });
+  var vidDuration = video.duration;
+  if (!isFinite(vidDuration) || vidDuration <= 0) {
+    URL.revokeObjectURL(blobUrl);
+    throw new Error('Cannot read video duration');
+  }
+
+  // Determine poses to extract
+  var extractList = [];
+  if (sampling === 'match') {
+    for (var i = 0; i < _flyPoses.length; i++) {
+      var frac = i / Math.max(_flyPoses.length - 1, 1);
+      extractList.push({ poseIdx: i, time: frac * vidDuration, elements: _flyPoses[i].elements });
+    }
+  } else {
+    var targetFps = parseInt(sampling);
+    var interval = 1 / targetFps;
+    for (var t = 0; t < vidDuration; t += interval) {
+      var frac = t / vidDuration;
+      var poseIdx = Math.min(Math.round(frac * (_flyPoses.length - 1)), _flyPoses.length - 1);
+      extractList.push({ poseIdx: poseIdx, time: t, elements: _flyPoses[poseIdx].elements });
+    }
+  }
+
+  // Extract frames
+  var canvas = document.createElement('canvas');
+  canvas.width = cp.w; canvas.height = cp.h;
+  var ctx = canvas.getContext('2d');
+  var frames = [];
+
+  for (var i = 0; i < extractList.length; i++) {
+    if (i % 10 === 0) prog('Extracting frame ' + (i + 1) + ' / ' + extractList.length);
+    video.currentTime = Math.min(extractList[i].time, vidDuration - 0.01);
+    await new Promise(function(r) { video.onseeked = r; });
+    ctx.drawImage(video, 0, 0, cp.w, cp.h);
+    // Use JPEG for smaller upload size
+    var dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    var b64 = dataUrl.split(',')[1];
+    frames.push({ name: 'frame_' + String(i).padStart(5, '0') + '.jpg', b64: b64, elements: extractList[i].elements });
+    if (i % 4 === 0) await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  URL.revokeObjectURL(blobUrl);
+
+  var transforms = _buildTransformsJson(frames.map(function(f) { return { elements: f.elements }; }), cp.w, cp.h, cp.fov);
+  // Fix file paths to use .jpg
+  for (var i = 0; i < transforms.frames.length; i++) {
+    transforms.frames[i].file_path = 'images/' + frames[i].name;
+  }
+
+  return { frames: frames, transforms: transforms };
+}
+
+function useStylizedVideo() {
+  if (!_runwayVideoUrl) { toast('No stylized video available — run Stage 2 first'); return; }
+  var nameEl = document.getElementById('v2s-video-name');
+  nameEl.textContent = 'Stage 2 output';
+  // Clear file input so _buildTrainingFrames uses _runwayVideoUrl
+  var fileInput = document.getElementById('v2s-video-input');
+  if (fileInput) fileInput.value = '';
+  toast('Will use Stage 2 stylized video');
+}
+
+async function runpodTrain() {
+  var apiKey = document.getElementById('runpod-apikey').value.trim();
+  if (!apiKey) { toast('Enter a RunPod API key'); return; }
+  if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first'); return; }
+
+  var gpuType = document.getElementById('runpod-gpu').value;
+  var iterations = parseInt(document.getElementById('s-runpod-iters').value);
+  var btn = document.getElementById('btn-runpod-train');
+  var prog = document.getElementById('v2s-progress');
+  btn.disabled = true; btn.textContent = 'Starting...';
+  prog.style.display = 'block';
+
+  function updateProg(msg) { prog.textContent = msg; _runpodLog(msg); }
+
+  try {
+    // --- Phase 1: Extract frames from video ---
+    updateProg('Extracting frames from video...');
+    var data = await _buildTrainingFrames(function(m) { updateProg(m); });
+    updateProg('Extracted ' + data.frames.length + ' frames. Creating RunPod pod...');
+
+    // --- Phase 2: Create RunPod pod ---
+    var token = 'ad' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    _runpodState = { podId: null, token: token, apiKey: apiKey, phase: 'creating' };
+
+    var createRes = await _runpodApi('POST', '/pods', apiKey, {
+      name: 'accel-driv-3dgs-' + Date.now().toString(36).slice(-4),
+      imageName: 'runpod/pytorch:2.4.1-py3.11-cuda12.4.1-devel-ubuntu22.04',
+      gpuTypeIds: [gpuType],
+      gpuCount: 1,
+      cloudType: 'ALL',
+      containerDiskInGb: 50,
+      volumeInGb: 20,
+      volumeMountPath: '/workspace',
+      ports: '8888/http',
+      env: [
+        { key: 'JUPYTER_PASSWORD', value: token },
+        { key: 'JUPYTER_TOKEN', value: token }
+      ]
+    });
+    if (!createRes.ok) {
+      var errText = await createRes.text();
+      throw new Error('Failed to create pod (' + createRes.status + '): ' + errText);
+    }
+    var podData = await createRes.json();
+    var podId = podData.id;
+    if (!podId) throw new Error('No pod ID returned');
+    _runpodState.podId = podId;
+    _runpodState.phase = 'starting';
+    updateProg('Pod created: ' + podId + '. Waiting for GPU...');
+
+    // --- Phase 3: Wait for pod RUNNING ---
+    for (var attempt = 0; attempt < 120; attempt++) {
+      await pollSleep(5000);
+      var statusRes = await _runpodApi('GET', '/pods/' + podId, apiKey);
+      if (statusRes.ok) {
+        var statusData = await statusRes.json();
+        var ds = statusData.desiredStatus || statusData.status || '';
+        var runtime = statusData.runtime;
+        if (runtime && runtime.uptimeInSeconds > 0) break;
+        updateProg('Pod ' + podId + ': ' + ds + ' (waiting for GPU, ' + (attempt * 5) + 's)');
+      }
+      if (attempt >= 119) throw new Error('Pod failed to start after 10 minutes');
+    }
+    _runpodState.phase = 'jupyter-wait';
+    updateProg('Pod running. Waiting for JupyterLab...');
+
+    // --- Phase 4: Wait for JupyterLab ---
+    var jupyterReady = false;
+    for (var jAttempt = 0; jAttempt < 60; jAttempt++) {
+      await pollSleep(5000);
+      try {
+        var jRes = await _jupyterApi(podId, token, 'GET', '/api');
+        if (jRes.ok) { jupyterReady = true; break; }
+      } catch(e) { /* retry */ }
+      updateProg('Waiting for JupyterLab... (' + (jAttempt * 5) + 's)');
+    }
+    if (!jupyterReady) throw new Error('JupyterLab failed to start after 5 minutes');
+    _runpodState.phase = 'uploading';
+    updateProg('JupyterLab ready. Uploading training data...');
+
+    // --- Phase 5: Upload training data ---
+    await _jupyterMkdir(podId, token, 'data');
+    await _jupyterMkdir(podId, token, 'data/images');
+
+    // Upload transforms.json
+    await _jupyterPut(podId, token, 'data/transforms.json', JSON.stringify(data.transforms, null, 2));
+
+    // Upload frames in parallel batches of 8
+    var batchSize = 8;
+    for (var bi = 0; bi < data.frames.length; bi += batchSize) {
+      var batch = data.frames.slice(bi, bi + batchSize);
+      await Promise.all(batch.map(function(f) {
+        return _jupyterPut(podId, token, 'data/images/' + f.name, f.b64);
+      }));
+      var pct = Math.round(Math.min(bi + batchSize, data.frames.length) / data.frames.length * 100);
+      updateProg('Uploading frames... ' + pct + '% (' + Math.min(bi + batchSize, data.frames.length) + '/' + data.frames.length + ')');
+    }
+
+    // --- Phase 6: Upload and start training script ---
+    var trainScript = [
+      '#!/bin/bash',
+      'set -e',
+      'cd /workspace',
+      'echo "install" > /workspace/STATUS',
+      'pip install nerfstudio gsplat 2>&1 | tee install.log',
+      'echo "train" > /workspace/STATUS',
+      'ns-train splatfacto \\',
+      '  --data /workspace/data \\',
+      '  --max-num-iterations ' + iterations + ' \\',
+      '  --output-dir /workspace/ns-output \\',
+      '  --viewer.quit-on-train-completion True \\',
+      '  --pipeline.datamanager.dataparser nerfstudio-data \\',
+      '  2>&1 | tee train.log',
+      'echo "export" > /workspace/STATUS',
+      'CONFIG=$(find /workspace/ns-output -name "config.yml" -path "*/splatfacto/*" | head -1)',
+      'if [ -z "$CONFIG" ]; then echo "error: no config" > /workspace/STATUS; exit 1; fi',
+      'ns-export gaussian-splat \\',
+      '  --load-config "$CONFIG" \\',
+      '  --output-dir /workspace/export \\',
+      '  2>&1 | tee export.log',
+      'echo "done" > /workspace/STATUS',
+      'touch /workspace/DONE'
+    ].join('\n');
+    await _jupyterPut(podId, token, 'train.sh', trainScript);
+    updateProg('Starting nerfstudio training (' + iterations + ' iterations)...');
+
+    // Start training via kernel
+    _runpodState.phase = 'training';
+    var kernelRes = await _jupyterApi(podId, token, 'POST', '/api/kernels', { name: 'python3' });
+    if (!kernelRes.ok) throw new Error('Failed to create kernel: ' + kernelRes.status);
+    var kernelData = await kernelRes.json();
+    var kernelId = kernelData.id;
+
+    // Execute training via kernel WebSocket
+    var wsUrl = 'wss://' + podId + '-8888.proxy.runpod.net/api/kernels/' + kernelId + '/channels?token=' + token;
+    await new Promise(function(resolve, reject) {
+      var ws = new WebSocket(wsUrl);
+      var sent = false;
+      ws.onopen = function() {
+        var msgId = 'exec-' + Date.now();
+        ws.send(JSON.stringify({
+          header: { msg_id: msgId, msg_type: 'execute_request', username: '', session: msgId, version: '5.3' },
+          parent_header: {},
+          metadata: {},
+          content: { code: 'import subprocess; subprocess.Popen(["bash", "/workspace/train.sh"]); print("STARTED")', silent: false, store_history: false, user_expressions: {}, allow_stdin: false },
+          channel: 'shell'
+        }));
+        sent = true;
+      };
+      ws.onmessage = function(e) {
+        try {
+          var msg = JSON.parse(e.data);
+          if (msg.msg_type === 'stream' && msg.content && msg.content.text && msg.content.text.indexOf('STARTED') >= 0) {
+            ws.close(); resolve();
+          }
+          if (msg.msg_type === 'execute_reply') {
+            ws.close(); resolve();
+          }
+        } catch(ex) {}
+      };
+      ws.onerror = function(e) { if (!sent) reject(new Error('WebSocket failed — check RunPod pod status')); };
+      // Timeout: if WS doesn't respond in 30s, assume training started anyway
+      setTimeout(function() { try { ws.close(); } catch(ex) {} resolve(); }, 30000);
+    });
+
+    updateProg('Training started on GPU. This takes 15-45 min. Polling...');
+
+    // --- Phase 7: Poll for completion ---
+    var maxPolls = 360; // 60 min max (10s intervals)
+    for (var pi = 0; pi < maxPolls; pi++) {
+      await pollSleep(10000);
+      var done = await _jupyterFileExists(podId, token, 'DONE');
+      if (done) break;
+      var statusText = await _jupyterGetText(podId, token, 'STATUS');
+      var phase = statusText ? statusText.trim() : 'waiting';
+      var elapsed = Math.round((pi + 1) * 10 / 60);
+      updateProg('Training: ' + phase + ' (' + elapsed + ' min elapsed)');
+      if (phase.indexOf('error') >= 0) throw new Error('Training failed: ' + phase);
+      if (pi >= maxPolls - 1) throw new Error('Training timed out after 60 minutes');
+    }
+
+    _runpodState.phase = 'downloading';
+    updateProg('Training complete! Downloading PLY splat...');
+
+    // --- Phase 8: Download PLY ---
+    var plyBytes = await _jupyterDownloadBinary(podId, token, 'export/splat.ply');
+    updateProg('Downloaded PLY (' + (plyBytes.length / 1e6).toFixed(1) + ' MB). Loading into viewer...');
+
+    // --- Phase 9: Load into Spark.js ---
+    await ensureSparkLoaded();
+    if (_splatMesh) { scene.remove(_splatMesh); if (_splatMesh.dispose) _splatMesh.dispose(); _splatMesh = null; }
+    var Spark = window.Spark;
+    _splatMesh = new Spark.SplatMesh({
+      fileBytes: plyBytes,
+      onLoad: function(mesh) {
+        var numSplats = mesh.numSplats || 'unknown';
+        document.getElementById('splat-info').textContent = 'RunPod 3DGS: ' + numSplats + ' splats (' + (plyBytes.length / 1e6).toFixed(1) + ' MB)';
+        toast('Splat loaded (' + numSplats + ' splats)');
+        syncSplatSlidersToMesh();
+      }
+    });
+    scene.add(_splatMesh);
+
+    // --- Phase 10: Terminate pod ---
+    updateProg('Splat loaded! Terminating pod to save costs...');
+    await _runpodApi('DELETE', '/pods/' + podId, apiKey);
+    _runpodState.phase = 'done';
+    _runpodState.podId = null;
+    updateProg('Done! Pod terminated. Splat loaded in viewer.');
+    toast('RunPod training complete — splat loaded!');
+
+  } catch (err) {
+    updateProg('Error: ' + err.message);
+    toast('RunPod error: ' + err.message);
+    console.error('RunPod training error:', err);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Train on RunPod';
+  }
+}
+
+async function runpodCheckStatus() {
+  if (!_runpodState.podId || !_runpodState.apiKey) { toast('No active RunPod pod'); return; }
+  var prog = document.getElementById('v2s-progress');
+  prog.style.display = 'block';
+  try {
+    var res = await _runpodApi('GET', '/pods/' + _runpodState.podId, _runpodState.apiKey);
+    if (!res.ok) { prog.textContent = 'Pod status check failed: ' + res.status; return; }
+    var data = await res.json();
+    var status = data.desiredStatus || 'unknown';
+    var uptime = data.runtime && data.runtime.uptimeInSeconds ? Math.round(data.runtime.uptimeInSeconds / 60) + ' min' : 'N/A';
+    var gpu = data.runtime && data.runtime.gpus && data.runtime.gpus[0] ? data.runtime.gpus[0].gpuUtilPercent + '% GPU' : '';
+    _runpodLog('Pod: ' + _runpodState.podId + '\nStatus: ' + status + '\nUptime: ' + uptime + (gpu ? '\nGPU: ' + gpu : ''));
+    // Also check training status
+    if (_runpodState.token) {
+      var statusText = await _jupyterGetText(_runpodState.podId, _runpodState.token, 'STATUS');
+      if (statusText) _runpodLog('Pod: ' + _runpodState.podId + '\nStatus: ' + status + '\nUptime: ' + uptime + (gpu ? '\nGPU: ' + gpu : '') + '\nTraining: ' + statusText.trim());
+    }
+    prog.textContent = 'Pod ' + status + ', uptime ' + uptime;
+  } catch (err) {
+    prog.textContent = 'Status check error: ' + err.message;
+  }
+}
+
+async function runpodTerminate() {
+  if (!_runpodState.podId || !_runpodState.apiKey) { toast('No active RunPod pod'); return; }
+  var prog = document.getElementById('v2s-progress');
+  prog.style.display = 'block';
+  prog.textContent = 'Terminating pod ' + _runpodState.podId + '...';
+  try {
+    await _runpodApi('DELETE', '/pods/' + _runpodState.podId, _runpodState.apiKey);
+    _runpodLog('Pod ' + _runpodState.podId + ' terminated.');
+    prog.textContent = 'Pod terminated.';
+    _runpodState.podId = null;
+    _runpodState.phase = null;
+    toast('Pod terminated');
+  } catch (err) {
+    prog.textContent = 'Terminate error: ' + err.message;
+  }
+}
+
+// ============================================================
 // DRAWER (mobile)
 // ============================================================
 function setupDrawer(){}
@@ -4502,7 +4929,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,previewPanoCaptures,batchPanoMarble,loadPanoSection,exportPanoSections,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline,onProviderChange,onModelChange,runStylize,checkPendingOperation,clearAllPending,generateKiri,checkKiriStatus,clearKiriPending,exportFlythroughTraining,extractStylizedTraining});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,previewPanoCaptures,batchPanoMarble,loadPanoSection,exportPanoSections,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline,onProviderChange,onModelChange,runStylize,checkPendingOperation,clearAllPending,generateKiri,checkKiriStatus,clearKiriPending,exportFlythroughTraining,extractStylizedTraining,runpodTrain,runpodCheckStatus,runpodTerminate,useStylizedVideo});
 init();fitView();showMarblePending();showRunwayPending();showDecartPending();showKiriPending();onRunwayModelChange();
 </script>
 
