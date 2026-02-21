@@ -375,9 +375,10 @@
     </div>
     <div id="v2s-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px;line-height:1.6"></div>
     <div id="runpod-status" style="display:none;margin-top:6px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:10px;color:var(--text-dim);line-height:1.6;white-space:pre-wrap"></div>
-    <details id="sls-api-log-wrap" style="display:none;margin-top:6px">
-      <summary style="cursor:pointer;font-size:10px;color:var(--text-dim);user-select:none">API Response Log <span onclick="event.stopPropagation();document.getElementById('sls-api-log').textContent='';document.getElementById('sls-api-log-wrap').style.display='none'" style="margin-left:8px;color:var(--accent);cursor:pointer">[clear]</span></summary>
-      <div id="sls-api-log" style="margin-top:4px;padding:6px;background:#0d0d0d;border:1px solid var(--border);border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8f8;line-height:1.5;white-space:pre-wrap;max-height:300px;overflow-y:auto"></div>
+    <details id="sls-api-log-wrap" style="margin-top:6px">
+      <summary style="cursor:pointer;font-size:10px;color:var(--text-dim);user-select:none">API Response Log <span onclick="event.stopPropagation();document.getElementById('sls-api-log').textContent='';toast('Log cleared')" style="margin-left:8px;color:var(--accent);cursor:pointer">[clear]</span></summary>
+      <div id="sls-api-log" style="margin-top:4px;padding:6px;background:#0d0d0d;border:1px solid var(--border);border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8f8;line-height:1.5;white-space:pre-wrap;max-height:300px;overflow-y:auto">Waiting for API calls...
+</div>
     </details>
   </div>
 
@@ -4549,10 +4550,8 @@ function _runpodLog(msg) {
 }
 
 function _slsLogApi(label, data) {
-  var wrap = document.getElementById('sls-api-log-wrap');
   var el = document.getElementById('sls-api-log');
-  if (!wrap || !el) return;
-  wrap.style.display = '';
+  if (!el) return;
   var ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
   var body;
   if (typeof data === 'string') {
