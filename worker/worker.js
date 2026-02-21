@@ -20,6 +20,7 @@
 //   /decart/*  -> https://api.decart.ai/v1/*  (adds X-API-KEY)
 //   /kiri/*    -> https://api.kiriengine.app/api/*  (adds Authorization: Bearer)
 //   /runpod-sls/*  -> https://api.runpod.ai/v2/*  (adds Authorization: Bearer, serverless API)
+//   /runpod-gql    -> https://api.runpod.io/graphql  (adds Authorization: Bearer, template/endpoint mgmt)
 //   /fetch?url=<encoded>  -> generic CORS proxy (no auth added)
 //   /health    -> health check
 
@@ -59,6 +60,12 @@ const API_ROUTES = {
   },
   '/runpod-sls/': {
     target: 'https://api.runpod.ai/v2/',
+    authFn: function(env) {
+      return { 'Authorization': 'Bearer ' + env.RUNPOD_KEY };
+    }
+  },
+  '/runpod-gql': {
+    target: 'https://api.runpod.io/graphql',
     authFn: function(env) {
       return { 'Authorization': 'Bearer ' + env.RUNPOD_KEY };
     }

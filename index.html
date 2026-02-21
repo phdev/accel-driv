@@ -326,10 +326,7 @@
       </div>
       <!-- Serverless config -->
       <div id="runpod-serverless-cfg">
-        <div class="slider-group" style="margin-bottom:6px">
-          <div class="slider-label"><span>Endpoint ID</span></div>
-          <input type="text" id="runpod-endpoint-id" placeholder="e.g. abc123def456" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
-        </div>
+        <div id="sls-endpoint-info" style="font-size:10px;color:var(--text-dim);margin-bottom:6px;padding:4px 8px;background:var(--surface2);border-radius:4px;font-family:'JetBrains Mono',monospace">Endpoint: auto-created on first run</div>
         <div class="slider-group">
           <div class="slider-label"><span>Training iterations</span><span id="v-serverless-iters">7000</span></div>
           <input type="range" id="s-serverless-iters" min="1000" max="60000" value="7000" step="1000">
@@ -344,6 +341,7 @@
         <div class="btn-group" style="margin-top:4px">
           <button class="btn" onclick="serverlessCheckStatus()" style="font-size:10px">Check Status</button>
           <button class="btn btn-danger" onclick="serverlessCancel()" style="font-size:10px">Cancel Job</button>
+          <button class="btn" onclick="serverlessDeleteEndpoint()" style="font-size:10px" title="Delete cached serverless endpoint">Reset Endpoint</button>
           <button class="btn" onclick="extractStylizedTraining()" style="font-size:10px" id="btn-extract-stylized" title="Manual: download training ZIP">Export ZIP</button>
         </div>
       </div>
@@ -492,7 +490,7 @@ loop.textContent = gap < 50 ? 'Yes' : 'No (gap: ' + Math.round(gap) + ')';
 function init(){
 trackData=ET.map(function(p){return[[p[0],p[1],p[2]],[p[3],p[4],p[5]]]});
 origData=JSON.parse(JSON.stringify(trackData));
-setupThree();buildVis();updateStats();bindUI();setupDrawer();animate();
+setupThree();buildVis();updateStats();bindUI();setupDrawer();_slsUpdateEndpointInfo();animate();
 }
 
 function setupThree(){
@@ -1255,6 +1253,7 @@ var _DECART_PREFIX = 'https://api.decart.ai/v1/';
 var _KIRI_PREFIX = 'https://api.kiriengine.app/api/';
 var _RUNPOD_PREFIX = 'https://rest.runpod.io/v1/';
 var _RUNPOD_SLS_PREFIX = 'https://api.runpod.ai/v2/';
+var _RUNPOD_GQL_URL = 'https://api.runpod.io/graphql';
 async function proxiedFetch(url, opts) {
   opts = opts || {};
   if (_proxyUrl) {
@@ -1264,6 +1263,7 @@ async function proxiedFetch(url, opts) {
     else if (url.indexOf(_DECART_PREFIX) === 0) workerPath = '/decart/' + url.slice(_DECART_PREFIX.length);
     else if (url.indexOf(_KIRI_PREFIX) === 0) workerPath = '/kiri/' + url.slice(_KIRI_PREFIX.length);
     else if (url.indexOf(_RUNPOD_SLS_PREFIX) === 0) workerPath = '/runpod-sls/' + url.slice(_RUNPOD_SLS_PREFIX.length);
+    else if (url === _RUNPOD_GQL_URL) workerPath = '/runpod-gql';
     else if (url.indexOf(_RUNPOD_PREFIX) === 0) workerPath = '/runpod/' + url.slice(_RUNPOD_PREFIX.length);
     if (workerPath) {
       // Strip auth headers — Worker adds them server-side
@@ -5040,12 +5040,32 @@ async function runpodTerminate() {
 // ============================================================
 // RUNPOD SERVERLESS 3DGS TRAINING
 // ============================================================
-var _serverlessState = { endpointId: null, jobId: null, phase: null };
+var _serverlessState = { endpointId: null, templateId: null, jobId: null, phase: null };
+var _SLS_DOCKER_IMAGE = 'runpod/pytorch:2.4.1-py3.11-cuda12.4.1-devel-ubuntu22.04';
+var _SLS_STORAGE_KEY = 'runpod_sls_endpoint';
 
 function toggleRunpodMode() {
   var mode = document.getElementById('runpod-mode').value;
   document.getElementById('runpod-serverless-cfg').style.display = mode === 'serverless' ? '' : 'none';
   document.getElementById('runpod-pod-cfg').style.display = mode === 'pod' ? '' : 'none';
+}
+
+function _slsUpdateEndpointInfo() {
+  var el = document.getElementById('sls-endpoint-info');
+  if (!el) return;
+  var cached = localStorage.getItem(_SLS_STORAGE_KEY);
+  if (cached) {
+    try {
+      var d = JSON.parse(cached);
+      _serverlessState.endpointId = d.endpointId;
+      _serverlessState.templateId = d.templateId;
+      el.textContent = 'Endpoint: ' + d.endpointId + ' (ready)';
+      el.style.color = 'var(--accent)';
+    } catch(e) { el.textContent = 'Endpoint: auto-created on first run'; }
+  } else {
+    el.textContent = 'Endpoint: auto-created on first run';
+    el.style.color = 'var(--text-dim)';
+  }
 }
 
 async function _serverlessApi(method, path, body) {
@@ -5054,10 +5074,150 @@ async function _serverlessApi(method, path, body) {
   return proxiedFetch('https://api.runpod.ai/v2' + path, opts);
 }
 
-async function runpodServerlessTrain() {
-  var endpointId = document.getElementById('runpod-endpoint-id').value.trim();
-  if (!endpointId) { toast('Enter a RunPod Serverless Endpoint ID'); return; }
+async function _runpodGql(query, variables) {
+  var res = await proxiedFetch('https://api.runpod.io/graphql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: query, variables: variables || {} })
+  });
+  if (!res.ok) throw new Error('RunPod GraphQL error: ' + res.status);
+  var data = await res.json();
+  if (data.errors && data.errors.length) throw new Error('GQL: ' + data.errors[0].message);
+  return data.data;
+}
 
+// Handler script that runs inside the serverless worker container.
+// Receives frames + transforms via input, trains splatfacto, returns PLY as base64.
+function _slsHandlerScript() {
+  return [
+    'import runpod, os, json, base64, subprocess, glob, shutil',
+    '',
+    'def handler(event):',
+    '    inp = event["input"]',
+    '    iters = inp.get("iterations", 7000)',
+    '    transforms = inp.get("transforms", {})',
+    '    frames = inp.get("frames", [])',
+    '',
+    '    # Write training data to /workspace/data',
+    '    os.makedirs("/workspace/data/images", exist_ok=True)',
+    '    with open("/workspace/data/transforms.json", "w") as f:',
+    '        json.dump(transforms, f)',
+    '    for fr in frames:',
+    '        path = "/workspace/data/images/" + fr["name"]',
+    '        with open(path, "wb") as f:',
+    '            f.write(base64.b64decode(fr["b64"]))',
+    '',
+    '    # Install nerfstudio + gsplat (cached after first cold start)',
+    '    if not shutil.which("ns-train"):',
+    '        subprocess.run(["pip", "install", "nerfstudio", "gsplat"], check=True)',
+    '',
+    '    # Train splatfacto',
+    '    subprocess.run([',
+    '        "ns-train", "splatfacto",',
+    '        "--data", "/workspace/data",',
+    '        "--max-num-iterations", str(iters),',
+    '        "--output-dir", "/workspace/ns-output",',
+    '        "--viewer.quit-on-train-completion", "True",',
+    '        "--pipeline.datamanager.dataparser", "nerfstudio-data"',
+    '    ], check=True)',
+    '',
+    '    # Export gaussian splat',
+    '    configs = glob.glob("/workspace/ns-output/**/splatfacto/**/config.yml", recursive=True)',
+    '    if not configs:',
+    '        return {"error": "No config.yml found after training"}',
+    '    subprocess.run([',
+    '        "ns-export", "gaussian-splat",',
+    '        "--load-config", configs[0],',
+    '        "--output-dir", "/workspace/export"',
+    '    ], check=True)',
+    '',
+    '    # Read and return PLY as base64',
+    '    ply_path = "/workspace/export/splat.ply"',
+    '    if not os.path.exists(ply_path):',
+    '        plys = glob.glob("/workspace/export/**/*.ply", recursive=True)',
+    '        if plys: ply_path = plys[0]',
+    '        else: return {"error": "No PLY output found"}',
+    '    with open(ply_path, "rb") as f:',
+    '        ply_b64 = base64.b64encode(f.read()).decode()',
+    '    size_mb = os.path.getsize(ply_path) / 1e6',
+    '',
+    '    # Cleanup for next job',
+    '    shutil.rmtree("/workspace/data", ignore_errors=True)',
+    '    shutil.rmtree("/workspace/ns-output", ignore_errors=True)',
+    '    shutil.rmtree("/workspace/export", ignore_errors=True)',
+    '',
+    '    return {"ply_b64": ply_b64, "size_mb": round(size_mb, 1)}',
+    '',
+    'runpod.serverless.start({"handler": handler})'
+  ].join('\n');
+}
+
+// Auto-provision: create template + endpoint via GraphQL, cache in localStorage
+async function _slsEnsureEndpoint(prog) {
+  var cached = localStorage.getItem(_SLS_STORAGE_KEY);
+  if (cached) {
+    try {
+      var d = JSON.parse(cached);
+      if (d.endpointId) {
+        _serverlessState.endpointId = d.endpointId;
+        _serverlessState.templateId = d.templateId;
+        return d.endpointId;
+      }
+    } catch(e) {}
+  }
+
+  prog('Creating serverless template...');
+
+  // Encode handler as base64 for docker start command
+  var handlerPy = _slsHandlerScript();
+  var startCmd = 'pip install runpod && python -u /handler.py';
+
+  // Create template
+  var tmplData = await _runpodGql(
+    'mutation createTemplate($input: CreateTemplateInput!) { createTemplate(input: $input) { id name } }',
+    { input: {
+      name: 'accel-driv-3dgs-' + Date.now().toString(36).slice(-4),
+      imageName: _SLS_DOCKER_IMAGE,
+      isServerless: true,
+      containerDiskInGb: 40,
+      volumeInGb: 20,
+      volumeMountPath: '/workspace',
+      startJupyter: false,
+      startSsh: false,
+      dockerArgs: 'bash -c "echo \'' + handlerPy.replace(/'/g, "'\\''") + '\' > /handler.py && ' + startCmd + '"'
+    }}
+  );
+  var templateId = tmplData.createTemplate.id;
+  prog('Template created: ' + templateId + '. Creating endpoint...');
+
+  // Create serverless endpoint
+  var epData = await _runpodGql(
+    'mutation createEndpoint($input: CreateEndpointInput!) { createEndpoint(input: $input) { id name } }',
+    { input: {
+      name: 'accel-driv-3dgs',
+      templateId: templateId,
+      gpuIds: 'AMPERE_48',
+      workersMin: 0,
+      workersMax: 1,
+      idleTimeout: 5,
+      flashboot: true,
+      scalerType: 'QUEUE_DELAY',
+      scalerValue: 1
+    }}
+  );
+  var endpointId = epData.createEndpoint.id;
+
+  // Cache
+  var cacheObj = { endpointId: endpointId, templateId: templateId, created: Date.now() };
+  localStorage.setItem(_SLS_STORAGE_KEY, JSON.stringify(cacheObj));
+  _serverlessState.endpointId = endpointId;
+  _serverlessState.templateId = templateId;
+  _slsUpdateEndpointInfo();
+  prog('Endpoint ready: ' + endpointId);
+  return endpointId;
+}
+
+async function runpodServerlessTrain() {
   var hasVideo = (document.getElementById('v2s-video-input').files[0]) || _runwayVideoUrl;
   if (!hasVideo) { toast('Choose a stylized video or run Stage 2 first'); return; }
 
@@ -5071,6 +5231,9 @@ async function runpodServerlessTrain() {
   function updateProg(msg) { prog.textContent = msg; _runpodLog(msg); }
 
   try {
+    // --- Phase 0: Auto-provision endpoint ---
+    var endpointId = await _slsEnsureEndpoint(updateProg);
+
     // --- Phase 1: Ensure camera poses exist ---
     if (!_flyPoses.length || !_flyCamParams) {
       updateProg('Generating camera poses from track...');
@@ -5103,7 +5266,6 @@ async function runpodServerlessTrain() {
     updateProg('Extracted ' + data.frames.length + ' frames. Submitting serverless job...');
 
     // --- Phase 3: Build payload ---
-    // Pack frames as {name, b64} array + transforms JSON
     var payload = {
       input: {
         action: 'train_3dgs',
@@ -5114,7 +5276,7 @@ async function runpodServerlessTrain() {
     };
 
     // --- Phase 4: Submit to serverless endpoint ---
-    _serverlessState = { endpointId: endpointId, jobId: null, phase: 'submitting' };
+    _serverlessState.phase = 'submitting';
     var submitRes = await _serverlessApi('POST', '/' + endpointId + '/run', payload);
     if (!submitRes.ok) {
       var errText = await submitRes.text();
@@ -5150,12 +5312,10 @@ async function runpodServerlessTrain() {
 
         var plyBytes = null;
         if (output.ply_b64) {
-          // PLY returned inline as base64
           var raw = atob(output.ply_b64);
           plyBytes = new Uint8Array(raw.length);
           for (var bi = 0; bi < raw.length; bi++) plyBytes[bi] = raw.charCodeAt(bi);
         } else if (output.ply_url) {
-          // PLY returned as downloadable URL
           updateProg('Downloading PLY from ' + output.ply_url.substring(0, 60) + '...');
           var dlRes = await proxiedFetch(output.ply_url);
           if (!dlRes.ok) throw new Error('PLY download failed: ' + dlRes.status);
@@ -5203,7 +5363,6 @@ async function runpodServerlessTrain() {
         throw new Error('Job was cancelled');
 
       } else {
-        // IN_QUEUE or IN_PROGRESS
         _serverlessState.phase = jobStatus.toLowerCase();
         var detail = '';
         if (statusData.output && statusData.output.progress) detail = ' — ' + statusData.output.progress;
@@ -5223,7 +5382,7 @@ async function runpodServerlessTrain() {
 }
 
 async function serverlessCheckStatus() {
-  var endpointId = document.getElementById('runpod-endpoint-id').value.trim() || _serverlessState.endpointId;
+  var endpointId = _serverlessState.endpointId;
   var jobId = _serverlessState.jobId;
   if (!endpointId || !jobId) { toast('No active serverless job'); return; }
   var prog = document.getElementById('v2s-progress');
@@ -5241,7 +5400,7 @@ async function serverlessCheckStatus() {
 }
 
 async function serverlessCancel() {
-  var endpointId = document.getElementById('runpod-endpoint-id').value.trim() || _serverlessState.endpointId;
+  var endpointId = _serverlessState.endpointId;
   var jobId = _serverlessState.jobId;
   if (!endpointId || !jobId) { toast('No active serverless job'); return; }
   var prog = document.getElementById('v2s-progress');
@@ -5257,6 +5416,34 @@ async function serverlessCancel() {
   } catch (err) {
     prog.textContent = 'Cancel error: ' + err.message;
   }
+}
+
+async function serverlessDeleteEndpoint() {
+  var cached = localStorage.getItem(_SLS_STORAGE_KEY);
+  if (!cached) { toast('No cached endpoint'); return; }
+  var d;
+  try { d = JSON.parse(cached); } catch(e) { localStorage.removeItem(_SLS_STORAGE_KEY); _slsUpdateEndpointInfo(); toast('Cache cleared'); return; }
+  var prog = document.getElementById('v2s-progress');
+  prog.style.display = 'block';
+  prog.textContent = 'Deleting endpoint ' + d.endpointId + '...';
+  try {
+    // Delete endpoint
+    if (d.endpointId) {
+      await _runpodGql('mutation { deleteEndpoint(id: "' + d.endpointId + '") }');
+    }
+    // Delete template
+    if (d.templateId) {
+      await _runpodGql('mutation { deleteTemplate(templateName: "' + d.templateId + '") }');
+    }
+    prog.textContent = 'Endpoint deleted.';
+  } catch(err) {
+    prog.textContent = 'Cleanup: ' + err.message + ' (cache cleared)';
+  }
+  localStorage.removeItem(_SLS_STORAGE_KEY);
+  _serverlessState.endpointId = null;
+  _serverlessState.templateId = null;
+  _slsUpdateEndpointInfo();
+  toast('Endpoint reset');
 }
 
 // ============================================================
