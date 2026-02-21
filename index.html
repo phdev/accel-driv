@@ -4645,13 +4645,36 @@ async function _buildTrainingFrames(prog) {
 }
 
 function useStylizedVideo() {
-  if (!_runwayVideoUrl) { toast('No stylized video available — run Stage 2 first'); return; }
-  var nameEl = document.getElementById('v2s-video-name');
-  nameEl.textContent = 'Stage 2 output';
-  // Clear file input so _buildTrainingFrames uses _runwayVideoUrl
-  var fileInput = document.getElementById('v2s-video-input');
-  if (fileInput) fileInput.value = '';
-  toast('Will use Stage 2 stylized video');
+  if (_runwayVideoUrl) {
+    // Stage 2 output exists — use it directly
+    var nameEl = document.getElementById('v2s-video-name');
+    nameEl.textContent = 'Stage 2 output';
+    // Clear file input so _buildTrainingFrames uses _runwayVideoUrl
+    var fileInput = document.getElementById('v2s-video-input');
+    if (fileInput) fileInput.value = '';
+    toast('Will use Stage 2 stylized video');
+    return;
+  }
+  // No Stage 2 output — let user upload a stylized video file
+  var upload = document.createElement('input');
+  upload.type = 'file';
+  upload.accept = 'video/mp4,video/webm,.mp4,.webm';
+  upload.onchange = function() {
+    var file = upload.files && upload.files[0];
+    if (!file) return;
+    if (_runwayVideoUrl && _runwayVideoUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(_runwayVideoUrl);
+    }
+    _runwayVideoUrl = URL.createObjectURL(file);
+    var nameEl = document.getElementById('v2s-video-name');
+    var sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    nameEl.textContent = file.name + ' (' + sizeMB + ' MB)';
+    // Clear file input so _buildTrainingFrames uses _runwayVideoUrl
+    var fileInput = document.getElementById('v2s-video-input');
+    if (fileInput) fileInput.value = '';
+    toast('Stylized video loaded — ready for training');
+  };
+  upload.click();
 }
 
 async function runpodTrain() {
