@@ -317,29 +317,62 @@
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:6px">RunPod 3DGS Training</div>
-      <div class="slider-group" style="margin-bottom:6px;display:none" id="apikey-runpod-row">
-        <div class="slider-label"><span>RunPod API Key</span></div>
-        <input type="password" id="runpod-apikey" placeholder="rpa_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
-      </div>
-      <div class="slider-group">
-        <div class="slider-label"><span>GPU</span></div>
-        <select id="runpod-gpu" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-          <option value="NVIDIA GeForce RTX 4090" selected>RTX 4090 (24GB, ~$0.40/hr)</option>
-          <option value="NVIDIA GeForce RTX 3090">RTX 3090 (24GB, ~$0.25/hr)</option>
-          <option value="NVIDIA RTX A5000">RTX A5000 (24GB, ~$0.25/hr)</option>
+      <div class="slider-group" style="margin-bottom:6px">
+        <div class="slider-label"><span>Mode</span></div>
+        <select id="runpod-mode" onchange="toggleRunpodMode()" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="serverless" selected>Serverless (recommended)</option>
+          <option value="pod">Pod (manual)</option>
         </select>
       </div>
-      <div class="slider-group">
-        <div class="slider-label"><span>Training iterations</span><span id="v-runpod-iters">30000</span></div>
-        <input type="range" id="s-runpod-iters" min="7000" max="60000" value="30000" step="1000">
+      <!-- Serverless config -->
+      <div id="runpod-serverless-cfg">
+        <div class="slider-group" style="margin-bottom:6px">
+          <div class="slider-label"><span>Endpoint ID</span></div>
+          <input type="text" id="runpod-endpoint-id" placeholder="e.g. abc123def456" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+        </div>
+        <div class="slider-group">
+          <div class="slider-label"><span>Training iterations</span><span id="v-serverless-iters">7000</span></div>
+          <input type="range" id="s-serverless-iters" min="1000" max="60000" value="7000" step="1000">
+        </div>
+        <div class="slider-group">
+          <div class="slider-label"><span>Max frames</span><span id="v-serverless-maxframes">150</span></div>
+          <input type="range" id="s-serverless-maxframes" min="20" max="500" value="150" step="10">
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-accent" onclick="runpodServerlessTrain()" id="btn-serverless-train" style="width:100%">Train (Serverless)</button>
+        </div>
+        <div class="btn-group" style="margin-top:4px">
+          <button class="btn" onclick="serverlessCheckStatus()" style="font-size:10px">Check Status</button>
+          <button class="btn btn-danger" onclick="serverlessCancel()" style="font-size:10px">Cancel Job</button>
+          <button class="btn" onclick="extractStylizedTraining()" style="font-size:10px" id="btn-extract-stylized" title="Manual: download training ZIP">Export ZIP</button>
+        </div>
       </div>
-      <div class="btn-group">
-        <button class="btn btn-accent" onclick="runpodTrain()" id="btn-runpod-train" style="width:100%">Train on RunPod</button>
-      </div>
-      <div class="btn-group" style="margin-top:4px">
-        <button class="btn" onclick="runpodCheckStatus()" style="font-size:10px">Check Status</button>
-        <button class="btn btn-danger" onclick="runpodTerminate()" style="font-size:10px">Terminate Pod</button>
-        <button class="btn" onclick="extractStylizedTraining()" style="font-size:10px" id="btn-extract-stylized" title="Manual: download training ZIP">Export ZIP</button>
+      <!-- Pod config (hidden by default) -->
+      <div id="runpod-pod-cfg" style="display:none">
+        <div class="slider-group" style="margin-bottom:6px;display:none" id="apikey-runpod-row">
+          <div class="slider-label"><span>RunPod API Key</span></div>
+          <input type="password" id="runpod-apikey" placeholder="rpa_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+        </div>
+        <div class="slider-group">
+          <div class="slider-label"><span>GPU</span></div>
+          <select id="runpod-gpu" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+            <option value="NVIDIA GeForce RTX 4090" selected>RTX 4090 (24GB, ~$0.40/hr)</option>
+            <option value="NVIDIA GeForce RTX 3090">RTX 3090 (24GB, ~$0.25/hr)</option>
+            <option value="NVIDIA RTX A5000">RTX A5000 (24GB, ~$0.25/hr)</option>
+          </select>
+        </div>
+        <div class="slider-group">
+          <div class="slider-label"><span>Training iterations</span><span id="v-runpod-iters">30000</span></div>
+          <input type="range" id="s-runpod-iters" min="7000" max="60000" value="30000" step="1000">
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-accent" onclick="runpodTrain()" id="btn-runpod-train" style="width:100%">Train on RunPod</button>
+        </div>
+        <div class="btn-group" style="margin-top:4px">
+          <button class="btn" onclick="runpodCheckStatus()" style="font-size:10px">Check Status</button>
+          <button class="btn btn-danger" onclick="runpodTerminate()" style="font-size:10px">Terminate Pod</button>
+          <button class="btn" onclick="extractStylizedTraining()" style="font-size:10px" title="Manual: download training ZIP">Export ZIP</button>
+        </div>
       </div>
     </div>
     <div id="v2s-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px;line-height:1.6"></div>
@@ -1221,6 +1254,7 @@ var _MARBLE_PREFIX = 'https://api.worldlabs.ai/marble/v1/';
 var _DECART_PREFIX = 'https://api.decart.ai/v1/';
 var _KIRI_PREFIX = 'https://api.kiriengine.app/api/';
 var _RUNPOD_PREFIX = 'https://rest.runpod.io/v1/';
+var _RUNPOD_SLS_PREFIX = 'https://api.runpod.ai/v2/';
 async function proxiedFetch(url, opts) {
   opts = opts || {};
   if (_proxyUrl) {
@@ -1229,6 +1263,7 @@ async function proxiedFetch(url, opts) {
     else if (url.indexOf(_MARBLE_PREFIX) === 0) workerPath = '/marble/' + url.slice(_MARBLE_PREFIX.length);
     else if (url.indexOf(_DECART_PREFIX) === 0) workerPath = '/decart/' + url.slice(_DECART_PREFIX.length);
     else if (url.indexOf(_KIRI_PREFIX) === 0) workerPath = '/kiri/' + url.slice(_KIRI_PREFIX.length);
+    else if (url.indexOf(_RUNPOD_SLS_PREFIX) === 0) workerPath = '/runpod-sls/' + url.slice(_RUNPOD_SLS_PREFIX.length);
     else if (url.indexOf(_RUNPOD_PREFIX) === 0) workerPath = '/runpod/' + url.slice(_RUNPOD_PREFIX.length);
     if (workerPath) {
       // Strip auth headers — Worker adds them server-side
@@ -4999,6 +5034,228 @@ async function runpodTerminate() {
     toast('Pod terminated');
   } catch (err) {
     prog.textContent = 'Terminate error: ' + err.message;
+  }
+}
+
+// ============================================================
+// RUNPOD SERVERLESS 3DGS TRAINING
+// ============================================================
+var _serverlessState = { endpointId: null, jobId: null, phase: null };
+
+function toggleRunpodMode() {
+  var mode = document.getElementById('runpod-mode').value;
+  document.getElementById('runpod-serverless-cfg').style.display = mode === 'serverless' ? '' : 'none';
+  document.getElementById('runpod-pod-cfg').style.display = mode === 'pod' ? '' : 'none';
+}
+
+async function _serverlessApi(method, path, body) {
+  var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  return proxiedFetch('https://api.runpod.ai/v2' + path, opts);
+}
+
+async function runpodServerlessTrain() {
+  var endpointId = document.getElementById('runpod-endpoint-id').value.trim();
+  if (!endpointId) { toast('Enter a RunPod Serverless Endpoint ID'); return; }
+
+  var hasVideo = (document.getElementById('v2s-video-input').files[0]) || _runwayVideoUrl;
+  if (!hasVideo) { toast('Choose a stylized video or run Stage 2 first'); return; }
+
+  var iterations = parseInt(document.getElementById('s-serverless-iters').value);
+  var maxFrames = parseInt(document.getElementById('s-serverless-maxframes').value);
+  var btn = document.getElementById('btn-serverless-train');
+  var prog = document.getElementById('v2s-progress');
+  btn.disabled = true; btn.textContent = 'Starting...';
+  prog.style.display = 'block';
+
+  function updateProg(msg) { prog.textContent = msg; _runpodLog(msg); }
+
+  try {
+    // --- Phase 1: Ensure camera poses exist ---
+    if (!_flyPoses.length || !_flyCamParams) {
+      updateProg('Generating camera poses from track...');
+      _generatePosesFromTrack();
+    }
+    updateProg('Generated ' + _flyPoses.length + ' poses. Extracting frames...');
+
+    // --- Phase 2: Extract frames from video ---
+    var data = await _buildTrainingFrames(function(m) { updateProg(m); });
+
+    // Subsample if over maxFrames
+    if (data.frames.length > maxFrames) {
+      updateProg('Subsampling ' + data.frames.length + ' frames to ' + maxFrames + '...');
+      var step = data.frames.length / maxFrames;
+      var sampled = [];
+      for (var si = 0; si < maxFrames; si++) {
+        sampled.push(data.frames[Math.round(si * step)]);
+      }
+      data.frames = sampled;
+      // Rebuild transforms for subsampled frames
+      data.transforms = _buildTransformsJson(
+        data.frames.map(function(f) { return { elements: f.elements }; }),
+        _flyCamParams.w, _flyCamParams.h, _flyCamParams.fov
+      );
+      for (var fi = 0; fi < data.transforms.frames.length; fi++) {
+        data.transforms.frames[fi].file_path = 'images/' + data.frames[fi].name;
+      }
+    }
+
+    updateProg('Extracted ' + data.frames.length + ' frames. Submitting serverless job...');
+
+    // --- Phase 3: Build payload ---
+    // Pack frames as {name, b64} array + transforms JSON
+    var payload = {
+      input: {
+        action: 'train_3dgs',
+        iterations: iterations,
+        transforms: data.transforms,
+        frames: data.frames.map(function(f) { return { name: f.name, b64: f.b64 }; })
+      }
+    };
+
+    // --- Phase 4: Submit to serverless endpoint ---
+    _serverlessState = { endpointId: endpointId, jobId: null, phase: 'submitting' };
+    var submitRes = await _serverlessApi('POST', '/' + endpointId + '/run', payload);
+    if (!submitRes.ok) {
+      var errText = await submitRes.text();
+      throw new Error('Submit failed (' + submitRes.status + '): ' + errText);
+    }
+    var submitData = await submitRes.json();
+    var jobId = submitData.id;
+    if (!jobId) throw new Error('No job ID returned');
+    _serverlessState.jobId = jobId;
+    _serverlessState.phase = 'queued';
+    updateProg('Job submitted: ' + jobId + '. Waiting for worker...');
+
+    // --- Phase 5: Poll for completion ---
+    var maxPolls = 720; // 60 min at 5s intervals
+    for (var pi = 0; pi < maxPolls; pi++) {
+      await pollSleep(5000);
+      var statusRes = await _serverlessApi('GET', '/' + endpointId + '/status/' + jobId);
+      if (!statusRes.ok) {
+        updateProg('Status poll failed (' + statusRes.status + '), retrying...');
+        continue;
+      }
+      var statusData = await statusRes.json();
+      var jobStatus = statusData.status;
+      var elapsed = Math.round((pi + 1) * 5 / 60);
+
+      if (jobStatus === 'COMPLETED') {
+        _serverlessState.phase = 'completed';
+        updateProg('Job completed! Processing result...');
+
+        // --- Phase 6: Extract result ---
+        var output = statusData.output;
+        if (!output) throw new Error('Job completed but no output returned');
+
+        var plyBytes = null;
+        if (output.ply_b64) {
+          // PLY returned inline as base64
+          var raw = atob(output.ply_b64);
+          plyBytes = new Uint8Array(raw.length);
+          for (var bi = 0; bi < raw.length; bi++) plyBytes[bi] = raw.charCodeAt(bi);
+        } else if (output.ply_url) {
+          // PLY returned as downloadable URL
+          updateProg('Downloading PLY from ' + output.ply_url.substring(0, 60) + '...');
+          var dlRes = await proxiedFetch(output.ply_url);
+          if (!dlRes.ok) throw new Error('PLY download failed: ' + dlRes.status);
+          plyBytes = new Uint8Array(await dlRes.arrayBuffer());
+        } else if (output.splat_b64) {
+          var raw = atob(output.splat_b64);
+          plyBytes = new Uint8Array(raw.length);
+          for (var bi = 0; bi < raw.length; bi++) plyBytes[bi] = raw.charCodeAt(bi);
+        } else if (output.splat_url) {
+          updateProg('Downloading splat from ' + output.splat_url.substring(0, 60) + '...');
+          var dlRes = await proxiedFetch(output.splat_url);
+          if (!dlRes.ok) throw new Error('Splat download failed: ' + dlRes.status);
+          plyBytes = new Uint8Array(await dlRes.arrayBuffer());
+        } else {
+          throw new Error('No PLY or splat in job output. Keys: ' + Object.keys(output).join(', '));
+        }
+
+        updateProg('Downloaded splat (' + (plyBytes.length / 1e6).toFixed(1) + ' MB). Loading into viewer...');
+
+        // --- Phase 7: Load into Spark.js ---
+        await ensureSparkLoaded();
+        if (_splatMesh) { scene.remove(_splatMesh); if (_splatMesh.dispose) _splatMesh.dispose(); _splatMesh = null; }
+        var Spark = window.Spark;
+        _splatMesh = new Spark.SplatMesh({
+          fileBytes: plyBytes,
+          onLoad: function(mesh) {
+            var numSplats = mesh.numSplats || 'unknown';
+            document.getElementById('splat-info').textContent = 'Serverless 3DGS: ' + numSplats + ' splats (' + (plyBytes.length / 1e6).toFixed(1) + ' MB)';
+            toast('Splat loaded (' + numSplats + ' splats)');
+            syncSplatSlidersToMesh();
+          }
+        });
+        scene.add(_splatMesh);
+
+        _serverlessState.phase = 'done';
+        updateProg('Done! Splat loaded in viewer. Job: ' + jobId);
+        toast('Serverless training complete — splat loaded!');
+        break;
+
+      } else if (jobStatus === 'FAILED') {
+        var errMsg = statusData.error || 'Unknown error';
+        throw new Error('Job failed: ' + errMsg);
+
+      } else if (jobStatus === 'CANCELLED') {
+        throw new Error('Job was cancelled');
+
+      } else {
+        // IN_QUEUE or IN_PROGRESS
+        _serverlessState.phase = jobStatus.toLowerCase();
+        var detail = '';
+        if (statusData.output && statusData.output.progress) detail = ' — ' + statusData.output.progress;
+        updateProg('Job ' + jobStatus + detail + ' (' + elapsed + ' min)');
+      }
+
+      if (pi >= maxPolls - 1) throw new Error('Job timed out after 60 minutes');
+    }
+
+  } catch (err) {
+    updateProg('Error: ' + err.message);
+    toast('Serverless error: ' + err.message);
+    console.error('Serverless training error:', err);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Train (Serverless)';
+  }
+}
+
+async function serverlessCheckStatus() {
+  var endpointId = document.getElementById('runpod-endpoint-id').value.trim() || _serverlessState.endpointId;
+  var jobId = _serverlessState.jobId;
+  if (!endpointId || !jobId) { toast('No active serverless job'); return; }
+  var prog = document.getElementById('v2s-progress');
+  prog.style.display = 'block';
+  try {
+    var res = await _serverlessApi('GET', '/' + endpointId + '/status/' + jobId);
+    if (!res.ok) { prog.textContent = 'Status check failed: ' + res.status; return; }
+    var data = await res.json();
+    var detail = data.output && data.output.progress ? '\nProgress: ' + data.output.progress : '';
+    _runpodLog('Job: ' + jobId + '\nStatus: ' + data.status + detail);
+    prog.textContent = 'Job ' + data.status + detail;
+  } catch (err) {
+    prog.textContent = 'Status error: ' + err.message;
+  }
+}
+
+async function serverlessCancel() {
+  var endpointId = document.getElementById('runpod-endpoint-id').value.trim() || _serverlessState.endpointId;
+  var jobId = _serverlessState.jobId;
+  if (!endpointId || !jobId) { toast('No active serverless job'); return; }
+  var prog = document.getElementById('v2s-progress');
+  prog.style.display = 'block';
+  prog.textContent = 'Cancelling job ' + jobId + '...';
+  try {
+    await _serverlessApi('POST', '/' + endpointId + '/cancel/' + jobId);
+    _runpodLog('Job ' + jobId + ' cancelled.');
+    prog.textContent = 'Job cancelled.';
+    _serverlessState.jobId = null;
+    _serverlessState.phase = null;
+    toast('Job cancelled');
+  } catch (err) {
+    prog.textContent = 'Cancel error: ' + err.message;
   }
 }
 

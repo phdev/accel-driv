@@ -19,6 +19,7 @@
 //   /marble/*  -> https://api.worldlabs.ai/marble/v1/*  (adds WLT-Api-Key)
 //   /decart/*  -> https://api.decart.ai/v1/*  (adds X-API-KEY)
 //   /kiri/*    -> https://api.kiriengine.app/api/*  (adds Authorization: Bearer)
+//   /runpod-sls/*  -> https://api.runpod.ai/v2/*  (adds Authorization: Bearer, serverless API)
 //   /fetch?url=<encoded>  -> generic CORS proxy (no auth added)
 //   /health    -> health check
 
@@ -52,6 +53,12 @@ const API_ROUTES = {
   },
   '/runpod/': {
     target: 'https://rest.runpod.io/v1/',
+    authFn: function(env) {
+      return { 'Authorization': 'Bearer ' + env.RUNPOD_KEY };
+    }
+  },
+  '/runpod-sls/': {
+    target: 'https://api.runpod.ai/v2/',
     authFn: function(env) {
       return { 'Authorization': 'Bearer ' + env.RUNPOD_KEY };
     }
