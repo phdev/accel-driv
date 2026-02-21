@@ -375,6 +375,10 @@
     </div>
     <div id="v2s-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px;line-height:1.6"></div>
     <div id="runpod-status" style="display:none;margin-top:6px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:10px;color:var(--text-dim);line-height:1.6;white-space:pre-wrap"></div>
+    <details id="sls-api-log-wrap" style="display:none;margin-top:6px">
+      <summary style="cursor:pointer;font-size:10px;color:var(--text-dim);user-select:none">API Response Log <span onclick="event.stopPropagation();document.getElementById('sls-api-log').textContent='';document.getElementById('sls-api-log-wrap').style.display='none'" style="margin-left:8px;color:var(--accent);cursor:pointer">[clear]</span></summary>
+      <div id="sls-api-log" style="margin-top:4px;padding:6px;background:#0d0d0d;border:1px solid var(--border);border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8f8;line-height:1.5;white-space:pre-wrap;max-height:300px;overflow-y:auto"></div>
+    </details>
   </div>
 
   <div class="panel"><div class="panel-title">3. Convert Splats</div>
@@ -4544,6 +4548,28 @@ function _runpodLog(msg) {
   if (el) { el.style.display = ''; el.textContent = msg; }
 }
 
+function _slsLogApi(label, data) {
+  var wrap = document.getElementById('sls-api-log-wrap');
+  var el = document.getElementById('sls-api-log');
+  if (!wrap || !el) return;
+  wrap.style.display = '';
+  var ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  var body;
+  if (typeof data === 'string') {
+    body = data;
+  } else {
+    // Truncate large base64 fields for readability
+    body = JSON.stringify(data, function(k, v) {
+      if (typeof v === 'string' && v.length > 200 && /^[A-Za-z0-9+/=\s]+$/.test(v.slice(0, 100))) {
+        return v.slice(0, 80) + '...[' + (v.length / 1024).toFixed(0) + ' KB]';
+      }
+      return v;
+    }, 2);
+  }
+  el.textContent += '[' + ts + '] ' + label + '\n' + body + '\n\n';
+  el.scrollTop = el.scrollHeight;
+}
+
 async function _runpodApi(method, path, body) {
   var opts = {
     method: method,
@@ -5075,13 +5101,18 @@ async function _serverlessApi(method, path, body) {
 }
 
 async function _runpodGql(query, variables) {
+  var reqBody = { query: query, variables: variables || {} };
+  _slsLogApi('GQL REQUEST', { query: query.replace(/\s+/g, ' ').trim(), variables: variables });
   var res = await proxiedFetch('https://api.runpod.io/graphql', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: query, variables: variables || {} })
+    body: JSON.stringify(reqBody)
   });
+  var text = await res.text();
+  var data;
+  try { data = JSON.parse(text); } catch(e) { _slsLogApi('GQL RESPONSE ' + res.status, text); throw new Error('RunPod GraphQL error: ' + res.status + ' — ' + text.slice(0, 200)); }
+  _slsLogApi('GQL RESPONSE ' + res.status, data);
   if (!res.ok) throw new Error('RunPod GraphQL error: ' + res.status);
-  var data = await res.json();
   if (data.errors && data.errors.length) throw new Error('GQL: ' + data.errors[0].message);
   return data.data;
 }
@@ -5161,6 +5192,7 @@ async function _slsEnsureEndpoint(prog) {
       if (d.endpointId) {
         _serverlessState.endpointId = d.endpointId;
         _serverlessState.templateId = d.templateId;
+        _slsLogApi('ENDPOINT (cached)', d);
         return d.endpointId;
       }
     } catch(e) {}
@@ -5277,14 +5309,17 @@ async function runpodServerlessTrain() {
 
     // --- Phase 4: Submit to serverless endpoint ---
     _serverlessState.phase = 'submitting';
+    _slsLogApi('SUBMIT POST /' + endpointId + '/run', { frames: data.frames.length + ' frames', iterations: iterations });
     var submitRes = await _serverlessApi('POST', '/' + endpointId + '/run', payload);
+    var submitText = await submitRes.text();
+    var submitData;
+    try { submitData = JSON.parse(submitText); } catch(e) { submitData = submitText; }
+    _slsLogApi('SUBMIT RESPONSE ' + submitRes.status, submitData);
     if (!submitRes.ok) {
-      var errText = await submitRes.text();
-      throw new Error('Submit failed (' + submitRes.status + '): ' + errText);
+      throw new Error('Submit failed (' + submitRes.status + '): ' + (typeof submitData === 'string' ? submitData : JSON.stringify(submitData)).slice(0, 300));
     }
-    var submitData = await submitRes.json();
     var jobId = submitData.id;
-    if (!jobId) throw new Error('No job ID returned');
+    if (!jobId) throw new Error('No job ID returned. Response: ' + JSON.stringify(submitData).slice(0, 300));
     _serverlessState.jobId = jobId;
     _serverlessState.phase = 'queued';
     updateProg('Job submitted: ' + jobId + '. Waiting for worker...');
@@ -5294,21 +5329,35 @@ async function runpodServerlessTrain() {
     for (var pi = 0; pi < maxPolls; pi++) {
       await pollSleep(5000);
       var statusRes = await _serverlessApi('GET', '/' + endpointId + '/status/' + jobId);
+      var statusText = await statusRes.text();
+      var statusData;
+      try { statusData = JSON.parse(statusText); } catch(e) { statusData = null; }
+      // Log every poll (but only full detail every 6th poll or on state change)
+      if (statusData) {
+        var prevPhase = _serverlessState.phase;
+        var curStatus = statusData.status || '';
+        if (pi % 6 === 0 || curStatus !== prevPhase.toUpperCase()) {
+          _slsLogApi('STATUS ' + statusRes.status + ' (poll #' + (pi + 1) + ')', statusData);
+        }
+      } else {
+        _slsLogApi('STATUS ' + statusRes.status + ' (poll #' + (pi + 1) + ')', statusText);
+      }
       if (!statusRes.ok) {
         updateProg('Status poll failed (' + statusRes.status + '), retrying...');
         continue;
       }
-      var statusData = await statusRes.json();
+      if (!statusData) { updateProg('Invalid JSON from status poll, retrying...'); continue; }
       var jobStatus = statusData.status;
       var elapsed = Math.round((pi + 1) * 5 / 60);
 
       if (jobStatus === 'COMPLETED') {
         _serverlessState.phase = 'completed';
+        _slsLogApi('JOB COMPLETED', statusData);
         updateProg('Job completed! Processing result...');
 
         // --- Phase 6: Extract result ---
         var output = statusData.output;
-        if (!output) throw new Error('Job completed but no output returned');
+        if (!output) throw new Error('Job completed but no output returned. Full response: ' + JSON.stringify(statusData).slice(0, 500));
 
         var plyBytes = null;
         if (output.ply_b64) {
@@ -5356,16 +5405,20 @@ async function runpodServerlessTrain() {
         break;
 
       } else if (jobStatus === 'FAILED') {
-        var errMsg = statusData.error || 'Unknown error';
+        _slsLogApi('JOB FAILED', statusData);
+        var errMsg = statusData.error || (statusData.output && statusData.output.error) || JSON.stringify(statusData).slice(0, 500);
         throw new Error('Job failed: ' + errMsg);
 
       } else if (jobStatus === 'CANCELLED') {
+        _slsLogApi('JOB CANCELLED', statusData);
         throw new Error('Job was cancelled');
 
       } else {
         _serverlessState.phase = jobStatus.toLowerCase();
         var detail = '';
         if (statusData.output && statusData.output.progress) detail = ' — ' + statusData.output.progress;
+        if (statusData.executionTime) detail += ' (exec: ' + Math.round(statusData.executionTime / 1000) + 's)';
+        if (statusData.delayTime) detail += ' (queue: ' + Math.round(statusData.delayTime / 1000) + 's)';
         updateProg('Job ' + jobStatus + detail + ' (' + elapsed + ' min)');
       }
 
@@ -5389,11 +5442,26 @@ async function serverlessCheckStatus() {
   prog.style.display = 'block';
   try {
     var res = await _serverlessApi('GET', '/' + endpointId + '/status/' + jobId);
+    var text = await res.text();
+    var data;
+    try { data = JSON.parse(text); } catch(e) { data = null; }
+    _slsLogApi('CHECK STATUS ' + res.status, data || text);
     if (!res.ok) { prog.textContent = 'Status check failed: ' + res.status; return; }
-    var data = await res.json();
-    var detail = data.output && data.output.progress ? '\nProgress: ' + data.output.progress : '';
-    _runpodLog('Job: ' + jobId + '\nStatus: ' + data.status + detail);
-    prog.textContent = 'Job ' + data.status + detail;
+    if (!data) { prog.textContent = 'Invalid response'; return; }
+    var lines = ['Job: ' + jobId, 'Status: ' + data.status];
+    if (data.delayTime != null) lines.push('Queue time: ' + (data.delayTime / 1000).toFixed(1) + 's');
+    if (data.executionTime != null) lines.push('Exec time: ' + (data.executionTime / 1000).toFixed(1) + 's');
+    if (data.workerId) lines.push('Worker: ' + data.workerId);
+    if (data.output) {
+      var outKeys = Object.keys(data.output);
+      if (data.output.progress) lines.push('Progress: ' + data.output.progress);
+      if (data.output.error) lines.push('Error: ' + data.output.error);
+      if (data.output.size_mb) lines.push('Output: ' + data.output.size_mb + ' MB');
+      lines.push('Output keys: ' + outKeys.join(', '));
+    }
+    if (data.error) lines.push('Error: ' + data.error);
+    _runpodLog(lines.join('\n'));
+    prog.textContent = 'Job ' + data.status + (data.output && data.output.progress ? ' — ' + data.output.progress : '');
   } catch (err) {
     prog.textContent = 'Status error: ' + err.message;
   }
@@ -5407,7 +5475,10 @@ async function serverlessCancel() {
   prog.style.display = 'block';
   prog.textContent = 'Cancelling job ' + jobId + '...';
   try {
-    await _serverlessApi('POST', '/' + endpointId + '/cancel/' + jobId);
+    var res = await _serverlessApi('POST', '/' + endpointId + '/cancel/' + jobId);
+    var text = await res.text();
+    var data; try { data = JSON.parse(text); } catch(e) { data = text; }
+    _slsLogApi('CANCEL ' + res.status, data);
     _runpodLog('Job ' + jobId + ' cancelled.');
     prog.textContent = 'Job cancelled.';
     _serverlessState.jobId = null;
