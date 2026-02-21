@@ -5249,19 +5249,25 @@ async function _slsEnsureEndpoint(prog) {
 }
 
 async function runpodServerlessTrain() {
+  var btn = document.getElementById('btn-serverless-train');
+  var prog = document.getElementById('v2s-progress');
+
+  function updateProg(msg) { prog.style.display = 'block'; prog.textContent = msg; _runpodLog(msg); _slsLogApi('PROGRESS', msg); }
+
   var hasVideo = (document.getElementById('v2s-video-input').files[0]) || _runwayVideoUrl;
-  if (!hasVideo) { toast('Choose a stylized video or run Stage 2 first'); return; }
+  if (!hasVideo) {
+    updateProg('No video selected — choose a stylized video or run Stage 2 first');
+    toast('Choose a stylized video or run Stage 2 first');
+    return;
+  }
 
   var iterations = parseInt(document.getElementById('s-serverless-iters').value);
   var maxFrames = parseInt(document.getElementById('s-serverless-maxframes').value);
-  var btn = document.getElementById('btn-serverless-train');
-  var prog = document.getElementById('v2s-progress');
   btn.disabled = true; btn.textContent = 'Starting...';
-  prog.style.display = 'block';
-
-  function updateProg(msg) { prog.textContent = msg; _runpodLog(msg); }
 
   try {
+    updateProg('Starting serverless training (' + iterations + ' iters, max ' + maxFrames + ' frames)...');
+
     // --- Phase 0: Auto-provision endpoint ---
     var endpointId = await _slsEnsureEndpoint(updateProg);
 
@@ -5425,6 +5431,7 @@ async function runpodServerlessTrain() {
     }
 
   } catch (err) {
+    _slsLogApi('ERROR', { message: err.message, stack: err.stack });
     updateProg('Error: ' + err.message);
     toast('Serverless error: ' + err.message);
     console.error('Serverless training error:', err);
