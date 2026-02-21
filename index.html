@@ -4318,7 +4318,9 @@ function _buildTransformsJson(poses, w, h, fov) {
 }
 
 async function exportFlythroughTraining() {
-  if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first'); return; }
+  if (!_flyPoses.length || !_flyCamParams) {
+    try { _generatePosesFromTrack(); } catch(e) { toast(e.message); return; }
+  }
   var stepEl = document.getElementById('s-flystep');
   var step = stepEl ? parseInt(stepEl.value) || 1 : 1;
   var btn = document.getElementById('btn-export-fly-train');
@@ -4391,7 +4393,9 @@ async function exportFlythroughTraining() {
 }
 
 async function extractStylizedTraining() {
-  if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first to capture camera poses'); return; }
+  if (!_flyPoses.length || !_flyCamParams) {
+    try { _generatePosesFromTrack(); } catch(e) { toast(e.message); return; }
+  }
   var fileInput = document.getElementById('v2s-video-input');
   if (!fileInput.files[0]) { toast('Choose a stylized video first'); return; }
   var videoFile = fileInput.files[0];
@@ -4564,23 +4568,73 @@ function _arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
+// Auto-generate camera poses from the track spline (same math as recordFlythrough)
+// This populates _flyPoses and _flyCamParams without rendering or recording a video.
+function _generatePosesFromTrack() {
+  if (trackData.length < 20) throw new Error('Load a track first');
+
+  var duration = parseInt(document.getElementById('s-flydur').value) || 10;
+  var resVal = document.getElementById('fly-res') ? document.getElementById('fly-res').value : '720';
+  var camH = parseFloat(document.getElementById('s-flyht').value) || 20;
+  var w = resVal === '1080' ? 1920 : 1280;
+  var h = resVal === '1080' ? 1080 : 720;
+  var fps = 30;
+  var totalFrames = duration * fps;
+
+  // Build CatmullRomCurve3 from track data (same as recordFlythrough)
+  var pts = [];
+  var step = Math.max(1, Math.floor(trackData.length / 500));
+  for (var i = 0; i < trackData.length; i += step) {
+    pts.push(new THREE.Vector3(trackData[i][0][0], trackData[i][0][1], trackData[i][0][2]));
+  }
+  var last = trackData[trackData.length - 1][0];
+  if (pts.length < 2 || pts[pts.length - 1].distanceTo(new THREE.Vector3(last[0], last[1], last[2])) > 1) {
+    pts.push(new THREE.Vector3(last[0], last[1], last[2]));
+  }
+  var first = trackData[0][0];
+  var trackGap = Math.hypot(first[0] - last[0], first[1] - last[1], first[2] - last[2]);
+  var isClosed = trackGap < 50;
+  var flyCurve = new THREE.CatmullRomCurve3(pts, isClosed, 'catmullrom', 0.5);
+
+  // Temporary camera just for matrix computation
+  var tempCam = new THREE.PerspectiveCamera(60, w / h, 1, 20000);
+
+  _flyPoses = [];
+  _flyCamParams = { fov: 60, w: w, h: h };
+
+  for (var f = 0; f < totalFrames; f++) {
+    var t = isClosed ? f / totalFrames : Math.min(f / Math.max(totalFrames - 1, 1), 0.9999);
+    var lookT = t + 0.02;
+    if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
+
+    var point = flyCurve.getPointAt(t);
+    var lookPt = flyCurve.getPointAt(lookT);
+    var tangent = flyCurve.getTangentAt(t).normalize();
+    tempCam.position.set(point.x - tangent.x * 10, point.y + camH, point.z - tangent.z * 10);
+    tempCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
+    tempCam.updateMatrixWorld(true);
+    _flyPoses.push({ t: t, time: f / fps, elements: Array.from(tempCam.matrixWorld.elements) });
+  }
+}
+
 // Build training data from video + poses (shared logic)
-// Returns { frames, transforms, hasPoses }
-// When no flythrough poses exist, transforms is null and COLMAP will be used on the pod.
 async function _buildTrainingFrames(prog) {
+  if (!_flyPoses.length || !_flyCamParams) throw new Error('No camera poses available');
+
   var videoFile = null;
   var fileInput = document.getElementById('v2s-video-input');
   if (fileInput && fileInput.files[0]) {
     videoFile = fileInput.files[0];
   } else if (_runwayVideoUrl) {
-    prog('Fetching stylized video...');
+    // Use stylized video from Stage 2
+    prog('Fetching stylized video from Stage 2...');
     var resp = await fetch(_runwayVideoUrl);
     videoFile = await resp.blob();
   }
   if (!videoFile) throw new Error('Choose a stylized video or run Stage 2 first');
 
-  var hasPoses = _flyPoses.length > 0 && _flyCamParams;
   var sampling = document.getElementById('v2s-sampling').value;
+  var cp = _flyCamParams;
 
   // Create video element
   var video = document.createElement('video');
@@ -4597,35 +4651,26 @@ async function _buildTrainingFrames(prog) {
     throw new Error('Cannot read video duration');
   }
 
-  // Canvas size: use flythrough params if available, else video native resolution
-  var outW = hasPoses ? _flyCamParams.w : (video.videoWidth || 1280);
-  var outH = hasPoses ? _flyCamParams.h : (video.videoHeight || 720);
-
-  // Determine frames to extract
+  // Determine poses to extract
   var extractList = [];
-  if (hasPoses && sampling === 'match') {
+  if (sampling === 'match') {
     for (var i = 0; i < _flyPoses.length; i++) {
       var frac = i / Math.max(_flyPoses.length - 1, 1);
-      extractList.push({ time: frac * vidDuration, elements: _flyPoses[i].elements });
+      extractList.push({ poseIdx: i, time: frac * vidDuration, elements: _flyPoses[i].elements });
     }
   } else {
-    // Fixed FPS sampling (used when no poses, or when user picks a specific FPS)
-    var targetFps = (sampling === 'match') ? 2 : parseInt(sampling);
+    var targetFps = parseInt(sampling);
     var interval = 1 / targetFps;
     for (var t = 0; t < vidDuration; t += interval) {
-      if (hasPoses) {
-        var frac = t / vidDuration;
-        var poseIdx = Math.min(Math.round(frac * (_flyPoses.length - 1)), _flyPoses.length - 1);
-        extractList.push({ time: t, elements: _flyPoses[poseIdx].elements });
-      } else {
-        extractList.push({ time: t, elements: null });
-      }
+      var frac = t / vidDuration;
+      var poseIdx = Math.min(Math.round(frac * (_flyPoses.length - 1)), _flyPoses.length - 1);
+      extractList.push({ poseIdx: poseIdx, time: t, elements: _flyPoses[poseIdx].elements });
     }
   }
 
   // Extract frames
   var canvas = document.createElement('canvas');
-  canvas.width = outW; canvas.height = outH;
+  canvas.width = cp.w; canvas.height = cp.h;
   var ctx = canvas.getContext('2d');
   var frames = [];
 
@@ -4633,7 +4678,8 @@ async function _buildTrainingFrames(prog) {
     if (i % 10 === 0) prog('Extracting frame ' + (i + 1) + ' / ' + extractList.length);
     video.currentTime = Math.min(extractList[i].time, vidDuration - 0.01);
     await new Promise(function(r) { video.onseeked = r; });
-    ctx.drawImage(video, 0, 0, outW, outH);
+    ctx.drawImage(video, 0, 0, cp.w, cp.h);
+    // Use JPEG for smaller upload size
     var dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     var b64 = dataUrl.split(',')[1];
     frames.push({ name: 'frame_' + String(i).padStart(5, '0') + '.jpg', b64: b64, elements: extractList[i].elements });
@@ -4642,16 +4688,13 @@ async function _buildTrainingFrames(prog) {
 
   URL.revokeObjectURL(blobUrl);
 
-  // Build transforms.json only when we have camera poses
-  var transforms = null;
-  if (hasPoses) {
-    transforms = _buildTransformsJson(frames.map(function(f) { return { elements: f.elements }; }), outW, outH, _flyCamParams.fov);
-    for (var i = 0; i < transforms.frames.length; i++) {
-      transforms.frames[i].file_path = 'images/' + frames[i].name;
-    }
+  var transforms = _buildTransformsJson(frames.map(function(f) { return { elements: f.elements }; }), cp.w, cp.h, cp.fov);
+  // Fix file paths to use .jpg
+  for (var i = 0; i < transforms.frames.length; i++) {
+    transforms.frames[i].file_path = 'images/' + frames[i].name;
   }
 
-  return { frames: frames, transforms: transforms, hasPoses: !!hasPoses };
+  return { frames: frames, transforms: transforms };
 }
 
 function useStylizedVideo() {
@@ -4707,7 +4750,14 @@ async function runpodTrain() {
   function updateProg(msg) { prog.textContent = msg; _runpodLog(msg); }
 
   try {
-    // --- Phase 1: Extract frames from video ---
+    // --- Phase 1: Ensure camera poses exist ---
+    if (!_flyPoses.length || !_flyCamParams) {
+      updateProg('Generating camera poses from track...');
+      _generatePosesFromTrack();
+      updateProg('Generated ' + _flyPoses.length + ' camera poses from track.');
+    }
+
+    // --- Phase 2: Extract frames from uploaded video ---
     updateProg('Extracting frames from video...');
     var data = await _buildTrainingFrames(function(m) { updateProg(m); });
     updateProg('Extracted ' + data.frames.length + ' frames. Creating RunPod pod...');
@@ -4776,10 +4826,8 @@ async function runpodTrain() {
     await _jupyterMkdir(podId, token, 'data');
     await _jupyterMkdir(podId, token, 'data/images');
 
-    // Upload transforms.json only when we have camera poses
-    if (data.transforms) {
-      await _jupyterPut(podId, token, 'data/transforms.json', JSON.stringify(data.transforms, null, 2));
-    }
+    // Upload transforms.json
+    await _jupyterPut(podId, token, 'data/transforms.json', JSON.stringify(data.transforms, null, 2));
 
     // Upload frames in parallel batches of 8
     var batchSize = 8;
@@ -4793,65 +4841,30 @@ async function runpodTrain() {
     }
 
     // --- Phase 6: Upload and start training script ---
-    var trainScript;
-    if (data.hasPoses) {
-      // Known camera poses — train directly with nerfstudio-data
-      trainScript = [
-        '#!/bin/bash',
-        'set -e',
-        'cd /workspace',
-        'echo "install" > /workspace/STATUS',
-        'pip install nerfstudio gsplat 2>&1 | tee install.log',
-        'echo "train" > /workspace/STATUS',
-        'ns-train splatfacto \\',
-        '  --data /workspace/data \\',
-        '  --max-num-iterations ' + iterations + ' \\',
-        '  --output-dir /workspace/ns-output \\',
-        '  --viewer.quit-on-train-completion True \\',
-        '  --pipeline.datamanager.dataparser nerfstudio-data \\',
-        '  2>&1 | tee train.log',
-        'echo "export" > /workspace/STATUS',
-        'CONFIG=$(find /workspace/ns-output -name "config.yml" -path "*/splatfacto/*" | head -1)',
-        'if [ -z "$CONFIG" ]; then echo "error: no config" > /workspace/STATUS; exit 1; fi',
-        'ns-export gaussian-splat \\',
-        '  --load-config "$CONFIG" \\',
-        '  --output-dir /workspace/export \\',
-        '  2>&1 | tee export.log',
-        'echo "done" > /workspace/STATUS',
-        'touch /workspace/DONE'
-      ].join('\n');
-    } else {
-      // No camera poses — run COLMAP first to estimate them
-      trainScript = [
-        '#!/bin/bash',
-        'set -e',
-        'cd /workspace',
-        'echo "install" > /workspace/STATUS',
-        'apt-get update && apt-get install -y colmap 2>&1 | tee colmap-install.log',
-        'pip install nerfstudio gsplat 2>&1 | tee install.log',
-        'echo "colmap" > /workspace/STATUS',
-        'ns-process-data images \\',
-        '  --data /workspace/data/images \\',
-        '  --output-dir /workspace/data-processed \\',
-        '  2>&1 | tee process.log',
-        'echo "train" > /workspace/STATUS',
-        'ns-train splatfacto \\',
-        '  --data /workspace/data-processed \\',
-        '  --max-num-iterations ' + iterations + ' \\',
-        '  --output-dir /workspace/ns-output \\',
-        '  --viewer.quit-on-train-completion True \\',
-        '  2>&1 | tee train.log',
-        'echo "export" > /workspace/STATUS',
-        'CONFIG=$(find /workspace/ns-output -name "config.yml" -path "*/splatfacto/*" | head -1)',
-        'if [ -z "$CONFIG" ]; then echo "error: no config" > /workspace/STATUS; exit 1; fi',
-        'ns-export gaussian-splat \\',
-        '  --load-config "$CONFIG" \\',
-        '  --output-dir /workspace/export \\',
-        '  2>&1 | tee export.log',
-        'echo "done" > /workspace/STATUS',
-        'touch /workspace/DONE'
-      ].join('\n');
-    }
+    var trainScript = [
+      '#!/bin/bash',
+      'set -e',
+      'cd /workspace',
+      'echo "install" > /workspace/STATUS',
+      'pip install nerfstudio gsplat 2>&1 | tee install.log',
+      'echo "train" > /workspace/STATUS',
+      'ns-train splatfacto \\',
+      '  --data /workspace/data \\',
+      '  --max-num-iterations ' + iterations + ' \\',
+      '  --output-dir /workspace/ns-output \\',
+      '  --viewer.quit-on-train-completion True \\',
+      '  --pipeline.datamanager.dataparser nerfstudio-data \\',
+      '  2>&1 | tee train.log',
+      'echo "export" > /workspace/STATUS',
+      'CONFIG=$(find /workspace/ns-output -name "config.yml" -path "*/splatfacto/*" | head -1)',
+      'if [ -z "$CONFIG" ]; then echo "error: no config" > /workspace/STATUS; exit 1; fi',
+      'ns-export gaussian-splat \\',
+      '  --load-config "$CONFIG" \\',
+      '  --output-dir /workspace/export \\',
+      '  2>&1 | tee export.log',
+      'echo "done" > /workspace/STATUS',
+      'touch /workspace/DONE'
+    ].join('\n');
     await _jupyterPut(podId, token, 'train.sh', trainScript);
     updateProg('Starting nerfstudio training (' + iterations + ' iterations)...');
 
