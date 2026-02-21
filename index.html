@@ -317,7 +317,7 @@
     </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
       <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:6px">RunPod 3DGS Training</div>
-      <div class="slider-group" style="margin-bottom:6px">
+      <div class="slider-group" style="margin-bottom:6px;display:none" id="apikey-runpod-row">
         <div class="slider-label"><span>RunPod API Key</span></div>
         <input type="password" id="runpod-apikey" placeholder="rpa_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
       </div>
@@ -1220,6 +1220,7 @@ var _RUNWAY_PREFIX = 'https://api.dev.runwayml.com/v1/';
 var _MARBLE_PREFIX = 'https://api.worldlabs.ai/marble/v1/';
 var _DECART_PREFIX = 'https://api.decart.ai/v1/';
 var _KIRI_PREFIX = 'https://api.kiriengine.app/api/';
+var _RUNPOD_PREFIX = 'https://rest.runpod.io/v1/';
 async function proxiedFetch(url, opts) {
   opts = opts || {};
   if (_proxyUrl) {
@@ -1228,6 +1229,7 @@ async function proxiedFetch(url, opts) {
     else if (url.indexOf(_MARBLE_PREFIX) === 0) workerPath = '/marble/' + url.slice(_MARBLE_PREFIX.length);
     else if (url.indexOf(_DECART_PREFIX) === 0) workerPath = '/decart/' + url.slice(_DECART_PREFIX.length);
     else if (url.indexOf(_KIRI_PREFIX) === 0) workerPath = '/kiri/' + url.slice(_KIRI_PREFIX.length);
+    else if (url.indexOf(_RUNPOD_PREFIX) === 0) workerPath = '/runpod/' + url.slice(_RUNPOD_PREFIX.length);
     if (workerPath) {
       // Strip auth headers — Worker adds them server-side
       var h = {};
@@ -3821,7 +3823,7 @@ if (_proxyParam === '' || _proxyParam === 'clear') { localStorage.removeItem('pr
 else if (_proxyParam) { var _pu = _proxyParam.replace(/\/+$/, ''); localStorage.setItem('proxy_url', _pu); _proxyUrl = _pu; }
 else { var _stored = localStorage.getItem('proxy_url'); if (_stored) _proxyUrl = _stored; }
 // API key persistence: load from localStorage, URL params override
-var _apiKeyIds = ['runway-apikey', 'decart-apikey', 'marble-apikey', 'kiri-apikey'];
+var _apiKeyIds = ['runway-apikey', 'decart-apikey', 'marble-apikey', 'kiri-apikey', 'runpod-apikey'];
 if (_proxyUrl) {
   _apiKeyIds.forEach(function(id) {
     var el = document.getElementById(id); if (!el) return;
@@ -4496,17 +4498,17 @@ async function extractStylizedTraining() {
 // ============================================================
 // RUNPOD 3DGS TRAINING PIPELINE
 // ============================================================
-var _runpodState = { podId: null, token: null, apiKey: null, phase: null };
+var _runpodState = { podId: null, token: null, phase: null };
 
 function _runpodLog(msg) {
   var el = document.getElementById('runpod-status');
   if (el) { el.style.display = ''; el.textContent = msg; }
 }
 
-async function _runpodApi(method, path, apiKey, body) {
+async function _runpodApi(method, path, body) {
   var opts = {
     method: method,
-    headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json' }
   };
   if (body) opts.body = JSON.stringify(body);
   return proxiedFetch('https://rest.runpod.io/v1' + path, opts);
@@ -4653,8 +4655,6 @@ function useStylizedVideo() {
 }
 
 async function runpodTrain() {
-  var apiKey = document.getElementById('runpod-apikey').value.trim();
-  if (!apiKey) { toast('Enter a RunPod API key'); return; }
   if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first'); return; }
 
   var gpuType = document.getElementById('runpod-gpu').value;
@@ -4674,9 +4674,9 @@ async function runpodTrain() {
 
     // --- Phase 2: Create RunPod pod ---
     var token = 'ad' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    _runpodState = { podId: null, token: token, apiKey: apiKey, phase: 'creating' };
+    _runpodState = { podId: null, token: token, phase: 'creating' };
 
-    var createRes = await _runpodApi('POST', '/pods', apiKey, {
+    var createRes = await _runpodApi('POST', '/pods', {
       name: 'accel-driv-3dgs-' + Date.now().toString(36).slice(-4),
       imageName: 'runpod/pytorch:2.4.1-py3.11-cuda12.4.1-devel-ubuntu22.04',
       gpuTypeIds: [gpuType],
@@ -4705,7 +4705,7 @@ async function runpodTrain() {
     // --- Phase 3: Wait for pod RUNNING ---
     for (var attempt = 0; attempt < 120; attempt++) {
       await pollSleep(5000);
-      var statusRes = await _runpodApi('GET', '/pods/' + podId, apiKey);
+      var statusRes = await _runpodApi('GET', '/pods/' + podId);
       if (statusRes.ok) {
         var statusData = await statusRes.json();
         var ds = statusData.desiredStatus || statusData.status || '';
@@ -4857,7 +4857,7 @@ async function runpodTrain() {
 
     // --- Phase 10: Terminate pod ---
     updateProg('Splat loaded! Terminating pod to save costs...');
-    await _runpodApi('DELETE', '/pods/' + podId, apiKey);
+    await _runpodApi('DELETE', '/pods/' + podId);
     _runpodState.phase = 'done';
     _runpodState.podId = null;
     updateProg('Done! Pod terminated. Splat loaded in viewer.');
@@ -4873,11 +4873,11 @@ async function runpodTrain() {
 }
 
 async function runpodCheckStatus() {
-  if (!_runpodState.podId || !_runpodState.apiKey) { toast('No active RunPod pod'); return; }
+  if (!_runpodState.podId) { toast('No active RunPod pod'); return; }
   var prog = document.getElementById('v2s-progress');
   prog.style.display = 'block';
   try {
-    var res = await _runpodApi('GET', '/pods/' + _runpodState.podId, _runpodState.apiKey);
+    var res = await _runpodApi('GET', '/pods/' + _runpodState.podId);
     if (!res.ok) { prog.textContent = 'Pod status check failed: ' + res.status; return; }
     var data = await res.json();
     var status = data.desiredStatus || 'unknown';
@@ -4896,12 +4896,12 @@ async function runpodCheckStatus() {
 }
 
 async function runpodTerminate() {
-  if (!_runpodState.podId || !_runpodState.apiKey) { toast('No active RunPod pod'); return; }
+  if (!_runpodState.podId) { toast('No active RunPod pod'); return; }
   var prog = document.getElementById('v2s-progress');
   prog.style.display = 'block';
   prog.textContent = 'Terminating pod ' + _runpodState.podId + '...';
   try {
-    await _runpodApi('DELETE', '/pods/' + _runpodState.podId, _runpodState.apiKey);
+    await _runpodApi('DELETE', '/pods/' + _runpodState.podId);
     _runpodLog('Pod ' + _runpodState.podId + ' terminated.');
     prog.textContent = 'Pod terminated.';
     _runpodState.podId = null;

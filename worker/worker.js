@@ -49,6 +49,12 @@ const API_ROUTES = {
     authFn: function(env) {
       return { 'Authorization': 'Bearer ' + env.KIRI_API_KEY };
     }
+  },
+  '/runpod/': {
+    target: 'https://rest.runpod.io/v1/',
+    authFn: function(env) {
+      return { 'Authorization': 'Bearer ' + env.RUNPOD_KEY };
+    }
   }
 };
 

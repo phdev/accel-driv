@@ -8,3 +8,4 @@ compatibility_date = "2024-01-01"
 #   wrangler secret put MARBLE_KEY
 #   wrangler secret put DECART_KEY
 #   wrangler secret put KIRI_API_KEY
+#   wrangler secret put RUNPOD_KEY
