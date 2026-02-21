@@ -3886,7 +3886,8 @@ document.getElementById('v2s-video-input').addEventListener('change', function()
   if (this.files[0]) nameEl.textContent = this.files[0].name;
   else nameEl.textContent = '';
 });
-document.getElementById('s-flystep').addEventListener('input', function() {
+var _flystepEl = document.getElementById('s-flystep');
+if (_flystepEl) _flystepEl.addEventListener('input', function() {
   document.getElementById('v-flystep').textContent = this.value;
 });
 document.getElementById('s-runpod-iters').addEventListener('input', function() {
@@ -4316,7 +4317,8 @@ function _buildTransformsJson(poses, w, h, fov) {
 
 async function exportFlythroughTraining() {
   if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first'); return; }
-  var step = parseInt(document.getElementById('s-flystep').value) || 1;
+  var stepEl = document.getElementById('s-flystep');
+  var step = stepEl ? parseInt(stepEl.value) || 1 : 1;
   var btn = document.getElementById('btn-export-fly-train');
   var prog = document.getElementById('v2s-progress');
   btn.disabled = true; btn.textContent = 'Rendering...';
