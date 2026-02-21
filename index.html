@@ -4654,16 +4654,7 @@ function useStylizedVideo() {
     toast('Will use Stage 2 stylized video');
     return;
   }
-  if (_flyBlob && _flyPoses.length && _flyCamParams) {
-    // No Stage 2 but Stage 1 flythrough exists — use raw flythrough + its camera poses
-    _runwayVideoUrl = URL.createObjectURL(_flyBlob);
-    var sizeMB = (_flyBlob.size / (1024 * 1024)).toFixed(1);
-    nameEl.textContent = 'Stage 1 flythrough (' + sizeMB + ' MB, ' + _flyPoses.length + ' poses)';
-    if (fileInput) fileInput.value = '';
-    toast('Using Stage 1 flythrough video + camera poses');
-    return;
-  }
-  // Neither stage available — let user upload a stylized video file
+  // No Stage 2 output — prompt upload, fall back to Stage 1 only if user cancels
   var upload = document.createElement('input');
   upload.type = 'file';
   upload.accept = 'video/mp4,video/webm,.mp4,.webm';
@@ -4679,6 +4670,16 @@ function useStylizedVideo() {
     if (fileInput) fileInput.value = '';
     toast('Stylized video loaded — ready for training');
   };
+  // If user cancels the picker without choosing a file, fall back to Stage 1
+  upload.addEventListener('cancel', function() {
+    if (_flyBlob && _flyPoses.length && _flyCamParams) {
+      _runwayVideoUrl = URL.createObjectURL(_flyBlob);
+      var sizeMB = (_flyBlob.size / (1024 * 1024)).toFixed(1);
+      nameEl.textContent = 'Stage 1 flythrough (' + sizeMB + ' MB, ' + _flyPoses.length + ' poses)';
+      if (fileInput) fileInput.value = '';
+      toast('Using Stage 1 flythrough video + camera poses');
+    }
+  });
   upload.click();
 }
 
