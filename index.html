@@ -4710,15 +4710,15 @@ async function runpodTrain() {
       imageName: 'runpod/pytorch:2.4.1-py3.11-cuda12.4.1-devel-ubuntu22.04',
       gpuTypeIds: [gpuType],
       gpuCount: 1,
-      cloudType: 'ALL',
+      cloudType: 'COMMUNITY',
       containerDiskInGb: 50,
       volumeInGb: 20,
       volumeMountPath: '/workspace',
-      ports: '8888/http',
-      env: [
-        { key: 'JUPYTER_PASSWORD', value: token },
-        { key: 'JUPYTER_TOKEN', value: token }
-      ]
+      ports: ['8888/http'],
+      env: {
+        JUPYTER_PASSWORD: token,
+        JUPYTER_TOKEN: token
+      }
     });
     if (!createRes.ok) {
       var errText = await createRes.text();
