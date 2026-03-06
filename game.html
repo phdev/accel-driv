@@ -433,7 +433,7 @@ function setupScene() {
 
   // Prevent debug panel touches from reaching game controls
   const dbgPanel = document.getElementById('debug-panel');
-  if (inIframe) dbgPanel.style.display = 'none';
+  if (inIframe || isAndroid) dbgPanel.style.display = 'none';
   const dbgMinBtn = document.getElementById('dbg-minimize');
   const dbgBody = document.getElementById('dbg-body');
   dbgMinBtn.addEventListener('click', () => {
