@@ -390,7 +390,8 @@ function setupScene() {
   scene.add(underLight);
 
   // ── BLOOM POST-PROCESSING (skip in iframe — renders black) ──
-  if (!inIframe) {
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  if (!inIframe && !isAndroid) {
     const renderPass = new RenderPass(scene, camera);
     bloomPass = new UnrealBloomPass(
       new THREE.Vector2(innerWidth, innerHeight),
