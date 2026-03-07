@@ -48,7 +48,7 @@ function pencilApi() {
 }
 
 export default defineConfig({
-  base: "/home-center/",
+  base: "/accel-driv/",
   plugins: [react(), pencilApi()],
   server: {
     host: "0.0.0.0",
