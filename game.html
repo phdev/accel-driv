@@ -305,6 +305,9 @@ if (window.parent !== window) {
 }
 
 function init() {
+  // Apply Android performance settings
+  if (isAndroid) SKID_MAX_STRIPS = 60;
+
   // Build Three.js curve from track data
   // Use every 3rd point to keep it manageable (1000 control points)
   const points = [];
@@ -390,8 +393,7 @@ function setupScene() {
   underLight.position.set(0, -5, 0);
   scene.add(underLight);
 
-  // ── BLOOM POST-PROCESSING (skip in iframe — renders black) ──
-  const isAndroid = /Android/i.test(navigator.userAgent);
+  // ── BLOOM POST-PROCESSING (skip in iframe and Android — renders black / too slow) ──
   if (!inIframe && !isAndroid) {
     const renderPass = new RenderPass(scene, camera);
     bloomPass = new UnrealBloomPass(
@@ -846,7 +848,7 @@ function buildCar() {
 
 // ── SKID MARKS ──
 const skidStrips = [];
-const SKID_MAX_STRIPS = isAndroid ? 60 : 200;
+let SKID_MAX_STRIPS = 200;
 const SKID_FADE_TIME = 4.0;
 const SKID_WIDTH = 0.25;
 // Car-local wheel offsets (x = lateral, z = front/back) — scaled to the 8-unit car
