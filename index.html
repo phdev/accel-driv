@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>if(/Android/i.test(navigator.userAgent))window.location.replace('./game.html');</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>accel-driv — Track Suite</title>
 <style>
@@ -204,50 +205,158 @@
 
 <!-- ===== SPLAT TAB ===== -->
 <div class="tab-content" id="tab-splat">
-  <div class="panel"><div class="panel-title">1. Generate World - Marble</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
-      Sends a screenshot or prompt to <span style="color:var(--accent2)">World Labs Marble</span> to generate a full 3D environment as Gaussian splats.
+  <div class="panel"><div class="panel-title">1. Flythrough &rarr; Stylize</div>
+    <div class="slider-group" style="margin-bottom:6px;display:none" id="apikey-runway-row">
+      <div class="slider-label"><span>Runway API Key</span></div>
+      <input type="password" id="runway-apikey" placeholder="rw_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
     </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>API Key</span></div>
-      <input type="password" id="marble-apikey" placeholder="WLT-xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+    <div class="slider-group" style="margin-bottom:6px;display:none" id="apikey-decart-row">
+      <div class="slider-label"><span>Decart API Key</span></div>
+      <input type="password" id="decart-apikey" placeholder="decart_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
     </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Environment Prompt</span></div>
-      <textarea id="marble-prompt" rows="3" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">neon-lit cyberpunk racing track through a mountain valley at night, futuristic buildings with holographic signs, glowing bioluminescent vegetation, dramatic clouds, volumetric lighting</textarea>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 1 &mdash; Flythrough Video</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Camera follows the track spline, baking geometry into frames.</div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Duration (s)</span><span id="v-flydur">10</span></div>
+        <input type="range" id="s-flydur" min="2" max="60" value="10" step="1">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Camera height</span><span id="v-flyht">8</span></div>
+        <input type="range" id="s-flyht" min="2" max="40" value="8" step="1">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Resolution</span></div>
+        <select id="fly-res" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="720" selected>1280 x 720</option>
+          <option value="1080">1920 x 1080</option>
+        </select>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-accent2" onclick="recordFlythrough()" id="fly-rec-btn">Record Flythrough</button>
+        <button class="btn" onclick="downloadFlythrough()">Download</button>
+      </div>
+      <div id="fly-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+      <video id="fly-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls muted></video>
+      <div id="fly-debug" style="display:none;margin-top:4px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:10px;color:var(--text-dim);line-height:1.6;white-space:pre-wrap"></div>
     </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Input mode</span></div>
-      <select id="marble-mode" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-        <option value="text">Text prompt only</option>
-        <option value="screenshot" selected>Screenshot of current view + prompt</option>
-      </select>
-      <button class="btn btn-accent2" style="margin-top:4px;width:100%;font-size:11px" onclick="trackAwarePrompt()">Screenshot + Track-Aware Prompt</button>
-      <div id="marble-screenshot-preview" style="display:none;margin-top:6px;text-align:center">
-        <img id="marble-screenshot-img" style="max-width:100%;border-radius:4px;border:1px solid var(--border)">
-        <div style="font-size:10px;color:var(--text-dim);margin-top:2px">Viewport captured — will be sent with prompt</div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:12px;margin-bottom:6px">Stage 2 &mdash; AI Stylization</div>
+      <div id="stylize-desc" style="display:none"></div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Provider</span></div>
+        <select id="stylize-provider" onchange="onProviderChange()" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="runway" selected>Runway</option>
+          <option value="decart">Decart</option>
+        </select>
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Style prompt</span></div>
+        <textarea id="runway-prompt" rows="2" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:11px;resize:vertical;font-family:system-ui">cinematic flythrough of a futuristic racing track through a detailed sci-fi cityscape environment, towering neon buildings on both sides, volumetric fog, reflective wet ground, dramatic sky with clouds, photorealistic</textarea>
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Model</span></div>
+        <select id="runway-model" onchange="onModelChange()" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="gen4_turbo" selected>Gen-4 Turbo</option>
+          <option value="gen4_aleph">Gen-4 Aleph (video-to-video)</option>
+          <option value="gen3a_turbo">Gen-3 Alpha Turbo</option>
+        </select>
+      </div>
+      <div class="slider-group" id="stylize-duration-row">
+        <div class="slider-label"><span>Segment length</span></div>
+        <select id="runway-duration" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="5" id="dur-opt-5">5 seconds</option>
+          <option value="10" id="dur-opt-10" selected>10 seconds (recommended)</option>
+        </select>
+      </div>
+      <div class="slider-group" id="decart-resolution-row" style="display:none">
+        <div class="slider-label"><span>Resolution</span></div>
+        <select id="decart-resolution" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="720p" selected>720p</option>
+          <option value="480p">480p</option>
+        </select>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-accent2" onclick="runStylize()" id="runway-btn">Stylize with Runway</button>
+      </div>
+      <div id="runway-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
+      <div id="runway-segments" style="display:none;margin-top:6px"></div>
+      <video id="runway-video" style="display:none;width:100%;border-radius:6px;margin-top:8px;border:1px solid var(--border);background:#000" controls></video>
+      <div id="runway-download-bar" style="display:none;margin-top:4px" class="btn-group"></div>
+      <div id="stylize-debug" style="display:none;margin-top:4px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:10px;color:var(--text-dim);line-height:1.6;white-space:pre-wrap"></div>
+      <div id="runway-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
+        <div style="color:var(--accent2);margin-bottom:4px" id="pending-title">Pending generation found</div>
+        <div id="runway-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
+        <div class="btn-group"><button class="btn btn-accent2" onclick="checkPendingOperation()">Check Status</button><button class="btn" onclick="clearAllPending()">Dismiss</button></div>
       </div>
     </div>
-    <div class="slider-group" style="margin-bottom:6px">
-      <div class="slider-label"><span>Splat quality</span></div>
-      <select id="marble-quality" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
-        <option value="100k" selected>100k splats (fast, ~3 MB)</option>
-        <option value="500k">500k splats (balanced, ~15 MB)</option>
-        <option value="full_res">Full resolution (~30+ MB)</option>
-      </select>
+    <div id="pipeline-progress" style="display:none;font-size:11px;color:var(--accent);margin-top:4px"></div>
+  </div>
+
+  <div class="panel"><div class="panel-title">2. Video &rarr; Splat Training</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
+      Extract frames from a stylized video, pair with <span style="color:var(--accent2)">known camera poses</span>, and train 3DGS on <span style="color:var(--accent2)">RunPod</span> — no SfM needed.
+    </div>
+    <div id="v2s-pose-info" style="font-size:10px;color:var(--text-dim);margin-bottom:8px;padding:4px 8px;background:var(--surface2);border-radius:4px;font-family:'JetBrains Mono',monospace">No flythrough poses recorded yet</div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:6px">Stylized Video Input</div>
+      <div class="btn-group" style="margin-bottom:4px">
+        <button class="btn" onclick="document.getElementById('v2s-video-input').click()" style="font-size:10px">Choose Stylized Video</button>
+        <button class="btn" onclick="useStylizedVideo()" style="font-size:10px" id="btn-use-stylized" title="Use the video from Stage 2 stylization">Use Stage 2 Output</button>
+        <span id="v2s-video-name" style="font-size:10px;color:var(--text-dim);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px"></span>
+      </div>
+      <input type="file" id="v2s-video-input" accept="video/mp4,video/webm,.mp4,.webm" style="display:none">
+      <div class="slider-group">
+        <div class="slider-label"><span>Frame sampling</span></div>
+        <select id="v2s-sampling" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="match" selected>Match all flythrough poses</option>
+          <option value="2fps">2 fps (every 0.5s)</option>
+          <option value="5fps">5 fps (every 0.2s)</option>
+          <option value="10fps">10 fps (every 0.1s)</option>
+        </select>
+      </div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+      <div style="color:var(--accent);font-weight:600;font-size:11px;margin-bottom:6px">RunPod 3DGS Training</div>
+      <div class="slider-group" style="margin-bottom:6px">
+        <div class="slider-label"><span>RunPod API Key</span></div>
+        <input type="password" id="runpod-apikey" placeholder="rpa_xxxxxxxx" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>GPU</span></div>
+        <select id="runpod-gpu" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:11px">
+          <option value="NVIDIA GeForce RTX 4090" selected>RTX 4090 (24GB, ~$0.40/hr)</option>
+          <option value="NVIDIA GeForce RTX 3090">RTX 3090 (24GB, ~$0.25/hr)</option>
+          <option value="NVIDIA RTX A5000">RTX A5000 (24GB, ~$0.25/hr)</option>
+        </select>
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span>Training iterations</span><span id="v-runpod-iters">30000</span></div>
+        <input type="range" id="s-runpod-iters" min="7000" max="60000" value="30000" step="1000">
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-accent" onclick="runpodTrain()" id="btn-runpod-train" style="width:100%">Train on RunPod</button>
+      </div>
+      <div class="btn-group" style="margin-top:4px">
+        <button class="btn" onclick="runpodCheckStatus()" style="font-size:10px">Check Status</button>
+        <button class="btn btn-danger" onclick="runpodTerminate()" style="font-size:10px">Terminate Pod</button>
+        <button class="btn" onclick="extractStylizedTraining()" style="font-size:10px" id="btn-extract-stylized" title="Manual: download training ZIP">Export ZIP</button>
+      </div>
+    </div>
+    <div id="v2s-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px;line-height:1.6"></div>
+    <div id="runpod-status" style="display:none;margin-top:6px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:10px;color:var(--text-dim);line-height:1.6;white-space:pre-wrap"></div>
+  </div>
+
+  <div class="panel"><div class="panel-title">3. Convert Splats</div>
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
+      Convert to <span style="color:var(--accent2)">.sog</span> format for optimal web delivery (~95% smaller than raw PLY).
     </div>
     <div class="btn-group">
-      <button class="btn btn-accent" onclick="generateMarbleWorld()" id="marble-gen-btn">Generate World</button>
-    </div>
-    <div id="marble-progress" style="font-size:11px;color:var(--accent2);display:none"></div>
-    <div id="marble-pending" style="display:none;margin-top:6px;padding:8px;background:var(--surface2);border:1px solid var(--accent2);border-radius:4px;font-size:11px">
-      <div style="color:var(--accent2);margin-bottom:4px">Pending generation found</div>
-      <div id="marble-pending-info" style="color:var(--text-dim);margin-bottom:6px"></div>
-      <div class="btn-group"><button class="btn btn-accent2" onclick="checkMarbleOperation()">Check Status</button><button class="btn" onclick="clearMarblePending()">Dismiss</button></div>
+      <button class="btn" onclick="window.open('https://supersplat.io','_blank')">SuperSplat (SPZ to SOG)</button>
     </div>
   </div>
 
-  <div class="panel"><div class="panel-title">2. Preview and Load Splat</div>
+  <div class="panel"><div class="panel-title">4. Preview and Load Splat</div>
     <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:8px">
       Load a splat file into the 3D viewport via <span style="color:var(--accent2)">Spark.js</span>. Supports <b>.spz</b>, <b>.ply</b>, <b>.splat</b>, <b>.sog</b>.
     </div>
@@ -277,39 +386,6 @@
     </div>
     <div id="splat-info" style="font-size:10px;color:var(--text-dim);margin-top:4px"></div>
   </div>
-
-  <div class="panel"><div class="panel-title">3. Export Training Views</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
-      Render multi-view images of the current scene for <span style="color:var(--accent2)">3D Gaussian Splatting</span> training via Google Colab.
-    </div>
-    <div class="slider-group">
-      <div class="slider-label"><span>Views</span><span id="v-trainviews">72</span></div>
-      <input type="range" id="s-trainviews" min="24" max="200" step="4" value="72">
-    </div>
-    <div class="slider-group">
-      <div class="slider-label"><span>Resolution</span><span id="v-trainres">1024</span></div>
-      <input type="range" id="s-trainres" min="512" max="2048" step="256" value="1024">
-    </div>
-    <div class="btn-group">
-      <button class="btn btn-accent2" onclick="exportTrainingViews()" id="btn-export-views">Export Views ZIP</button>
-    </div>
-    <div id="export-views-progress" style="display:none;font-size:11px;color:var(--accent2);margin-top:4px"></div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.6">
-      <div style="color:var(--accent);font-weight:600;margin-bottom:2px">Pipeline</div>
-      <div>1. Export views ZIP (images + transforms.json)</div>
-      <div>2. Upload to Google Colab notebook</div>
-      <div>3. Train 3DGS → download <b>.ply</b> → load in Splat tab</div>
-    </div>
-  </div>
-  <div class="panel"><div class="panel-title">4. Convert Splats</div>
-    <div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:6px">
-      Convert to <span style="color:var(--accent2)">.sog</span> format for optimal web delivery (~95% smaller than raw PLY).
-    </div>
-    <div class="btn-group">
-      <button class="btn" onclick="window.open('https://supersplat.io','_blank')">SuperSplat (SPZ to SOG)</button>
-      <button class="btn" onclick="window.open('https://marble.worldlabs.ai','_blank')">Marble Studio</button>
-    </div>
-  </div>
 </div>
 
   </div>
@@ -338,7 +414,7 @@ const ET=[[400,-250,-400,0,1,0],[415.4,-250,-400.1,0,1,0],[435.9,-249.9,-400.5,0
 let trackData=[],origData=null,selA=-1,selB=-1,loopAdded=0,editMode='select';
 let cps=[],selCP=-1,dragCP=false,cpMeshes=[];
 let defWidth=30,isMobile=window.innerWidth<=768;
-let scene,cam,rndr,tLine,tRibbon,ptCloud,loopLine,selHL,cpGrp,splineLine,wRibbon,ray,mouse,gPlane;
+let scene,cam,rndr,tLine,tRibbon,ptCloud,loopLine,selHL,cpGrp,splineLine,wRibbon,ray,mouse,gPlane,laneLineGroup;
 let cScene,cCam;
 let orb={rot:false,pan:false,lx:0,ly:0,tgt:new THREE.Vector3(600,0,0),phi:Math.PI/4,theta:Math.PI/4,dist:1500};
 let tch={mode:null,last:null,initDist:0,tapTime:0,tapPos:null,moved:false};
@@ -437,7 +513,7 @@ function fitView(){if(!trackData.length)return;var a=Infinity,b=-Infinity,c=Infi
 // TRACK VISUALIZATION
 // ============================================================
 function buildVis(){
-if(tLine)scene.remove(tLine);if(tRibbon)scene.remove(tRibbon);if(ptCloud)scene.remove(ptCloud);if(selHL)scene.remove(selHL);if(trackRibbon)scene.remove(trackRibbon);
+if(tLine)scene.remove(tLine);if(tRibbon)scene.remove(tRibbon);if(ptCloud)scene.remove(ptCloud);if(selHL)scene.remove(selHL);if(trackRibbon)scene.remove(trackRibbon);if(laneLineGroup){scene.remove(laneLineGroup);laneLineGroup=null}
 if(!trackData.length)return;
 var pos=[],col=[];var mY=Infinity,MY=-Infinity;trackData.forEach(function(p){mY=Math.min(mY,p[0][1]);MY=Math.max(MY,p[0][1])});var yr=Math.max(MY-mY,1);
 trackData.forEach(function(p){pos.push(p[0][0],p[0][1],p[0][2]);var t=(p[0][1]-mY)/yr;col.push(1-t*.6,.3+t*.4,.2+t*.6)});
@@ -447,6 +523,7 @@ ptCloud=new THREE.Points(g1.clone(),new THREE.PointsMaterial({size:4,vertexColor
 selHL=new THREE.Points(new THREE.BufferGeometry(),new THREE.PointsMaterial({size:8,color:0x00ffcc,sizeAttenuation:false}));scene.add(selHL);
 updateSelVis();
 buildTrackRibbon();
+buildEditorLaneLines();
 }
 
 function buildTrackRibbon(){
@@ -468,6 +545,71 @@ g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3));
 g.setIndex(idx);g.computeVertexNormals();
 trackRibbon=new THREE.Mesh(g,new THREE.MeshPhongMaterial({vertexColors:true,side:THREE.DoubleSide}));
 scene.add(trackRibbon);
+}
+
+function buildEditorLaneLines(){
+if(laneLineGroup){scene.remove(laneLineGroup);laneLineGroup=null}
+if(trackData.length<10)return;
+laneLineGroup=new THREE.Group();
+var w=15,dashLen=18,gapLen=24,dashW=1.2,edgeInset=2.5;
+var dashMat=new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,transparent:true,opacity:0.5,depthWrite:false});
+var edgeMat=new THREE.MeshBasicMaterial({color:0xffdd44,side:THREE.DoubleSide,transparent:true,opacity:0.4,depthWrite:false});
+// Accumulate distance along track and place dashes
+var dist=0,cycleLen=dashLen+gapLen;
+var i=0;
+while(i<trackData.length-1){
+  var p=trackData[i][0],pn=trackData[Math.min(i+1,trackData.length-1)][0];
+  var segLen=Math.sqrt((pn[0]-p[0])**2+(pn[1]-p[1])**2+(pn[2]-p[2])**2);
+  var prevDist=dist;
+  dist+=segLen;
+  // Check if a dash start falls within this segment
+  var nextDash=Math.ceil(prevDist/cycleLen)*cycleLen;
+  while(nextDash<dist&&nextDash+dashLen*0.5<dist){
+    // Find the midpoint index roughly at nextDash+dashLen/2
+    var midDist=nextDash+dashLen/2;
+    var mi=i;
+    var acc=prevDist;
+    while(mi<trackData.length-2){
+      var d2=Math.sqrt((trackData[mi+1][0][0]-trackData[mi][0][0])**2+(trackData[mi+1][0][1]-trackData[mi][0][1])**2+(trackData[mi+1][0][2]-trackData[mi][0][2])**2);
+      if(acc+d2>=midDist)break;
+      acc+=d2;mi++;
+    }
+    var mp=trackData[mi][0],mn=trackData[mi][1];
+    var fwd;
+    if(mi<trackData.length-1)fwd=sub(trackData[mi+1][0],mp);else fwd=sub(mp,trackData[mi-1][0]);
+    var fl=Math.sqrt(fwd[0]**2+fwd[1]**2+fwd[2]**2)||1;
+    fwd=[fwd[0]/fl,fwd[1]/fl,fwd[2]/fl];
+    var r=crs(fwd,mn),rl=Math.sqrt(r[0]**2+r[1]**2+r[2]**2)||1;
+    r=[r[0]/rl,r[1]/rl,r[2]/rl];
+    // Center dash
+    var dg=new THREE.PlaneGeometry(dashW,dashLen);
+    var dm=new THREE.Mesh(dg,dashMat);
+    dm.position.set(mp[0],mp[1]+1.5,mp[2]);
+    var la=new THREE.Vector3(mp[0]+fwd[0],mp[1]+fwd[1]+1.5,mp[2]+fwd[2]);
+    dm.up.set(mn[0],mn[1],mn[2]);
+    dm.lookAt(la);
+    dm.rotateX(-Math.PI/2);
+    laneLineGroup.add(dm);
+    // Left edge dash
+    var eg=new THREE.PlaneGeometry(dashW*0.6,dashLen*0.7);
+    var el=new THREE.Mesh(eg,edgeMat);
+    el.position.set(mp[0]-r[0]*(w-edgeInset),mp[1]-r[1]*(w-edgeInset)+1.5,mp[2]-r[2]*(w-edgeInset));
+    el.up.set(mn[0],mn[1],mn[2]);
+    el.lookAt(new THREE.Vector3(el.position.x+fwd[0],el.position.y+fwd[1],el.position.z+fwd[2]));
+    el.rotateX(-Math.PI/2);
+    laneLineGroup.add(el);
+    // Right edge dash
+    var er=new THREE.Mesh(eg.clone(),edgeMat);
+    er.position.set(mp[0]+r[0]*(w-edgeInset),mp[1]+r[1]*(w-edgeInset)+1.5,mp[2]+r[2]*(w-edgeInset));
+    er.up.set(mn[0],mn[1],mn[2]);
+    er.lookAt(new THREE.Vector3(er.position.x+fwd[0],er.position.y+fwd[1],er.position.z+fwd[2]));
+    er.rotateX(-Math.PI/2);
+    laneLineGroup.add(er);
+    nextDash+=cycleLen;
+  }
+  i++;
+}
+scene.add(laneLineGroup);
 }
 
 function updateSelVis(){if(!selHL)return;if(selA<0){selHL.geometry.setAttribute('position',new THREE.Float32BufferAttribute([],3));return}var lo=Math.min(selA,selB<0?selA:selB),hi=Math.max(selA,selB<0?selA:selB);var p=[];for(var i=lo;i<=hi&&i<trackData.length;i++)p.push(trackData[i][0][0],trackData[i][0][1],trackData[i][0][2]);selHL.geometry.setAttribute('position',new THREE.Float32BufferAttribute(p,3))}
@@ -1041,7 +1183,6 @@ toast('Track traced: ' + newTrack.length + ' points');
 // PLAY MODE
 // ============================================================
 var gameActive = false;
-var gameBlobUrl = null;
 
 function startGame() {
 try {
@@ -1051,15 +1192,19 @@ var exportedTrack = trackData.map(function(p) { return [
 [Math.round(p[1][0]*1e4)/1e4, Math.round(p[1][1]*1e4)/1e4, Math.round(p[1][2]*1e4)/1e4]
 ]; });
 toast('Loading Horizon Drive...');
-var trackJSON = JSON.stringify(exportedTrack);
-var glbBase = 'https://raw.githubusercontent.com/phdev/accel-driv/main/';
-var gameHTML = buildGameHTML(trackJSON, glbBase);
-if (gameBlobUrl) URL.revokeObjectURL(gameBlobUrl);
-var blob = new Blob([gameHTML], { type: 'text/html' });
-gameBlobUrl = URL.createObjectURL(blob);
 var overlay = document.getElementById('game-overlay');
 var iframe = document.getElementById('game-iframe');
-iframe.src = gameBlobUrl;
+// Listen for messages from the game iframe
+window._gameMessageHandler = function(e) {
+if (e.data && e.data.type === 'gameReady') {
+  iframe.contentWindow.postMessage({ type: 'trackData', track: exportedTrack }, '*');
+}
+if (e.data && e.data.type === 'gameExit') {
+  stopGame();
+}
+};
+window.addEventListener('message', window._gameMessageHandler);
+iframe.src = 'game.html';
 overlay.style.display = 'block';
 gameActive = true;
 window._gameEscHandler = function(e) { if (e.key === 'Escape') stopGame(); };
@@ -1073,7 +1218,10 @@ var iframe = document.getElementById('game-iframe');
 overlay.style.display = 'none';
 iframe.src = 'about:blank';
 gameActive = false;
-if (gameBlobUrl) { URL.revokeObjectURL(gameBlobUrl); gameBlobUrl = null; }
+if (window._gameMessageHandler) {
+window.removeEventListener('message', window._gameMessageHandler);
+window._gameMessageHandler = null;
+}
 if (window._gameEscHandler) {
 window.removeEventListener('keydown', window._gameEscHandler);
 window._gameEscHandler = null;
@@ -1081,64 +1229,120 @@ window._gameEscHandler = null;
 toast('Back to editor');
 }
 
-function buildGameHTML(trackJSON, glbBase) {
-var S = '<' + 'script';
-var SE = '</' + 'script>';
-return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,maximum-scale=1.0"><title>Horizon Drive</title>' +
-'<style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none}canvas{display:block;width:100%;height:100%}#ui-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10;pointer-events:none}#ui-overlay>*{pointer-events:auto}#hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font:700 14px/1 system-ui,sans-serif;color:#fff;background:linear-gradient(180deg,rgba(0,0,0,.5),transparent);display:none}#hud .speed{font-size:22px;color:#0ff;text-shadow:0 0 10px #0ff}#hud .time{font-size:18px;color:#ffd700}#hud .progress{font-size:12px;opacity:.7}#countdown{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font:900 6rem system-ui;color:#fff;text-shadow:0 0 40px #ff6ec7;display:none;z-index:15}#finish-screen{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.75);display:none;z-index:20}#finish-screen h2{font:900 2rem system-ui;color:#ffd700;margin-bottom:.5rem}#finish-screen .final-time{font:700 3.5rem system-ui;color:#fff;margin-bottom:.3rem}#finish-screen .label{font:400 .8rem system-ui;color:#a080d0;margin-bottom:2rem}#restart-btn{background:linear-gradient(135deg,#6e3cff,#3c8cff);color:#fff;border:none;padding:14px 40px;border-radius:14px;font:700 1rem system-ui;cursor:pointer}#tilt-indicator{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);width:120px;height:6px;background:rgba(255,255,255,.1);border-radius:3px;display:none}#tilt-dot{position:absolute;top:50%;left:50%;width:14px;height:14px;background:#ff6ec7;border-radius:50%;transform:translate(-50%,-50%);transition:left .05s}#loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#a080d0;font:600 1rem system-ui;z-index:25}</style></head><body>' +
-'<div id="ui-overlay"><div id="loading">Loading...</div><div id="hud"><div><span class="speed" id="speed-val">0</span> <span style="font-size:11px;opacity:.5">km/h</span></div><div class="time" id="time-val">0:00.0</div><div class="progress" id="progress-val">0%</div><div id="boost-hud" style="display:none;color:#0f0;font-size:16px;font-weight:900;text-shadow:0 0 12px #0f0">BOOST!</div></div><div id="position-hud" style="position:absolute;top:50px;right:16px;font:900 28px system-ui;color:#ffd700;display:none"><span id="pos-num">1</span><span id="pos-suffix" style="font-size:14px;opacity:.7">st</span><span style="font-size:12px;opacity:.5;margin-left:4px">/ 6</span></div><div id="xp-hud" style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);text-align:center;font:900 system-ui;display:none;pointer-events:none"><div id="xp-multi" style="font-size:14px;color:#ff6ec7;margin-bottom:2px">x1</div><div id="xp-val" style="font-size:22px;color:#fff">0 <span style="font-size:12px;opacity:.6">XP</span></div><div id="xp-popup" style="font-size:16px;color:#ffd700;opacity:0;transition:opacity .15s"></div></div><div id="countdown"></div><div id="finish-screen"><h2>FINISH!</h2><div class="final-time" id="final-time">0:00.00</div><div class="label">Your Time</div><button id="restart-btn">RACE AGAIN</button></div><div id="tilt-indicator"><div id="tilt-dot"></div></div><label style="position:absolute;bottom:50px;left:16px;display:flex;align-items:center;gap:6px;font:400 .75rem system-ui;color:rgba(192,160,224,.7);cursor:pointer;z-index:30"><input type="checkbox" id="free-roam-cb" style="width:16px;height:16px;accent-color:#ff6ec7;cursor:pointer"> Disable rail</label><button id="drift-btn" style="position:absolute;bottom:16px;right:16px;width:80px;height:80px;border-radius:50%;border:3px solid #ff6ec7;background:rgba(255,110,199,.15);color:#ff6ec7;font:900 14px system-ui;cursor:pointer;z-index:30;display:none;touch-action:none">DRIFT</button><div id="drift-hud" style="position:absolute;top:50px;left:16px;font:900 18px system-ui;color:#ff6ec7;display:none">DRIFT!</div></div>' +
-S + ' type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"}}</' + 'script>' +
-S + ' type="module">' +
-'import*as THREE from"three";import{GLTFLoader}from"three/addons/loaders/GLTFLoader.js";' +
-'try{THREE.ColorManagement.enabled=false}catch(e){}' +
-'(function(){\'use strict\';var CFG={maxSpeed:270,accel:67,brake:120,friction:12,steerSpeed:14,maxLateral:19,roadWidth:40,cameraHeight:4.5,cameraDist:12,cameraLerp:0.08,fov:72,boostCount:40,boostSpeed:390,boostDuration:1.5,boostPadWidth:6,boostPadLength:4,aiCount:5,aiMinSpeed:165,aiMaxSpeed:248,aiWeaveAmp:2.5,aiWeaveFreq:0.3,driftMinSpeed:60,driftLateralGrip:0.55,driftLongGrip:0.95,driftSpeedBleed:0.15,driftAssistGain:0.8,driftMaxAssist:1,driftBaseSlip:15,driftMaxSlip:45,driftKSteer:20,driftExitSnap:0.05,driftEnterSteer:0.3,driftExitSteer:0.2};' +
-'var trackData=null,curve=null,trackLength=0,scene,camera,renderer,roadMesh,groundMesh,carGroup,boostPads=[],boostTimer=0,aiCars=[],playerPosition=1,gameState=\'loading\',raceStartTime=0,raceTime=0,speed=0,trackProgress=0,lateralOffset=0,steerInput=0,smoothYaw=0,freeRoam=false,freePos=new THREE.Vector3(),freeHeading=0,freeNearestT=0,freeSmoothY=0,driftState=\'grip\',driftSign=0,driftAngle=0,driftBtnHeld=false,xpTotal=0,xpMultiplier=1,xpLastActionTime=0,xpPopupTimer=0,keys={},extSteer=null,extBrake=null,extDrift=null,gyroGamma=0,gyroCal=0,gyroAvailable=false,isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent),DEADZONE=3;' +
-'var $loading=document.getElementById(\'loading\'),$hud=document.getElementById(\'hud\'),$speedVal=document.getElementById(\'speed-val\'),$timeVal=document.getElementById(\'time-val\'),$progressVal=document.getElementById(\'progress-val\'),$countdown=document.getElementById(\'countdown\'),$finishScreen=document.getElementById(\'finish-screen\'),$finalTime=document.getElementById(\'final-time\'),$restartBtn=document.getElementById(\'restart-btn\'),$tiltIndicator=document.getElementById(\'tilt-indicator\'),$tiltDot=document.getElementById(\'tilt-dot\'),$posNum=document.getElementById(\'pos-num\'),$posSuffix=document.getElementById(\'pos-suffix\'),$xpHud=document.getElementById(\'xp-hud\'),$xpVal=document.getElementById(\'xp-val\'),$xpMulti=document.getElementById(\'xp-multi\'),$xpPopup=document.getElementById(\'xp-popup\');' +
-'trackData=' + trackJSON + ';try{init()}catch(e){document.getElementById(\'loading\').textContent=\'Init error: \'+e.message+\' at \'+e.stack;console.error(e)};' +
-'function init(){var pts=[];for(var i=0;i<trackData.length;i+=3){var p=trackData[i][0];pts.push(new THREE.Vector3(p[0],p[2],-p[1]))}curve=new THREE.CatmullRomCurve3(pts,false,\'catmullrom\',0.5);trackLength=curve.getLength();setupScene();buildTrack();buildCar();buildAI();buildEnv();setupInput();setupUI();$loading.textContent=\'Scene ready, starting...\';$loading.style.display=\'none\';gameState=\'ready\';updateCarPos(0,0);updateCam(true);anim();startRace()}' +
-'function setupScene(){scene=new THREE.Scene();scene.background=new THREE.Color(0x0a001a);scene.fog=new THREE.FogExp2(0x0a001a,0.004);camera=new THREE.PerspectiveCamera(CFG.fov,innerWidth/innerHeight,0.5,800);renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:\'high-performance\'});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.LinearSRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;document.body.appendChild(renderer.domElement);scene.add(new THREE.AmbientLight(0x4040a0,1.26));var dl=new THREE.DirectionalLight(0xffeedd,2.51);dl.position.set(50,100,50);scene.add(dl);var ul=new THREE.PointLight(0xff6ec7,1.88,100,1);ul.position.set(0,-5,0);scene.add(ul);window.addEventListener(\'resize\',function(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)})}' +
-'function buildTrack(){var dv=2000,hw=CFG.roadWidth/2,v=[],c=[],ix=[];for(var i=0;i<=dv;i++){var t=i/dv,pt=curve.getPointAt(t),tg=curve.getTangentAt(t).normalize(),up=new THREE.Vector3(0,1,0),r=new THREE.Vector3().crossVectors(tg,up).normalize();if(r.length()<0.1)r.set(1,0,0);v.push(pt.x-r.x*hw,pt.y,pt.z-r.z*hw,pt.x+r.x*hw,pt.y,pt.z+r.z*hw);var s=i%40<2?1:0.15;c.push(s*0.8,s*0.1,s*0.5,1,s*0.1,s*0.5,s*0.8,1);if(i<dv){var b=i*2;ix.push(b,b+1,b+2,b+1,b+3,b+2)}}var g=new THREE.BufferGeometry();g.setAttribute(\'position\',new THREE.Float32BufferAttribute(v,3));g.setAttribute(\'color\',new THREE.Float32BufferAttribute(c,4));g.setIndex(ix);g.computeVertexNormals();scene.add(new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,metalness:0.8,roughness:0.2,emissive:new THREE.Color(0x330066),emissiveIntensity:0.6,side:THREE.DoubleSide})));' +
-'var step=4,lp=[],rp2=[];for(i=0;i<=dv;i+=step){t=i/dv;pt=curve.getPointAt(t);tg=curve.getTangentAt(t).normalize();r=new THREE.Vector3().crossVectors(tg,new THREE.Vector3(0,1,0)).normalize();if(r.length()<0.1)r.set(1,0,0);lp.push(new THREE.Vector3(pt.x-r.x*(hw+0.3),pt.y+0.4,pt.z-r.z*(hw+0.3)));rp2.push(new THREE.Vector3(pt.x+r.x*(hw+0.3),pt.y+0.4,pt.z+r.z*(hw+0.3)))}scene.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(lp,false,\'catmullrom\',0.5),dv/step,0.12,6,false),new THREE.MeshBasicMaterial({color:0xff6ec7})));scene.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rp2,false,\'catmullrom\',0.5),dv/step,0.12,6,false),new THREE.MeshBasicMaterial({color:0x00ffff})));' +
-'var slg=new THREE.PlaneGeometry(CFG.roadWidth,1.5),slm=new THREE.Mesh(slg,new THREE.MeshBasicMaterial({color:0xffd700,side:THREE.DoubleSide}));var sp=curve.getPointAt(0),st=curve.getTangentAt(0).normalize();slm.position.copy(sp);slm.position.y+=0.05;slm.lookAt(sp.clone().add(st));slm.rotateX(-Math.PI/2);scene.add(slm);' +
-'boostPads=[];var bg=new THREE.PlaneGeometry(CFG.boostPadWidth,CFG.boostPadLength),bmat=new THREE.MeshBasicMaterial({color:0x00ffaa,transparent:true,opacity:0.55,side:THREE.DoubleSide,depthWrite:false});for(i=0;i<CFG.boostCount;i++){t=0.05+(i/CFG.boostCount)*0.9;pt=curve.getPointAt(t);tg=curve.getTangentAt(Math.min(0.9999,t)).normalize();r=new THREE.Vector3().crossVectors(tg,new THREE.Vector3(0,1,0)).normalize();if(r.lengthSq()<0.01)r.set(1,0,0);var n=new THREE.Vector3().crossVectors(r,tg).normalize(),pg=new THREE.Group();pg.position.copy(pt);pg.position.addScaledVector(n,0.2);var lt2=pt.clone().add(tg);lt2.addScaledVector(n,0.2);pg.up.copy(n);pg.lookAt(lt2);var bm2=new THREE.Mesh(bg,bmat.clone());bm2.rotation.x=-Math.PI/2;pg.add(bm2);scene.add(pg);boostPads.push({t:t,group:pg,active:false})}}' +
-'function buildCar(){carGroup=new THREE.Group();var loader=new GLTFLoader();loader.load(\'' + glbBase + 'base_basic_shaded.glb\',function(gltf){var m=gltf.scene;m.traverse(function(c2){if(c2.isMesh){c2.material=c2.material.clone();c2.material.emissive.set(0x3388ff);c2.material.emissiveIntensity=0.4}});var bx=new THREE.Box3().setFromObject(m),sz=bx.getSize(new THREE.Vector3()),cn=bx.getCenter(new THREE.Vector3()),sc=8/Math.max(sz.x,sz.y,sz.z);m.scale.setScalar(sc);bx.setFromObject(m);bx.getCenter(cn);m.position.sub(cn);bx.setFromObject(m);m.position.y-=bx.min.y;carGroup.add(m)},undefined,function(){var fb=new THREE.Mesh(new THREE.BoxGeometry(8,2,4),new THREE.MeshStandardMaterial({color:0x3388ff,emissive:0x1144aa,emissiveIntensity:0.5}));fb.position.y=1;carGroup.add(fb)});var bl=new THREE.SpotLight(0xffffff,6.28,80,Math.PI/6,0.5,1);bl.position.set(0,0.5,2);bl.target.position.set(0,0,20);carGroup.add(bl);carGroup.add(bl.target);carGroup.add(new THREE.PointLight(0xff6ec7,7.85,12,1));scene.add(carGroup)}' +
-'function buildAI(){aiCars=[];var cols=[0xff3333,0x33aaff,0xffaa00,0xaa33ff,0x33ff88];for(var i=0;i<CFG.aiCount;i++){var g=new THREE.Group(),cl=new THREE.Color(cols[i%5]);var bdy=new THREE.Mesh(new THREE.BoxGeometry(7,2,3.5),new THREE.MeshStandardMaterial({color:cl,emissive:cl.clone().multiplyScalar(0.3),emissiveIntensity:0.6}));bdy.position.set(0,1,0);g.add(bdy);var cab=new THREE.Mesh(new THREE.BoxGeometry(3.5,1.5,3),new THREE.MeshStandardMaterial({color:0x222233}));cab.position.set(-0.5,2.5,0);g.add(cab);var plt=new THREE.PointLight(cols[i%5],4.71,8,1);plt.position.set(0,-0.1,0);g.add(plt);scene.add(g);aiCars.push({group:g,progress:0.005*(i+1),speed:0,baseSpeed:CFG.aiMinSpeed+(CFG.aiMaxSpeed-CFG.aiMinSpeed)*(i/Math.max(1,CFG.aiCount-1)),lateral:(i-2)*3,weavePhase:Math.random()*Math.PI*2,boostTimer:0,finished:false})}}' +
-'function buildEnv(){groundMesh=new THREE.Mesh(new THREE.PlaneGeometry(8000,8000),new THREE.MeshStandardMaterial({color:0x050010,roughness:1}));groundMesh.rotation.x=-Math.PI/2;groundMesh.position.y=-2;scene.add(groundMesh);var gh=new THREE.GridHelper(4000,200,0x1a0040,0x0a0020);gh.position.y=-1.9;scene.add(gh);var sg=new THREE.BufferGeometry(),sp2=new Float32Array(6000);for(var i=0;i<2000;i++){sp2[i*3]=(Math.random()-0.5)*4000;sp2[i*3+1]=Math.random()*400+20;sp2[i*3+2]=(Math.random()-0.5)*4000}sg.setAttribute(\'position\',new THREE.Float32BufferAttribute(sp2,3));scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xffffff,size:1.5,sizeAttenuation:true})));' +
-'var pg2=new THREE.CylinderGeometry(0.12,0.12,8,6),og2=new THREE.SphereGeometry(0.35,8,8),nc=[0xff6ec7,0x00ffff,0xffd700,0x6e3cff],hw=CFG.roadWidth/2;for(i=0;i<120;i++){var t=i/120,pt=curve.getPointAt(t),tg=curve.getTangentAt(t).normalize(),r=new THREE.Vector3().crossVectors(tg,new THREE.Vector3(0,1,0)).normalize();if(r.length()<0.1)continue;var side=i%2===0?-1:1,ci=i%4;var p=new THREE.Mesh(pg2,new THREE.MeshStandardMaterial({color:0x111122,emissive:new THREE.Color(nc[ci]),emissiveIntensity:0.15,metalness:0.9,roughness:0.3}));p.position.set(pt.x+r.x*(hw+3)*side,pt.y+4,pt.z+r.z*(hw+3)*side);scene.add(p);var o=new THREE.Mesh(og2,new THREE.MeshBasicMaterial({color:nc[ci]}));o.position.set(p.position.x,p.position.y+4.3,p.position.z);scene.add(o)}}' +
-'function setupInput(){document.addEventListener(\'keydown\',function(e){keys[e.code]=true});document.addEventListener(\'keyup\',function(e){keys[e.code]=false});var ts=0;document.addEventListener(\'touchstart\',ht,{passive:false});document.addEventListener(\'touchmove\',ht,{passive:false});document.addEventListener(\'touchend\',function(){ts=0});function ht(e){if(gameState!==\'racing\')return;e.preventDefault();var tc=e.touches[0];if(!tc){ts=0;return}ts=(tc.clientX/innerWidth-0.5)*2}window._getTouchSteer=function(){return ts};try{if(typeof DeviceOrientationEvent!==\'undefined\'&&typeof DeviceOrientationEvent.requestPermission===\'function\'){DeviceOrientationEvent.requestPermission().then(function(s){if(s===\'granted\')enGyro()}).catch(function(){enGyro()})}else enGyro()}catch(e2){enGyro()}function enGyro(){var smp=0,sa=0;window.addEventListener(\'deviceorientation\',function(e){var g2=e.gamma||0;gyroGamma=g2;if(!gyroAvailable){smp++;sa+=Math.abs(g2);if(isIOS){if(smp>=3){gyroAvailable=true;$tiltIndicator.style.display=\'block\'}}else if(smp>=20&&sa/smp>5){gyroAvailable=true;$tiltIndicator.style.display=\'block\'}}})}}' +
-'function getSteer(){if(extSteer!==null)return Math.max(-1,Math.min(1,extSteer));if(keys.ArrowLeft||keys.KeyA)return-1;if(keys.ArrowRight||keys.KeyD)return 1;var ts=window._getTouchSteer?window._getTouchSteer():0;if(Math.abs(ts)>0.05)return Math.max(-1,Math.min(1,ts));if(gyroAvailable){var a=gyroGamma-gyroCal,dz=freeRoam?8:DEADZONE,fa=freeRoam?35:15;if(Math.abs(a)<dz)return 0;return Math.max(-1,Math.min(1,(a-Math.sign(a)*dz)/(fa-dz)))}return 0}' +
-'function getBrake(){if(extBrake!==null)return extBrake?1:0;return keys.ArrowDown||keys.KeyS||keys.Space?1:0}' +
-'function awardXP(a,l){var now=performance.now()/1000,e2=Math.round(a*xpMultiplier);xpTotal+=e2;xpLastActionTime=now;if(l){xpMultiplier++;$xpPopup.textContent=\'+\'+e2+\' \'+l;$xpPopup.style.opacity=\'1\';xpPopupTimer=0.8}updXP()}function resetMulti(){xpMultiplier=1;updXP()}function updXP(){$xpVal.innerHTML=Math.round(xpTotal)+\' <span style="font-size:12px;opacity:.6">XP</span>\';$xpMulti.textContent=\'x\'+xpMultiplier}function updXPT(dt){if(xpMultiplier>1&&performance.now()/1000-xpLastActionTime>=3)resetMulti();if(xpPopupTimer>0){xpPopupTimer-=dt;if(xpPopupTimer<=0)$xpPopup.style.opacity=\'0\'}}' +
-'function setupUI(){$restartBtn.addEventListener(\'click\',restart);var db=document.getElementById(\'drift-btn\');db.addEventListener(\'pointerdown\',function(e){e.preventDefault();driftBtnHeld=true});db.addEventListener(\'pointerup\',function(){driftBtnHeld=false});db.addEventListener(\'pointercancel\',function(){driftBtnHeld=false});db.addEventListener(\'pointerleave\',function(){driftBtnHeld=false})}' +
-'function startRace(){gyroCal=gyroGamma;gameState=\'countdown\';var c2=3;$countdown.style.display=\'block\';$countdown.textContent=c2;var iv=setInterval(function(){c2--;if(c2>0)$countdown.textContent=c2;else if(c2===0){$countdown.textContent=\'GO!\';$countdown.style.color=\'#0f0\'}else{clearInterval(iv);$countdown.style.display=\'none\';$countdown.style.color=\'#fff\';gameState=\'racing\';raceStartTime=performance.now();$hud.style.display=\'flex\';document.getElementById(\'position-hud\').style.display=\'\';$xpHud.style.display=\'\';document.getElementById(\'drift-btn\').style.display=\'\';if(gyroAvailable)$tiltIndicator.style.display=\'block\'}},800)}' +
-'function finish(){gameState=\'finished\';$hud.style.display=\'none\';document.getElementById(\'position-hud\').style.display=\'none\';$xpHud.style.display=\'none\';$tiltIndicator.style.display=\'none\';document.getElementById(\'drift-btn\').style.display=\'none\';document.getElementById(\'drift-hud\').style.display=\'none\';driftState=\'grip\';driftAngle=0;var t=raceTime,m=Math.floor(t/60),s=(t%60).toFixed(2);$finalTime.textContent=m+\':\'+(s<10?\'0\':\'\')+s;var pos=calcPos();document.querySelector(\'#finish-screen .label\').textContent=\'You finished \'+pos+posSuf(pos)+\' -- \'+Math.round(xpTotal)+\' XP\';$finishScreen.style.display=\'flex\'}' +
-'function restart(){$finishScreen.style.display=\'none\';speed=0;trackProgress=0;lateralOffset=0;steerInput=0;raceTime=0;boostTimer=0;driftState=\'grip\';driftSign=0;driftAngle=0;driftBtnHeld=false;freeRoam=false;xpTotal=0;xpMultiplier=1;xpLastActionTime=0;updXP();for(var bp of boostPads)bp.active=false;for(var i=0;i<aiCars.length;i++){aiCars[i].progress=0.005*(i+1);aiCars[i].speed=0;aiCars[i].boostTimer=0;aiCars[i].finished=false;aiCars[i].lateral=(i-2)*3}updateCarPos(0,0);updateCam(true);startRace()}' +
-'function fmtTime(t){return Math.floor(t/60)+\':\'+(Math.floor(t%60)<10?\'0\':\'\')+Math.floor(t%60)+\'.\'+Math.floor(t*10%10)}' +
-'function calcPos(){var p=1;for(var a of aiCars)if(a.progress>trackProgress)p++;return p}' +
-'function posSuf(n){return n===1?\'st\':n===2?\'nd\':n===3?\'rd\':\'th\'}' +
-'function updateAI(ai,dt){if(ai.finished)return;if(ai.speed<ai.baseSpeed)ai.speed+=CFG.accel*0.8*dt;else ai.speed-=CFG.friction*dt;ai.speed=Math.max(0,ai.speed);var phz=(CFG.boostPadLength/trackLength)/2;for(var bp of boostPads)if(Math.abs(ai.progress-bp.t)<phz&&ai.boostTimer<=0)ai.boostTimer=CFG.boostDuration*0.8;if(ai.boostTimer>0){ai.boostTimer-=dt;ai.speed=Math.max(ai.speed,CFG.boostSpeed*0.9)}var sv=Math.sin(performance.now()*0.001+ai.weavePhase*10)*8,mps=Math.max(0,ai.speed+sv)/3.6;ai.progress+=mps*dt/trackLength;ai.lateral=Math.sin(performance.now()*0.001*CFG.aiWeaveFreq+ai.weavePhase)*CFG.aiWeaveAmp;if(ai.progress>=1){ai.progress=1;ai.finished=true}var t=Math.max(0,Math.min(0.9999,ai.progress)),pt=curve.getPointAt(t),tg=curve.getTangentAt(t).normalize(),r=new THREE.Vector3().crossVectors(tg,new THREE.Vector3(0,1,0)).normalize();if(r.length()<0.1)r.set(1,0,0);ai.group.position.set(pt.x+r.x*ai.lateral,pt.y+0.15,pt.z+r.z*ai.lateral);ai.group.lookAt(new THREE.Vector3(pt.x+tg.x*5+r.x*ai.lateral,pt.y+tg.y*5,pt.z+tg.z*5+r.z*ai.lateral))}' +
-'function updateCarPos(prog,lat){var t=Math.max(0,Math.min(0.9999,prog)),pt=curve.getPointAt(t),tg=curve.getTangentAt(t).normalize(),r=new THREE.Vector3().crossVectors(tg,new THREE.Vector3(0,1,0)).normalize();if(r.length()<0.1)r.set(1,0,0);carGroup.position.set(pt.x+r.x*lat,pt.y+0.15,pt.z+r.z*lat);carGroup.lookAt(new THREE.Vector3(pt.x+tg.x*5+r.x*lat,pt.y+tg.y*5,pt.z+tg.z*5+r.z*lat));var ty=driftState===\'drift\'?-driftAngle*(Math.PI/180):-steerInput*(15*Math.PI/180);smoothYaw+=(ty-smoothYaw)*0.08;carGroup.rotateY(smoothYaw)}' +
-'var camPos=new THREE.Vector3(),camTgt=new THREE.Vector3();' +
-'function updateCam(inst){var t=Math.max(0,Math.min(0.9999,trackProgress)),pt=curve.getPointAt(t),tg=curve.getTangentAt(t).normalize(),r=new THREE.Vector3().crossVectors(tg,new THREE.Vector3(0,1,0)).normalize();if(r.length()<0.1)r.set(1,0,0);var cT=Math.max(0,Math.min(0.9999,t-CFG.cameraDist/trackLength)),ctp=curve.getPointAt(cT),cby=Math.max(pt.y,ctp.y);var ip=new THREE.Vector3(pt.x-tg.x*CFG.cameraDist+r.x*lateralOffset*0.5,Math.max(cby+CFG.cameraHeight,0),pt.z-tg.z*CFG.cameraDist+r.z*lateralOffset*0.5),it=new THREE.Vector3(pt.x+r.x*lateralOffset,pt.y+0.5,pt.z+r.z*lateralOffset);if(inst){camPos.copy(ip);camTgt.copy(it)}else{camPos.lerp(ip,CFG.cameraLerp);camTgt.lerp(it,0.25)}camera.position.copy(camPos);camera.lookAt(camTgt)}' +
-'var lastTime=0,frameDt=0;' +
-'function anim(now){requestAnimationFrame(anim);now=now||0;var dt=Math.min((now-lastTime)/1000,0.05);frameDt=dt;lastTime=now;' +
-'if(gameState===\'racing\'){raceTime=(performance.now()-raceStartTime)/1000;$timeVal.textContent=fmtTime(raceTime);steerInput=getSteer();var brk=getBrake();var $dh=document.getElementById(\'drift-hud\');if(driftState===\'grip\'){if(driftBtnHeld&&Math.abs(steerInput)>CFG.driftEnterSteer&&speed>CFG.driftMinSpeed){driftState=\'drift\';driftSign=Math.sign(steerInput);$dh.style.display=\'\'}}else{if(!driftBtnHeld||(Math.abs(driftAngle)<4&&Math.abs(steerInput)<CFG.driftExitSteer)){if(speed>CFG.driftMinSpeed)speed+=CFG.driftExitSnap*speed;driftState=\'grip\';driftAngle=0;driftSign=0;$dh.style.display=\'none\'}}' +
-'if(driftState===\'drift\'){if(Math.abs(steerInput)>0.1)driftSign=Math.sign(steerInput);var ds=driftSign*(CFG.driftBaseSlip+CFG.driftKSteer*Math.abs(steerInput)),cd=Math.max(-CFG.driftMaxSlip,Math.min(CFG.driftMaxSlip,ds)),se=cd-driftAngle;driftAngle+=Math.max(-CFG.driftMaxAssist,Math.min(CFG.driftMaxAssist,se*CFG.driftAssistGain))*dt*60;lateralOffset+=steerInput*CFG.steerSpeed*CFG.driftLateralGrip*dt*(speed/CFG.maxSpeed+0.3)}else lateralOffset+=steerInput*CFG.steerSpeed*dt*(speed/CFG.maxSpeed+0.3);' +
-'lateralOffset=Math.max(-CFG.maxLateral,Math.min(CFG.maxLateral,lateralOffset));if(brk)speed-=CFG.brake*dt;else speed+=CFG.accel*dt;speed-=CFG.friction*dt;if(driftState===\'drift\'){var sf=Math.abs(driftAngle)/CFG.driftMaxSlip;speed-=CFG.driftSpeedBleed*sf*speed*dt;speed=Math.max(speed,speed*CFG.driftLongGrip);awardXP(30*sf*(speed/CFG.maxSpeed+0.2)*dt,\'\')}speed=Math.max(0,Math.min(CFG.maxSpeed,speed));' +
-'var phz=(CFG.boostPadLength/trackLength)/2;for(var bp of boostPads){if(Math.abs(trackProgress-bp.t)<phz&&!bp.active){bp.active=true;boostTimer=CFG.boostDuration;awardXP(200,\'BOOST\')}if(bp.active&&Math.abs(trackProgress-bp.t)>=phz)bp.active=false}if(boostTimer>0){boostTimer-=dt;speed=Math.max(speed,CFG.boostSpeed);document.getElementById(\'boost-hud\').style.display=\'\'}else document.getElementById(\'boost-hud\').style.display=\'none\';' +
-'var es=boostTimer>0?Math.max(speed,CFG.boostSpeed):speed;trackProgress+=es/3.6*dt/trackLength;for(var ai of aiCars)updateAI(ai,dt);playerPosition=calcPos();$posNum.textContent=playerPosition;$posSuffix.textContent=posSuf(playerPosition);$speedVal.textContent=Math.round(speed);$progressVal.textContent=Math.round(trackProgress*100)+\'%\';updXPT(dt);if(gyroAvailable)$tiltDot.style.left=50+steerInput*40+\'%\';if(trackProgress>=1){trackProgress=1;finish()}updateCarPos(trackProgress,lateralOffset)}' +
-'updateCam(false);if(groundMesh){groundMesh.position.x=camera.position.x;groundMesh.position.z=camera.position.z}renderer.render(scene,camera)}' +
-'})();' +
-SE + '</body></html>';
-}
-
 // ============================================================
 // MARBLE WORLD GENERATION + SPARK.JS SPLAT VIEWER
 // ============================================================
+var _proxyUrl = 'https://accel-driv-proxy.phhowell.workers.dev';
+var _RUNWAY_PREFIX = 'https://api.dev.runwayml.com/v1/';
+var _MARBLE_PREFIX = 'https://api.worldlabs.ai/marble/v1/';
+var _DECART_PREFIX = 'https://api.decart.ai/v1/';
+var _KIRI_PREFIX = 'https://api.kiriengine.app/api/';
 async function proxiedFetch(url, opts) {
+  opts = opts || {};
+  if (_proxyUrl) {
+    var workerPath = null;
+    if (url.indexOf(_RUNWAY_PREFIX) === 0) workerPath = '/runway/' + url.slice(_RUNWAY_PREFIX.length);
+    else if (url.indexOf(_MARBLE_PREFIX) === 0) workerPath = '/marble/' + url.slice(_MARBLE_PREFIX.length);
+    else if (url.indexOf(_DECART_PREFIX) === 0) workerPath = '/decart/' + url.slice(_DECART_PREFIX.length);
+    else if (url.indexOf(_KIRI_PREFIX) === 0) workerPath = '/kiri/' + url.slice(_KIRI_PREFIX.length);
+    if (workerPath) {
+      // Strip auth headers — Worker adds them server-side
+      var h = {};
+      if (opts.headers) { for (var k in opts.headers) { var kl = k.toLowerCase(); if (kl !== 'authorization' && kl !== 'wlt-api-key' && kl !== 'x-api-key' && kl !== 'x-runway-version') h[k] = opts.headers[k]; } }
+      return fetch(_proxyUrl + workerPath, Object.assign({}, opts, { headers: h }));
+    }
+    // Non-API URL: try direct, fallback to Worker generic proxy
+    try { return await fetch(url, opts); }
+    catch (e) { return fetch(_proxyUrl + '/fetch?url=' + encodeURIComponent(url), opts); }
+  }
   try { return await fetch(url, opts); }
   catch (e) { return fetch('https://corsproxy.io/?' + encodeURIComponent(url), opts); }
 }
+
+// ---- Visibility-aware polling sleep ----
+// When the tab is backgrounded, browsers throttle setTimeout to >=1s (or pause entirely).
+// This mechanism lets polling loops be woken up early when the tab regains focus.
+var _pollWakeResolvers = [];
+function pollSleep(ms) {
+  return new Promise(function(resolve) {
+    var done = false;
+    var timer = setTimeout(function() { if (!done) { done = true; resolve('timer'); } }, ms);
+    _pollWakeResolvers.push(function() { if (!done) { done = true; clearTimeout(timer); resolve('wake'); } });
+  });
+}
+function wakePollLoops() {
+  var fns = _pollWakeResolvers.splice(0);
+  fns.forEach(function(fn) { fn(); });
+}
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden) {
+    wakePollLoops();
+    showRunwayPending();
+    showDecartPending();
+    showMarblePending();
+  }
+});
+
+// ---- Runway pending state persistence ----
+function saveRunwayPending(taskId, apiKey) {
+  localStorage.setItem('runway_pending', JSON.stringify({ taskId: taskId, apiKey: apiKey, time: Date.now() }));
+}
+function clearRunwayPending() {
+  localStorage.removeItem('runway_pending');
+  var el = document.getElementById('runway-pending'); if (el) el.style.display = 'none';
+}
+function showRunwayPending() {
+  var raw = localStorage.getItem('runway_pending'); if (!raw) return;
+  try { var p = JSON.parse(raw); } catch(e) { return; }
+  var age = Math.round((Date.now() - p.time) / 60000);
+  if (age > 15) { clearRunwayPending(); return; }
+  var el = document.getElementById('runway-pending'); if (!el) return;
+  document.getElementById('runway-pending-info').textContent = 'Task: ' + p.taskId.substring(0, 12) + '... (' + age + ' min ago)';
+  el.style.display = 'block';
+}
+async function checkRunwayOperation() {
+  var raw = localStorage.getItem('runway_pending'); if (!raw) { toast('No pending Runway task'); return; }
+  try { var p = JSON.parse(raw); } catch(e) { toast('Invalid pending data'); clearRunwayPending(); return; }
+  var progEl = document.getElementById('runway-progress');
+  var pendEl = document.getElementById('runway-pending');
+  progEl.style.display = 'block';
+  progEl.textContent = 'Checking Runway task status...';
+  pendEl.style.display = 'none';
+  var apiKey = p.apiKey || document.getElementById('runway-apikey').value.trim();
+  if (!apiKey) { toast('Enter your Runway API key first'); pendEl.style.display = 'block'; return; }
+  var headers = { 'Authorization': 'Bearer ' + apiKey, 'X-Runway-Version': '2024-11-06' };
+  try {
+    var res = await proxiedFetch('https://api.dev.runwayml.com/v1/tasks/' + p.taskId, { headers: headers });
+    if (!res.ok) throw new Error('Poll failed: ' + res.status);
+    var data = await res.json();
+    if (data.status === 'SUCCEEDED') {
+      clearRunwayPending();
+      _runwayVideoUrl = data.output[0];
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = _runwayVideoUrl; videoEl.style.display = 'block';
+      progEl.textContent = 'Runway stylization complete!';
+      toast('Runway video ready');
+    } else if (data.status === 'FAILED') {
+      clearRunwayPending();
+      throw new Error('Runway failed: ' + (data.failureCode || 'unknown'));
+    } else if (data.status === 'CANCELED') {
+      clearRunwayPending();
+      throw new Error('Runway task canceled');
+    } else {
+      progEl.textContent = 'Still generating — resuming poll...';
+      _runwayVideoUrl = await pollRunwayTask(p.taskId, apiKey, progEl);
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = _runwayVideoUrl; videoEl.style.display = 'block';
+      progEl.textContent = 'Runway stylization complete!';
+      toast('Runway video ready');
+    }
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('Runway error: ' + err.message);
+    console.error('Runway check error:', err);
+  }
+}
+
 var _splatMesh = null;
 var _sparkLoaded = false;
 
@@ -1252,9 +1456,8 @@ function handleMarbleResult(worldData, quality) {
 var progEl = document.getElementById('marble-progress');
 var assets = worldData.assets;
 var splatUrl = null;
-if (assets && assets.splats && assets.splats.spz_urls) {
-splatUrl = assets.splats.spz_urls[quality] || assets.splats.spz_urls['100k'] || assets.splats.spz_urls['full_res'];
-}
+var spzUrls = (assets && assets.splats && assets.splats.spz_urls) ? assets.splats.spz_urls : {};
+splatUrl = spzUrls[quality] || spzUrls['100k'] || spzUrls['full_res'];
 var colliderUrl = null;
 if (assets && assets.mesh) { colliderUrl = assets.mesh.collider_mesh_url; }
 if (splatUrl) {
@@ -1266,14 +1469,63 @@ if (colliderUrl) { window._marbleColliderUrl = colliderUrl; }
 progEl.textContent = 'World generated! View at: ' + (worldData.world_marble_url || '');
 if (worldData.world_marble_url) { window.open(worldData.world_marble_url, '_blank'); }
 }
+
+// Populate Stage 3 results panel (download buttons + public URL)
+var resultsEl = document.getElementById('marble-vid-results');
+var urlInput = document.getElementById('marble-vid-splat-url');
+var publicEl = document.getElementById('marble-vid-public-url');
+var dlBar = document.getElementById('marble-vid-dl-bar');
+if (resultsEl) {
+  resultsEl.style.display = splatUrl ? 'block' : 'none';
+  if (splatUrl) {
+    urlInput.value = splatUrl;
+    dlBar.innerHTML = '';
+    // Download button for selected quality
+    dlBar.appendChild(makeDownloadBtn(splatUrl, 'Download .spz (' + quality + ')', 'marble-world-' + quality + '.spz'));
+    // Additional quality options
+    var qualities = Object.keys(spzUrls);
+    for (var qi = 0; qi < qualities.length; qi++) {
+      var q = qualities[qi];
+      if (q !== quality && spzUrls[q]) {
+        dlBar.appendChild(makeDownloadBtn(spzUrls[q], q, 'marble-world-' + q + '.spz'));
+      }
+    }
+    // Collider mesh download
+    if (colliderUrl) {
+      dlBar.appendChild(makeDownloadBtn(colliderUrl, 'Collider mesh', 'marble-collider.glb'));
+    }
+  }
+  // Public Marble viewer URL
+  if (worldData.world_marble_url) {
+    publicEl.style.display = 'block';
+    publicEl.innerHTML = 'Public URL: <a href="' + worldData.world_marble_url + '" target="_blank" style="color:var(--accent)">' + worldData.world_marble_url + '</a>';
+  } else {
+    publicEl.style.display = 'none';
+  }
+}
+
 toast('World generated!');
 }
 async function pollMarbleOp(opId, apiKey, quality, progEl) {
-for (var attempt = 0; attempt < 180; attempt++) {
-await new Promise(function(r) { setTimeout(r, 3000); });
-progEl.textContent = 'Generating 3D world... (' + (attempt * 3) + 's)';
-var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + opId, { headers: { 'WLT-Api-Key': apiKey } });
-if (!pollRes.ok) continue;
+// Strip leading "operations/" if present to avoid double-path
+var cleanId = opId;
+if (cleanId && cleanId.indexOf('operations/') === 0) cleanId = cleanId.slice('operations/'.length);
+var startTime = Date.now();
+var maxMs = 9 * 60 * 1000; // 9 min wall-clock timeout
+while (Date.now() - startTime < maxMs) {
+await pollSleep(3000);
+var elapsed = Math.round((Date.now() - startTime) / 1000);
+progEl.textContent = 'Generating 3D world... (' + elapsed + 's)';
+try {
+var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + cleanId, { headers: { 'WLT-Api-Key': apiKey } });
+if (!pollRes.ok) {
+console.warn('Poll failed (status ' + pollRes.status + ') for op:', cleanId);
+if (pollRes.status === 429) {
+progEl.textContent = 'Rate limited — waiting... (' + elapsed + 's)';
+await pollSleep(10000);
+}
+continue;
+}
 var pollData = await pollRes.json();
 if (pollData.done) {
 clearMarblePending();
@@ -1281,7 +1533,11 @@ if (pollData.error) throw new Error('Generation error: ' + (pollData.error.messa
 return pollData.response;
 }
 if (pollData.metadata && pollData.metadata.progress) {
-progEl.textContent = 'Generating: ' + (pollData.metadata.progress.description || pollData.metadata.progress.status);
+progEl.textContent = 'Generating: ' + (pollData.metadata.progress.description || pollData.metadata.progress.status) + ' (' + elapsed + 's)';
+}
+} catch (e) {
+if (e.message.includes('Generation error')) throw e;
+console.warn('Poll exception:', e.message);
 }
 }
 throw new Error('Timeout waiting for world generation');
@@ -1379,6 +1635,2013 @@ console.error('Marble generation error:', err);
 btn.disabled = false;
 btn.textContent = 'Generate World';
 }
+}
+
+// ============================================================
+// PANORAMA CAPTURE PIPELINE (CubeCamera → equirect → Marble)
+// ============================================================
+var _panoCaptures = null;
+var _panoMarkerGroup = null;
+
+function clearPanoMarkers() {
+if (_panoMarkerGroup) { scene.remove(_panoMarkerGroup); _panoMarkerGroup = null; }
+}
+
+function showPanoMarkers(captures, camHeight) {
+clearPanoMarkers();
+if (!captures || !captures.length) return;
+_panoMarkerGroup = new THREE.Group();
+_panoMarkerGroup.name = 'panoMarkers';
+
+var sphereGeo = new THREE.SphereGeometry(4, 12, 8);
+var coneGeo = new THREE.ConeGeometry(3, 10, 8);
+
+for (var i = 0; i < captures.length; i++) {
+var c = captures[i];
+var px = c.position.x, py = c.position.y, pz = c.position.z;
+var camY = py + camHeight;
+
+// Camera position sphere (cyan)
+var sphere = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: 0x00ffcc }));
+sphere.position.set(px, camY, pz);
+_panoMarkerGroup.add(sphere);
+
+// Vertical pole from track to camera
+var poleGeo = new THREE.BufferGeometry().setFromPoints([
+new THREE.Vector3(px, py, pz), new THREE.Vector3(px, camY, pz)
+]);
+var pole = new THREE.Line(poleGeo, new THREE.LineBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.5 }));
+_panoMarkerGroup.add(pole);
+
+// Direction arrow (cone pointing along tangent)
+var cone = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({ color: 0xff44cc }));
+cone.position.set(px + c.tangent.x * 12, camY, pz + c.tangent.z * 12);
+cone.lookAt(px, camY, pz);
+cone.rotateX(Math.PI / 2);
+_panoMarkerGroup.add(cone);
+
+// Index label sprite
+var cv = document.createElement('canvas');
+cv.width = 64; cv.height = 32;
+var ctx = cv.getContext('2d');
+ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 64, 32);
+ctx.fillStyle = '#00ffcc'; ctx.font = 'bold 20px monospace'; ctx.textAlign = 'center';
+ctx.fillText('#' + i, 32, 22);
+var tex = new THREE.CanvasTexture(cv);
+var spriteMat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+var sprite = new THREE.Sprite(spriteMat);
+sprite.position.set(px, camY + 8, pz);
+sprite.scale.set(20, 10, 1);
+_panoMarkerGroup.add(sprite);
+}
+
+scene.add(_panoMarkerGroup);
+}
+
+function buildTrackSpline() {
+if (trackData.length < 20) return null;
+var pts = [];
+var step = Math.max(1, Math.floor(trackData.length / 500));
+for (var i = 0; i < trackData.length; i += step) {
+pts.push(new THREE.Vector3(trackData[i][0][0], trackData[i][0][1], trackData[i][0][2]));
+}
+var last = trackData[trackData.length - 1][0];
+if (pts.length < 2 || pts[pts.length - 1].distanceTo(new THREE.Vector3(last[0], last[1], last[2])) > 1) {
+pts.push(new THREE.Vector3(last[0], last[1], last[2]));
+}
+var first = trackData[0][0];
+var gap = Math.hypot(first[0] - last[0], first[1] - last[1], first[2] - last[2]);
+return new THREE.CatmullRomCurve3(pts, gap < 50, 'catmullrom', 0.5);
+}
+
+function capturePanoramasAlongTrack(numSections, camHeight, cubeRes, rangeStart, rangeEnd) {
+var spline = buildTrackSpline();
+if (!spline) { toast('Load a track first'); return null; }
+var isClosed = spline.closed;
+var tStart = (rangeStart || 0) / 100;
+var tEnd = (rangeEnd != null ? rangeEnd : 100) / 100;
+if (tEnd <= tStart) { toast('Range end must be greater than start'); return null; }
+
+// CubeCamera setup
+var cubeRT = new THREE.WebGLCubeRenderTarget(cubeRes, {
+format: THREE.RGBAFormat, generateMipmaps: false
+});
+var cubeCamera = new THREE.CubeCamera(1, 20000, cubeRT);
+
+// Equirect render target (same GL context as main renderer)
+var eqW = cubeRes * 2, eqH = cubeRes;
+var equirectRT = new THREE.WebGLRenderTarget(eqW, eqH);
+
+// Equirect conversion shader: cubemap UV → spherical direction lookup
+var equirectMat = new THREE.ShaderMaterial({
+uniforms: { cubeMap: { value: null } },
+vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position,1.0);}',
+fragmentShader: [
+'uniform samplerCube cubeMap;',
+'varying vec2 vUv;',
+'#define PI 3.14159265359',
+'void main(){',
+'  float lon=vUv.x*2.0*PI-PI;',
+'  float lat=vUv.y*PI-PI*0.5;',
+'  vec3 dir=vec3(cos(lat)*sin(lon),sin(lat),cos(lat)*cos(lon));',
+'  gl_FragColor=textureCube(cubeMap,dir);',
+'}'
+].join('\n'),
+depthTest: false, depthWrite: false
+});
+var eqScene = new THREE.Scene();
+var eqCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+eqScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), equirectMat));
+
+// Hide editor overlays and section splats during capture
+var hidden = [];
+[ptCloud, selHL, cpGrp, splineLine, _panoMarkerGroup].forEach(function(obj) {
+if (obj && obj.visible) { obj.visible = false; hidden.push(obj); }
+});
+for (var si = 0; si < _sectionSplats.length; si++) {
+var sm = _sectionSplats[si].mesh;
+if (sm && sm.visible) { sm.visible = false; hidden.push(sm); }
+}
+scene.traverse(function(obj) {
+if (obj.type === 'GridHelper' && obj.visible) { obj.visible = false; hidden.push(obj); }
+});
+
+// Enable autoClear for clean cube face renders
+var savedAutoClear = rndr.autoClear;
+rndr.autoClear = true;
+
+var results = [];
+var pixels = new Uint8Array(eqW * eqH * 4);
+var canvas = document.createElement('canvas');
+canvas.width = eqW; canvas.height = eqH;
+var ctx = canvas.getContext('2d');
+
+for (var i = 0; i < numSections; i++) {
+var frac = numSections > 1 ? i / (numSections - 1) : 0;
+var t = tStart + (tEnd - tStart) * frac;
+t = Math.min(t, 0.9999);
+
+var pos = spline.getPointAt(t);
+var tangent = spline.getTangentAt(t).normalize();
+
+// Capture cube map at this track position
+cubeCamera.position.set(pos.x, pos.y + camHeight, pos.z);
+cubeCamera.update(rndr, scene);
+
+// Convert cubemap → equirectangular via fullscreen quad shader
+equirectMat.uniforms.cubeMap.value = cubeRT.texture;
+rndr.setRenderTarget(equirectRT);
+rndr.clear();
+rndr.render(eqScene, eqCam);
+rndr.setRenderTarget(null);
+
+// Read pixels from render target (WebGL is bottom-up, flip to top-down)
+rndr.readRenderTargetPixels(equirectRT, 0, 0, eqW, eqH, pixels);
+var imageData = ctx.createImageData(eqW, eqH);
+for (var row = 0; row < eqH; row++) {
+var src = (eqH - 1 - row) * eqW * 4;
+var dst2 = row * eqW * 4;
+imageData.data.set(pixels.subarray(src, src + eqW * 4), dst2);
+}
+ctx.putImageData(imageData, 0, 0);
+
+results.push({
+index: i, t: t,
+position: { x: pos.x, y: pos.y, z: pos.z },
+tangent: { x: tangent.x, y: tangent.y, z: tangent.z },
+dataUrl: canvas.toDataURL('image/jpeg', 0.92)
+});
+}
+
+// Restore state
+rndr.autoClear = savedAutoClear;
+hidden.forEach(function(obj) { obj.visible = true; });
+cubeRT.dispose();
+equirectRT.dispose();
+equirectMat.dispose();
+
+return results;
+}
+
+function previewPanoCaptures() {
+var numSections = parseInt(document.getElementById('s-pano-sections').value);
+var camHeight = parseFloat(document.getElementById('s-pano-height').value);
+var cubeRes = parseInt(document.getElementById('s-pano-cuberes').value);
+var rangeStart = parseInt(document.getElementById('s-pano-start').value);
+var rangeEnd = parseInt(document.getElementById('s-pano-end').value);
+var progEl = document.getElementById('pano-progress');
+var previewEl = document.getElementById('pano-preview');
+
+progEl.style.display = 'block';
+progEl.textContent = 'Capturing ' + numSections + ' panoramas (' + rangeStart + '%-' + rangeEnd + '%)...';
+
+setTimeout(function() {
+var captures = capturePanoramasAlongTrack(numSections, camHeight, cubeRes, rangeStart, rangeEnd);
+if (!captures) { progEl.style.display = 'none'; return; }
+
+_panoCaptures = captures;
+
+// Show 3D markers in editor viewport
+showPanoMarkers(captures, camHeight);
+
+// Build preview grid
+var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-top:8px">';
+for (var i = 0; i < captures.length; i++) {
+var c = captures[i];
+html += '<div style="position:relative;border:1px solid var(--border);border-radius:4px;overflow:hidden">';
+html += '<img src="' + c.dataUrl + '" style="width:100%;display:block">';
+html += '<div style="position:absolute;bottom:2px;left:4px;font-size:9px;color:var(--accent);font-family:monospace;background:rgba(0,0,0,.7);padding:1px 4px;border-radius:2px">';
+html += '#' + i + ' t=' + c.t.toFixed(3);
+html += '</div></div>';
+}
+html += '</div>';
+previewEl.innerHTML = html;
+previewEl.style.display = 'block';
+
+progEl.textContent = 'Captured ' + captures.length + ' panoramas (' + cubeRes + 'px faces → ' + (cubeRes * 2) + 'x' + cubeRes + ' equirect)';
+toast('Panoramas captured');
+}, 50);
+}
+
+async function uploadImageToMarble(dataUrl, apiKey, fileName) {
+var headers = { 'Content-Type': 'application/json', 'WLT-Api-Key': apiKey };
+var blob = await (await fetch(dataUrl)).blob();
+
+var uploadRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/media-assets:prepare_upload', {
+method: 'POST', headers: headers,
+body: JSON.stringify({ file_name: fileName, kind: 'image', extension: 'png' })
+});
+if (!uploadRes.ok) throw new Error(uploadRes.status === 401 ? 'Invalid API key' : 'Media upload failed: ' + uploadRes.status);
+var uploadData = await uploadRes.json();
+var mediaAssetId = uploadData.media_asset.media_asset_id;
+var uploadUrl = uploadData.upload_info.upload_url;
+var uploadMethod = uploadData.upload_info.upload_method || 'PUT';
+var uploadHeaders = uploadData.upload_info.required_headers || {};
+
+await proxiedFetch(uploadUrl, { method: uploadMethod, headers: uploadHeaders, body: blob });
+return mediaAssetId;
+}
+
+async function batchPanoMarble() {
+var apiKey = document.getElementById('marble-apikey').value.trim();
+if (!apiKey) { toast('Enter a Marble API key in the Generate World panel'); return; }
+var prompt = document.getElementById('marble-prompt').value.trim();
+if (!prompt) { toast('Enter an environment prompt in the Generate World panel'); return; }
+var quality = document.getElementById('marble-quality').value;
+var genMode = document.getElementById('s-pano-genmode').value; // 'text' or 'image'
+
+var numSections = parseInt(document.getElementById('s-pano-sections').value);
+var camHeight = parseFloat(document.getElementById('s-pano-height').value);
+var cubeRes = parseInt(document.getElementById('s-pano-cuberes').value);
+var rangeStart = parseInt(document.getElementById('s-pano-start').value);
+var rangeEnd = parseInt(document.getElementById('s-pano-end').value);
+var progEl = document.getElementById('pano-progress');
+var btn = document.getElementById('pano-gen-btn');
+
+btn.disabled = true; btn.textContent = 'Generating...';
+progEl.style.display = 'block';
+
+try {
+// Step 1: Capture panoramas (reuse cached if settings match)
+var captures = _panoCaptures;
+if (!captures || captures.length !== numSections) {
+progEl.textContent = 'Capturing ' + numSections + ' panoramas (' + rangeStart + '%-' + rangeEnd + '%)...';
+await new Promise(function(r) { setTimeout(r, 50); });
+captures = capturePanoramasAlongTrack(numSections, camHeight, cubeRes, rangeStart, rangeEnd);
+if (!captures) throw new Error('Failed to capture panoramas');
+_panoCaptures = captures;
+}
+
+var headers = { 'Content-Type': 'application/json', 'WLT-Api-Key': apiKey };
+var operations = [];
+
+// Step 2: Upload each panorama and start Marble generation (with 429 retry)
+for (var i = 0; i < captures.length; i++) {
+var cap = captures[i];
+var worldPrompt;
+
+if (genMode === 'image') {
+progEl.textContent = 'Uploading panorama ' + (i + 1) + '/' + captures.length + '...';
+var mediaAssetId = await uploadImageToMarble(cap.dataUrl, apiKey, 'pano-section-' + i + '.jpg');
+worldPrompt = {
+type: 'image',
+image_prompt: { source: 'media_asset', media_asset_id: mediaAssetId },
+text_prompt: prompt
+};
+} else {
+// Text-only: describe the viewpoint with spatial context so each section is unique
+var pct = Math.round(cap.t * 100);
+var sectionPrompt = prompt + '. This is section ' + (i + 1) + ' of ' + captures.length + ' along a racing track, at ' + pct + '% progress.';
+worldPrompt = {
+type: 'text',
+text_prompt: sectionPrompt
+};
+}
+
+progEl.textContent = 'Starting generation ' + (i + 1) + '/' + captures.length + ' (' + genMode + ')...';
+
+// Retry with exponential backoff on 429 rate limit
+var genRes = null;
+var backoff = [5000, 15000, 30000, 60000]; // 5s, 15s, 30s, 60s
+for (var attempt = 0; attempt <= backoff.length; attempt++) {
+genRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/worlds:generate', {
+method: 'POST', headers: headers,
+body: JSON.stringify({ display_name: 'Track Section ' + i, model: 'Marble 0.1-plus', world_prompt: worldPrompt })
+});
+if (genRes.status !== 429) break;
+if (attempt < backoff.length) {
+var wait = backoff[attempt] / 1000;
+progEl.textContent = 'Rate limited — waiting ' + wait + 's before retrying section ' + (i + 1) + '...';
+await new Promise(function(r) { setTimeout(r, backoff[attempt]); });
+}
+}
+
+if (!genRes.ok) {
+if (genRes.status === 401) throw new Error('Invalid API key');
+if (genRes.status === 429) throw new Error('Rate limit exceeded after retries — try fewer sections or wait a few minutes');
+var errText = await genRes.text();
+throw new Error('Generation ' + i + ' failed (' + genRes.status + '): ' + errText);
+}
+
+var genData = await genRes.json();
+var opId = genData.operation_id || genData.name;
+console.log('Section ' + i + ' generation response:', { opId: opId, done: genData.done, keys: Object.keys(genData) });
+
+if (genData.done && genData.response) {
+operations.push({ capture: cap, worldData: genData.response, done: true });
+} else if (opId) {
+operations.push({ capture: cap, opId: opId, done: false });
+} else {
+console.warn('Section ' + i + ': no operation_id or name in response', genData);
+}
+
+// Brief delay between requests to avoid hitting rate limits
+if (i < captures.length - 1) {
+await new Promise(function(r) { setTimeout(r, 2000); });
+}
+}
+
+// Step 3: Poll all pending operations until complete
+var allDone = operations.every(function(op) { return op.done; });
+var startTime = Date.now();
+var maxMs = 15 * 60 * 1000;
+var pollErrors = 0;
+
+while (!allDone && Date.now() - startTime < maxMs) {
+await new Promise(function(r) { setTimeout(r, 5000); });
+var pending = operations.filter(function(op) { return !op.done; });
+var elapsed = Math.round((Date.now() - startTime) / 1000);
+progEl.textContent = 'Generating... ' + (operations.length - pending.length) + '/' + operations.length + ' done (' + elapsed + 's)';
+
+for (var j = 0; j < pending.length; j++) {
+try {
+// Strip leading "operations/" if present to avoid double-path
+var pollId = pending[j].opId;
+if (pollId && pollId.indexOf('operations/') === 0) pollId = pollId.slice('operations/'.length);
+var pollRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/operations/' + pollId, {
+headers: { 'WLT-Api-Key': apiKey }
+});
+if (!pollRes.ok) {
+pollErrors++;
+var errStatus = pollRes.status;
+console.warn('Poll failed for section (status ' + errStatus + '):', pollId);
+if (errStatus === 429) {
+progEl.textContent = 'Rate limited during polling — backing off... (' + elapsed + 's)';
+await new Promise(function(r) { setTimeout(r, 10000); }); // extra 10s backoff
+}
+continue;
+}
+pollErrors = 0;
+var pollData = await pollRes.json();
+if (pollData.done) {
+if (pollData.error) {
+pending[j].error = pollData.error.message || 'Generation failed';
+} else {
+pending[j].worldData = pollData.response;
+}
+pending[j].done = true;
+} else if (pollData.metadata && pollData.metadata.progress) {
+var desc = pollData.metadata.progress.description || pollData.metadata.progress.status || '';
+if (desc) progEl.textContent = (operations.length - pending.length) + '/' + operations.length + ' done — ' + desc + ' (' + elapsed + 's)';
+}
+} catch (e) {
+console.warn('Poll exception:', e.message);
+}
+// Stagger polls: brief pause between each operation to avoid rate limits
+if (j < pending.length - 1) {
+await new Promise(function(r) { setTimeout(r, 1000); });
+}
+}
+
+allDone = operations.every(function(op) { return op.done; });
+}
+
+// Step 4: Collect results and build section data
+var successful = operations.filter(function(op) { return op.worldData && !op.error; });
+var failed = operations.filter(function(op) { return op.error; });
+
+if (successful.length === 0) throw new Error('All generations failed');
+
+var sectionData = successful.map(function(op) {
+var assets = op.worldData.assets;
+var spzUrls = (assets && assets.splats && assets.splats.spz_urls) ? assets.splats.spz_urls : {};
+var splatUrl = spzUrls[quality] || spzUrls['100k'] || spzUrls['full_res'];
+return {
+t: op.capture.t,
+position: op.capture.position,
+tangent: op.capture.tangent,
+splatUrl: splatUrl,
+colliderUrl: assets && assets.mesh ? assets.mesh.collider_mesh_url : null,
+publicUrl: op.worldData.world_marble_url
+};
+});
+
+window._panoSections = sectionData;
+
+// Step 5: Place all splats in the scene at their capture positions
+progEl.textContent = 'Loading splats into scene...';
+await placeSectionSplats(sectionData, progEl);
+
+// Step 6: Auto-save bundle
+saveSectionBundle();
+
+// Show results UI
+var previewEl = document.getElementById('pano-preview');
+var html = '<div style="margin-top:8px;border:1px solid var(--accent2);border-radius:6px;padding:8px">';
+html += '<div style="color:var(--accent2);font-size:11px;font-weight:600;margin-bottom:6px">' + successful.length + '/' + operations.length + ' sections generated</div>';
+for (var k = 0; k < sectionData.length; k++) {
+var sec = sectionData[k];
+html += '<div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;display:flex;gap:6px;align-items:center">';
+html += '<span style="color:var(--accent)">Section ' + k + '</span>';
+html += '<span>t=' + sec.t.toFixed(3) + '</span>';
+if (sec.splatUrl) {
+html += '<button class="btn" style="padding:2px 6px;font-size:9px;flex:0" onclick="loadPanoSection(' + k + ')">Load</button>';
+}
+if (sec.publicUrl) {
+html += '<a href="' + sec.publicUrl + '" target="_blank" style="color:var(--accent2);font-size:9px">View</a>';
+}
+html += '</div>';
+}
+if (failed.length > 0) {
+html += '<div style="color:var(--danger);font-size:10px;margin-top:4px">' + failed.length + ' section(s) failed</div>';
+}
+html += '<div class="btn-group" style="margin-top:6px">';
+html += '<button class="btn btn-accent" onclick="placeSectionSplats(window._panoSections, document.getElementById(\'pano-progress\'))">Place All Splats</button>';
+html += '<button class="btn" onclick="clearSectionSplats();toast(\'Section splats removed\')">Remove Splats</button>';
+html += '<button class="btn btn-accent2" onclick="saveSectionBundle()">Save Bundle</button>';
+html += '</div></div>';
+previewEl.innerHTML = html;
+previewEl.style.display = 'block';
+
+progEl.textContent = 'Done! ' + successful.length + ' splats generated and placed.';
+toast(successful.length + ' track sections generated');
+
+} catch (err) {
+progEl.textContent = 'Error: ' + err.message;
+toast('Error: ' + err.message);
+console.error('Panorama batch error:', err);
+} finally {
+btn.disabled = false;
+btn.textContent = 'Generate All Sections';
+}
+}
+
+function loadPanoSection(index) {
+if (!window._panoSections || !window._panoSections[index]) return;
+var sec = window._panoSections[index];
+if (!sec.splatUrl) { toast('No splat URL for section ' + index); return; }
+document.getElementById('splat-url').value = sec.splatUrl;
+loadSplatFromURL();
+// Position splat at the capture point on the track
+['px','py','pz'].forEach(function(axis, ai) {
+var val = Math.round(axis === 'px' ? sec.position.x : axis === 'py' ? sec.position.y : sec.position.z);
+var sl = document.getElementById('s-splat' + axis);
+var vl = document.getElementById('v-splat' + axis);
+if (sl) { sl.value = val; }
+if (vl) { vl.textContent = val; }
+});
+applySplatSettings();
+toast('Loading section ' + index + ' splat');
+}
+
+function exportPanoSections() {
+if (!window._panoSections) { toast('No section data'); return; }
+var data = JSON.stringify(window._panoSections, null, 2);
+var blob = new Blob([data], { type: 'application/json' });
+var url = URL.createObjectURL(blob);
+var a = document.createElement('a'); a.href = url; a.download = 'pano-sections.json'; a.click();
+URL.revokeObjectURL(url);
+toast('Section data exported');
+}
+
+// ============================================================
+// MULTI-SPLAT SCENE PLACEMENT & BUNDLE SAVE/LOAD
+// ============================================================
+var _sectionSplats = []; // [{mesh, t, position, tangent, splatUrl}]
+var _sectionBundleData = null; // last saved/loaded bundle
+
+function clearSectionSplats() {
+for (var i = 0; i < _sectionSplats.length; i++) {
+var entry = _sectionSplats[i];
+if (entry.mesh) {
+scene.remove(entry.mesh);
+if (entry.mesh.dispose) entry.mesh.dispose();
+}
+}
+_sectionSplats = [];
+}
+
+async function placeSectionSplats(sectionData, progEl) {
+await ensureSparkLoaded();
+clearSectionSplats();
+var Spark = window.Spark;
+var loaded = 0;
+
+for (var i = 0; i < sectionData.length; i++) {
+var sec = sectionData[i];
+if (!sec.splatUrl) continue;
+if (progEl) progEl.textContent = 'Loading splat ' + (i + 1) + '/' + sectionData.length + '...';
+try {
+var mesh = await new Promise(function(resolve, reject) {
+var m = new Spark.SplatMesh({
+url: sec.splatUrl,
+onLoad: function() { resolve(m); }
+});
+// Timeout after 60s
+setTimeout(function() { reject(new Error('Timeout loading splat ' + i)); }, 60000);
+});
+mesh.position.set(sec.position.x, sec.position.y, sec.position.z);
+scene.add(mesh);
+_sectionSplats.push({
+mesh: mesh, t: sec.t, position: sec.position,
+tangent: sec.tangent, splatUrl: sec.splatUrl
+});
+loaded++;
+} catch (err) {
+console.warn('Failed to load section splat ' + i + ':', err.message);
+}
+}
+if (progEl) progEl.textContent = loaded + '/' + sectionData.length + ' splats placed in scene.';
+toast(loaded + ' splats placed along track');
+return loaded;
+}
+
+function saveSectionBundle() {
+if (!window._panoSections || !window._panoSections.length) { toast('No section data to save'); return; }
+var captures = _panoCaptures || [];
+var sections = window._panoSections.map(function(sec, i) {
+var pano = captures[i];
+return {
+t: sec.t,
+position: sec.position,
+tangent: sec.tangent,
+splatUrl: sec.splatUrl,
+colliderUrl: sec.colliderUrl || null,
+publicUrl: sec.publicUrl || null,
+panoramaDataUrl: pano ? pano.dataUrl : null
+};
+});
+var bundle = {
+version: 1,
+timestamp: Date.now(),
+created: new Date().toISOString(),
+trackPointCount: trackData.length,
+sectionCount: sections.length,
+sections: sections
+};
+var json = JSON.stringify(bundle);
+var blob = new Blob([json], { type: 'application/json' });
+var ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+var filename = 'track-bundle-' + ts + '.json';
+var url = URL.createObjectURL(blob);
+var a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+URL.revokeObjectURL(url);
+_sectionBundleData = bundle;
+toast('Bundle saved: ' + filename);
+}
+
+function loadSectionBundle() {
+var input = document.createElement('input');
+input.type = 'file'; input.accept = '.json';
+input.onchange = async function() {
+if (!this.files[0]) return;
+var file = this.files[0];
+var progEl = document.getElementById('pano-progress');
+progEl.style.display = 'block';
+progEl.textContent = 'Reading bundle...';
+try {
+var text = await file.text();
+var bundle = JSON.parse(text);
+if (!bundle.sections || !bundle.sections.length) throw new Error('No sections in bundle');
+_sectionBundleData = bundle;
+
+// Restore _panoSections for the existing per-section Load buttons
+window._panoSections = bundle.sections;
+
+// Restore panorama captures if present
+if (bundle.sections[0] && bundle.sections[0].panoramaDataUrl) {
+_panoCaptures = bundle.sections.map(function(sec, i) {
+return {
+index: i, t: sec.t,
+position: sec.position, tangent: sec.tangent,
+dataUrl: sec.panoramaDataUrl
+};
+});
+}
+
+// Show preview UI
+var previewEl = document.getElementById('pano-preview');
+var created = bundle.created ? ' (' + bundle.created.slice(0, 16).replace('T', ' ') + ')' : '';
+var html = '<div style="margin-top:8px;border:1px solid var(--accent);border-radius:6px;padding:8px">';
+html += '<div style="color:var(--accent);font-size:11px;font-weight:600;margin-bottom:6px">Loaded bundle: ' + bundle.sectionCount + ' sections' + created + '</div>';
+
+// Panorama thumbnail grid
+if (_panoCaptures && _panoCaptures.length) {
+html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px;margin-bottom:8px">';
+for (var i = 0; i < _panoCaptures.length; i++) {
+var c = _panoCaptures[i];
+html += '<div style="position:relative;border:1px solid var(--border);border-radius:4px;overflow:hidden">';
+html += '<img src="' + c.dataUrl + '" style="width:100%;display:block">';
+html += '<div style="position:absolute;bottom:2px;left:4px;font-size:9px;color:var(--accent);font-family:monospace;background:rgba(0,0,0,.7);padding:1px 4px;border-radius:2px">';
+html += '#' + i + ' t=' + c.t.toFixed(3) + '</div></div>';
+}
+html += '</div>';
+}
+
+// Section list with Load buttons
+for (var k = 0; k < bundle.sections.length; k++) {
+var sec = bundle.sections[k];
+html += '<div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;display:flex;gap:6px;align-items:center">';
+html += '<span style="color:var(--accent)">Section ' + k + '</span>';
+html += '<span>t=' + sec.t.toFixed(3) + '</span>';
+if (sec.splatUrl) {
+html += '<button class="btn" style="padding:2px 6px;font-size:9px;flex:0" onclick="loadPanoSection(' + k + ')">Load</button>';
+}
+if (sec.publicUrl) {
+html += '<a href="' + sec.publicUrl + '" target="_blank" style="color:var(--accent2);font-size:9px">View</a>';
+}
+html += '</div>';
+}
+html += '<div class="btn-group" style="margin-top:6px">';
+html += '<button class="btn btn-accent" onclick="placeSectionSplats(window._panoSections, document.getElementById(\'pano-progress\'))">Place All Splats</button>';
+html += '<button class="btn" onclick="clearSectionSplats();toast(\'Section splats removed\')">Remove Splats</button>';
+html += '<button class="btn btn-accent2" onclick="saveSectionBundle()">Re-save Bundle</button>';
+html += '</div></div>';
+previewEl.innerHTML = html;
+previewEl.style.display = 'block';
+
+progEl.textContent = 'Bundle loaded: ' + bundle.sectionCount + ' sections' + created;
+toast('Bundle loaded: ' + file.name);
+
+// Show 3D markers if we have captures
+if (_panoCaptures && _panoCaptures.length) {
+showPanoMarkers(_panoCaptures, 15);
+}
+
+} catch (err) {
+progEl.textContent = 'Error loading bundle: ' + err.message;
+toast('Failed to load bundle');
+console.error(err);
+}
+};
+input.click();
+}
+
+// ============================================================
+// FLYTHROUGH → RUNWAY → MARBLE PIPELINE
+// ============================================================
+var _flyBlob = null;
+var _flyFrames = [];
+var _flyPoses = [];
+var _flyCamParams = null;
+var _runwayVideoUrl = null;
+
+async function recordFlythrough() {
+if (trackData.length < 20) { toast('Load a track first'); return; }
+var duration = parseInt(document.getElementById('s-flydur').value);
+var resVal = document.getElementById('fly-res').value;
+var camH = parseFloat(document.getElementById('s-flyht').value);
+var w = resVal === '1080' ? 1920 : 1280;
+var h = resVal === '1080' ? 1080 : 720;
+var fps = 30;
+var totalFrames = duration * fps;
+var btn = document.getElementById('fly-rec-btn');
+var progEl = document.getElementById('fly-progress');
+btn.disabled = true; btn.textContent = 'Recording...';
+progEl.style.display = 'block'; progEl.textContent = 'Building spline...';
+
+// Build CatmullRomCurve3 from track data
+var pts = [];
+var step = Math.max(1, Math.floor(trackData.length / 500));
+for (var i = 0; i < trackData.length; i += step) {
+pts.push(new THREE.Vector3(trackData[i][0][0], trackData[i][0][1], trackData[i][0][2]));
+}
+var last = trackData[trackData.length - 1][0];
+if (pts.length < 2 || pts[pts.length - 1].distanceTo(new THREE.Vector3(last[0], last[1], last[2])) > 1) {
+pts.push(new THREE.Vector3(last[0], last[1], last[2]));
+}
+// Detect closed loop: if start and end are within 50 units, close the spline
+var first = trackData[0][0];
+var trackGap = Math.hypot(first[0] - last[0], first[1] - last[1], first[2] - last[2]);
+var isClosed = trackGap < 50;
+var flyCurve = new THREE.CatmullRomCurve3(pts, isClosed, 'catmullrom', 0.5);
+
+// Hide editor-only overlays and section splats during recording
+var hidden = [];
+[ptCloud, selHL, cpGrp, splineLine, _panoMarkerGroup].forEach(function(obj) {
+if (obj && obj.visible) { obj.visible = false; hidden.push(obj); }
+});
+for (var si = 0; si < _sectionSplats.length; si++) {
+var sm = _sectionSplats[si].mesh;
+if (sm && sm.visible) { sm.visible = false; hidden.push(sm); }
+}
+scene.traverse(function(obj) {
+if (obj.type === 'GridHelper' && obj.visible) { obj.visible = false; hidden.push(obj); }
+});
+
+// Temporary environment for Runway context (sky dome + ground plane)
+var _origBg = scene.background;
+var _origFog = scene.fog;
+scene.background = new THREE.Color(0x050510);
+scene.fog = new THREE.FogExp2(0x050510, 0.00015);
+
+// Sky dome: large inverted sphere with vertex-color gradient (horizon glow → dark zenith)
+var skyGeo = new THREE.SphereGeometry(8000, 32, 24);
+var skyColors = [];
+var skyPos = skyGeo.getAttribute('position');
+for (var si = 0; si < skyPos.count; si++) {
+  var ny = (skyPos.getY(si) / 8000 + 1) * 0.5; // 0 at bottom, 1 at top
+  // Horizon: warm dark purple/blue, zenith: near-black with slight blue
+  var hr = 0.06, hg = 0.04, hb = 0.12; // horizon
+  var zr = 0.01, zg = 0.01, zb = 0.03; // zenith
+  var blend = Math.pow(ny, 0.6);
+  skyColors.push(hr + (zr - hr) * blend, hg + (zg - hg) * blend, hb + (zb - hb) * blend);
+}
+skyGeo.setAttribute('color', new THREE.Float32BufferAttribute(skyColors, 3));
+var skyMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide });
+var skyDome = new THREE.Mesh(skyGeo, skyMat);
+scene.add(skyDome);
+
+// Stars: scattered points in the sky
+var starCount = 800;
+var starPositions = new Float32Array(starCount * 3);
+for (var si = 0; si < starCount; si++) {
+  var phi = Math.acos(2 * Math.random() - 1);
+  var theta = Math.random() * Math.PI * 2;
+  var sr = 7500 + Math.random() * 400;
+  starPositions[si * 3] = sr * Math.sin(phi) * Math.cos(theta);
+  starPositions[si * 3 + 1] = Math.abs(sr * Math.cos(phi)); // upper hemisphere only
+  starPositions[si * 3 + 2] = sr * Math.sin(phi) * Math.sin(theta);
+}
+var starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+var starMat = new THREE.PointsMaterial({ color: 0xccccff, size: 6, sizeAttenuation: true });
+var starField = new THREE.Points(starGeo, starMat);
+scene.add(starField);
+
+// Ground plane: dark textured surface extending to horizon
+var groundGeo = new THREE.PlaneGeometry(16000, 16000, 64, 64);
+var groundPos = groundGeo.getAttribute('position');
+var groundColors = [];
+for (var gi = 0; gi < groundPos.count; gi++) {
+  var gx = groundPos.getX(gi), gz = groundPos.getY(gi); // plane is XY, we rotate it
+  var dist = Math.sqrt(gx * gx + gz * gz) / 8000;
+  // Slight variation for texture, darken at edges
+  var fade = Math.max(0, 1 - dist * 0.7);
+  var base = 0.025 + 0.015 * fade;
+  groundColors.push(base * 0.8, base * 0.9, base * 1.2);
+}
+groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(groundColors, 3));
+var groundMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+var groundMesh = new THREE.Mesh(groundGeo, groundMat);
+groundMesh.rotation.x = -Math.PI / 2;
+groundMesh.position.y = -2; // slightly below track
+scene.add(groundMesh);
+
+// Offscreen renderer
+var offR = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+offR.setSize(w, h); offR.setPixelRatio(1);
+offR.outputColorSpace = THREE.LinearSRGBColorSpace;
+var offCam = new THREE.PerspectiveCamera(60, w / h, 1, 20000);
+
+// Copy editor scene lighting
+// (scene is shared, so lighting already exists)
+
+_flyFrames = [];
+_flyBlob = null;
+_flyPoses = [];
+_flyCamParams = { fov: 60, w: w, h: h };
+
+// --- Pre-pass: capture keyframe images for Runway segment chaining ---
+progEl.textContent = 'Capturing keyframes...';
+for (var kf = 0; kf <= duration; kf++) {
+  var kfFrame = kf === duration ? totalFrames - 1 : kf * fps;
+  var kt = isClosed ? kfFrame / totalFrames : Math.min(kfFrame / Math.max(totalFrames - 1, 1), 0.9999);
+  var kLookT = kt + 0.02;
+  if (isClosed) { kLookT = kLookT % 1; } else { kLookT = Math.min(kLookT, 0.9999); }
+  var kPt = flyCurve.getPointAt(kt);
+  var kLook = flyCurve.getPointAt(kLookT);
+  var kTan = flyCurve.getTangentAt(kt).normalize();
+  offCam.position.set(kPt.x - kTan.x * 10, kPt.y + camH, kPt.z - kTan.z * 10);
+  offCam.lookAt(kLook.x, kLook.y + camH * 0.3, kLook.z);
+  offCam.updateMatrixWorld(true);
+  offR.clear(); offR.render(scene, offCam);
+  var label = kf === 0 ? 'first' : kf === duration ? 'last' : 't' + kf;
+  _flyFrames.push({
+    label: label, time: kfFrame / fps, frameIndex: kfFrame,
+    dataUrl: offR.domElement.toDataURL('image/jpeg', 0.92)
+  });
+}
+
+// --- Detect WebCodecs + H.264 encoding support ---
+// WebCodecs gives us explicit per-frame timestamps, so the output is always
+// exactly `duration` seconds at `fps` fps regardless of how fast/slow the GPU
+// renders. MediaRecorder uses wall-clock timestamps which causes fast GPUs to
+// produce short videos and slow GPUs to produce long videos.
+var canUseWebCodecs = false;
+if (typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined') {
+  try {
+    var codecStr = (w > 1280) ? 'avc1.4d0028' : 'avc1.4d001f'; // Main Profile L4.0 / L3.1
+    var support = await VideoEncoder.isConfigSupported({
+      codec: codecStr, width: w, height: h, bitrate: 8000000, framerate: fps
+    });
+    canUseWebCodecs = support.supported === true;
+  } catch(e) { canUseWebCodecs = false; }
+}
+
+var f = 0;
+
+if (canUseWebCodecs) {
+  // --- WebCodecs + mp4-muxer path: precise frame timestamps ---
+  progEl.textContent = 'Loading MP4 encoder...';
+  var Mp4Muxer = await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs');
+  var target = new Mp4Muxer.ArrayBufferTarget();
+  var muxer = new Mp4Muxer.Muxer({
+    target: target,
+    video: { codec: 'avc', width: w, height: h },
+    fastStart: 'in-memory',
+    firstTimestampBehavior: 'offset'
+  });
+
+  var encError = null;
+  var encoder = new VideoEncoder({
+    output: function(chunk, meta) { muxer.addVideoChunk(chunk, meta); },
+    error: function(e) { encError = e; }
+  });
+  encoder.configure({
+    codec: codecStr, width: w, height: h,
+    bitrate: 8000000, framerate: fps
+  });
+
+  var frameDurUs = Math.round(1000000 / fps); // microseconds per frame
+
+  for (f = 0; f < totalFrames; f++) {
+    if (encError) throw encError;
+
+    var t = isClosed ? f / totalFrames : Math.min(f / Math.max(totalFrames - 1, 1), 0.9999);
+    var lookT = t + 0.02;
+    if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
+
+    var point = flyCurve.getPointAt(t);
+    var lookPt = flyCurve.getPointAt(lookT);
+    var tangent = flyCurve.getTangentAt(t).normalize();
+    offCam.position.set(point.x - tangent.x * 10, point.y + camH, point.z - tangent.z * 10);
+    offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
+    offCam.updateMatrixWorld(true);
+    _flyPoses.push({ t: t, time: f / fps, elements: Array.from(offCam.matrixWorld.elements) });
+    offR.clear(); offR.render(scene, offCam);
+
+    var frame = new VideoFrame(offR.domElement, {
+      timestamp: f * frameDurUs,
+      duration: frameDurUs
+    });
+    encoder.encode(frame, { keyFrame: f % (fps * 2) === 0 }); // keyframe every 2s
+    frame.close();
+
+    // Backpressure: wait if encoder queue is deep (prevents OOM on mobile)
+    while (encoder.encodeQueueSize > 8) {
+      await new Promise(function(r) { setTimeout(r, 5); });
+    }
+
+    var pct = Math.round((f + 1) / totalFrames * 100);
+    progEl.textContent = 'Recording ' + pct + '% (' + (f + 1) + '/' + totalFrames + ' frames)';
+    // Yield every 4 frames to keep UI responsive without excessive overhead
+    if (f % 4 === 3) await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  await encoder.flush();
+  encoder.close();
+  muxer.finalize();
+  _flyBlob = new Blob([target.buffer], { type: 'video/mp4' });
+
+} else {
+  // --- MediaRecorder fallback (browsers without WebCodecs) ---
+  var stream = offR.domElement.captureStream(0);
+  var vTrack = stream.getVideoTracks()[0];
+  var hasRF = typeof vTrack.requestFrame === 'function';
+  if (!hasRF) { stream = offR.domElement.captureStream(fps); }
+  var mimeType = bestRecorderMime();
+  var blobType = mimeType.split(';')[0];
+  var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
+  var chunks = [];
+  recorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
+
+  recorder.start();
+  for (f = 0; f < totalFrames; f++) {
+    var t = isClosed ? f / totalFrames : Math.min(f / Math.max(totalFrames - 1, 1), 0.9999);
+    var lookT = t + 0.02;
+    if (isClosed) { lookT = lookT % 1; } else { lookT = Math.min(lookT, 0.9999); }
+    var point = flyCurve.getPointAt(t);
+    var lookPt = flyCurve.getPointAt(lookT);
+    var tangent = flyCurve.getTangentAt(t).normalize();
+    offCam.position.set(point.x - tangent.x * 10, point.y + camH, point.z - tangent.z * 10);
+    offCam.lookAt(lookPt.x, lookPt.y + camH * 0.3, lookPt.z);
+    offCam.updateMatrixWorld(true);
+    _flyPoses.push({ t: t, time: f / fps, elements: Array.from(offCam.matrixWorld.elements) });
+    offR.clear(); offR.render(scene, offCam);
+    if (hasRF) vTrack.requestFrame();
+    var pct = Math.round((f + 1) / totalFrames * 100);
+    progEl.textContent = 'Recording ' + pct + '% (' + (f + 1) + '/' + totalFrames + ' frames, fallback)';
+    await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  await new Promise(function(resolve) {
+    recorder.onstop = function() { _flyBlob = new Blob(chunks, { type: blobType }); resolve(); };
+    recorder.stop();
+  });
+  if (blobType.startsWith('video/webm')) {
+    _flyBlob = await fixWebmDuration(_flyBlob, duration * 1000);
+  }
+}
+
+// Remove temporary environment objects and restore scene
+scene.remove(skyDome); skyGeo.dispose(); skyMat.dispose();
+scene.remove(starField); starGeo.dispose(); starMat.dispose();
+scene.remove(groundMesh); groundGeo.dispose(); groundMat.dispose();
+scene.background = _origBg;
+scene.fog = _origFog;
+
+// Restore hidden objects
+hidden.forEach(function(obj) { obj.visible = true; });
+
+var videoEl = document.getElementById('fly-video');
+var blobUrl = URL.createObjectURL(_flyBlob);
+videoEl.src = blobUrl;
+videoEl.style.display = 'block';
+progEl.textContent = 'Recorded ' + duration + 's flythrough (' + f + ' frames, ' + (canUseWebCodecs ? 'MP4' : 'fallback') + ')';
+
+// Populate debug panel after video metadata loads
+var debugEl = document.getElementById('fly-debug');
+debugEl.style.display = 'block';
+var blobSizeKB = (_flyBlob.size / 1024).toFixed(1);
+var blobSizeMB = (_flyBlob.size / (1024 * 1024)).toFixed(2);
+var debugLines = [
+  'Encoder:    ' + (canUseWebCodecs ? 'WebCodecs + mp4-muxer' : 'MediaRecorder (fallback)'),
+  'Codec:      ' + (canUseWebCodecs ? codecStr : (typeof blobType !== 'undefined' ? blobType : 'unknown')),
+  'Resolution: ' + w + 'x' + h,
+  'Frames:     ' + f + ' (' + fps + ' fps x ' + duration + 's)',
+  'Blob type:  ' + (_flyBlob.type || 'unknown'),
+  'Blob size:  ' + blobSizeKB + ' KB (' + blobSizeMB + ' MB)',
+  'Keyframes:  ' + _flyFrames.length,
+  'Cam poses:  ' + _flyPoses.length
+];
+var poseInfoEl = document.getElementById('v2s-pose-info');
+if (poseInfoEl) poseInfoEl.textContent = _flyPoses.length + ' camera poses captured (' + w + 'x' + h + ', FOV 60)';
+debugEl.textContent = debugLines.join('\n');
+videoEl.onloadedmetadata = function() {
+  var actualDur = videoEl.duration;
+  var durStr = isFinite(actualDur) ? actualDur.toFixed(2) + 's' : 'unknown';
+  var actualW = videoEl.videoWidth || '?';
+  var actualH = videoEl.videoHeight || '?';
+  debugEl.textContent = debugLines.join('\n')
+    + '\nVideo dur:  ' + durStr + (isFinite(actualDur) && Math.abs(actualDur - duration) > 0.5 ? '  ⚠ expected ' + duration + 's' : '')
+    + '\nVideo res:  ' + actualW + 'x' + actualH;
+};
+offR.dispose();
+btn.disabled = false; btn.textContent = 'Record Flythrough';
+toast('Flythrough recorded');
+}
+
+function downloadFlythrough() {
+if (!_flyBlob) { toast('Record a flythrough first'); return; }
+var a = document.createElement('a'); a.href = URL.createObjectURL(_flyBlob);
+var ext = (_flyBlob.type && _flyBlob.type.indexOf('mp4') !== -1) ? 'mp4' : 'webm';
+a.download = 'flythrough.' + ext; a.click();
+}
+
+// ---- Download helpers ----
+function downloadVideoUrl(url, filename) {
+  var a = document.createElement('a');
+  // If it's a blob URL we can download directly; for remote URLs fetch first
+  if (url.startsWith('blob:')) {
+    a.href = url; a.download = filename; a.click();
+  } else {
+    proxiedFetch(url).then(function(r) { return r.blob(); }).then(function(b) {
+      var blobUrl = URL.createObjectURL(b);
+      a.href = blobUrl; a.download = filename; a.click();
+      setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 1000);
+    });
+  }
+}
+
+function makeDownloadBtn(url, label, filename) {
+  var btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.textContent = label;
+  btn.style.cssText = 'font-size:10px;padding:3px 8px;margin-top:2px';
+  btn.onclick = function() { downloadVideoUrl(url, filename); };
+  return btn;
+}
+
+// ---- Aleph model helpers ----
+function onRunwayModelChange() {
+  var model = document.getElementById('runway-model').value;
+  var durSel = document.getElementById('runway-duration');
+  var opt5 = document.getElementById('dur-opt-5');
+  var opt10 = document.getElementById('dur-opt-10');
+  if (model === 'gen4_aleph') {
+    durSel.value = '5';
+    durSel.disabled = true;
+    opt5.textContent = '5 seconds (required for Aleph)';
+    opt10.textContent = '10 seconds';
+  } else {
+    durSel.disabled = false;
+    opt5.textContent = '5 seconds';
+    opt10.textContent = '10 seconds (recommended)';
+  }
+}
+
+function onProviderChange() {
+  var provider = document.getElementById('stylize-provider').value;
+  var modelSel = document.getElementById('runway-model');
+  var btn = document.getElementById('runway-btn');
+  var durRow = document.getElementById('stylize-duration-row');
+  var decResRow = document.getElementById('decart-resolution-row');
+  var descEl = document.getElementById('stylize-desc');
+  var rwKeyRow = document.getElementById('apikey-runway-row');
+  var dcKeyRow = document.getElementById('apikey-decart-row');
+
+  if (provider === 'decart') {
+    modelSel.innerHTML = '<option value="lucy-restyle-v2v" selected>Lucy Restyle V2V (style, up to 30m)</option>'
+      + '<option value="lucy-pro-v2v">Lucy Pro V2V (edit, 5s chunks)</option>';
+    btn.textContent = 'Stylize with Decart';
+    durRow.style.display = 'none';
+    decResRow.style.display = 'none';
+    rwKeyRow.style.display = 'none';
+    dcKeyRow.style.display = '';
+    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Decart</span>. <strong>Lucy Pro V2V</strong> &mdash; targeted edit (max 5s/chunk, auto-chunked and concatenated for longer tracks). <strong>Lucy Restyle V2V</strong> &mdash; full style transfer, handles up to 30 min natively.';
+  } else {
+    modelSel.innerHTML = '<option value="gen4_turbo" selected>Gen-4 Turbo</option>'
+      + '<option value="gen4_aleph">Gen-4 Aleph (video-to-video)</option>'
+      + '<option value="gen3a_turbo">Gen-3 Alpha Turbo</option>';
+    btn.textContent = 'Stylize with Runway';
+    durRow.style.display = '';
+    decResRow.style.display = 'none';
+    rwKeyRow.style.display = '';
+    dcKeyRow.style.display = 'none';
+    descEl.innerHTML = 'Stylizes the flythrough using <span style="color:var(--accent2)">Runway</span>. Gen-4 Turbo/Gen-3 use image-to-video with keyframes per segment. <strong>Aleph</strong> uses video-to-video &mdash; sends actual flythrough chunks preserving camera motion (max 5s/segment). Longer tracks are auto-chunked and concatenated.';
+    onRunwayModelChange();
+  }
+}
+
+function onModelChange() {
+  var provider = document.getElementById('stylize-provider').value;
+  if (provider === 'runway') onRunwayModelChange();
+}
+
+function runStylize() {
+  var provider = document.getElementById('stylize-provider').value;
+  if (provider === 'decart') return runDecartStylize();
+  return runRunwayStylize();
+}
+
+// ---- Decart pending state persistence ----
+function saveDecartPending(jobId, apiKey) {
+  localStorage.setItem('decart_pending', JSON.stringify({ jobId: jobId, apiKey: apiKey, time: Date.now() }));
+}
+function clearDecartPending() {
+  localStorage.removeItem('decart_pending');
+}
+function showDecartPending() {
+  var raw = localStorage.getItem('decart_pending'); if (!raw) return;
+  try { var p = JSON.parse(raw); } catch(e) { return; }
+  var age = Math.round((Date.now() - p.time) / 60000);
+  if (age > 15) { clearDecartPending(); return; }
+  var el = document.getElementById('runway-pending'); if (!el) return;
+  document.getElementById('pending-title').textContent = 'Pending Decart generation found';
+  document.getElementById('runway-pending-info').textContent = 'Job: ' + p.jobId.substring(0, 16) + '... (' + age + ' min ago)';
+  el.style.display = 'block';
+}
+
+function checkPendingOperation() {
+  var rwRaw = localStorage.getItem('runway_pending');
+  var dcRaw = localStorage.getItem('decart_pending');
+  if (dcRaw) return checkDecartOperation();
+  if (rwRaw) return checkRunwayOperation();
+  toast('No pending task');
+}
+function clearAllPending() {
+  clearRunwayPending();
+  clearDecartPending();
+}
+
+async function checkDecartOperation() {
+  var raw = localStorage.getItem('decart_pending'); if (!raw) { toast('No pending Decart task'); return; }
+  try { var p = JSON.parse(raw); } catch(e) { toast('Invalid pending data'); clearDecartPending(); return; }
+  var progEl = document.getElementById('runway-progress');
+  var pendEl = document.getElementById('runway-pending');
+  progEl.style.display = 'block';
+  progEl.textContent = 'Checking Decart job status...';
+  pendEl.style.display = 'none';
+  var apiKey = p.apiKey || document.getElementById('decart-apikey').value.trim();
+  if (!apiKey) { toast('Enter your Decart API key first'); pendEl.style.display = 'block'; return; }
+  try {
+    var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + p.jobId, {
+      headers: { 'X-API-KEY': apiKey }
+    });
+    if (!res.ok) throw new Error('Poll failed: ' + res.status);
+    var data = await res.json();
+    if (data.status === 'completed') {
+      clearDecartPending();
+      var vidUrl = await downloadDecartJob(p.jobId, apiKey);
+      _runwayVideoUrl = vidUrl;
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = vidUrl; videoEl.style.display = 'block';
+      var dlBar = document.getElementById('runway-download-bar');
+      dlBar.style.display = 'flex'; dlBar.innerHTML = '';
+      dlBar.appendChild(makeDownloadBtn(vidUrl, 'Download video', 'decart-stylized.mp4'));
+      progEl.textContent = 'Decart stylization complete!';
+      toast('Decart video ready');
+    } else if (data.status === 'failed') {
+      clearDecartPending();
+      throw new Error('Decart job failed');
+    } else {
+      progEl.textContent = 'Still generating — resuming poll...';
+      var vidUrl = await pollDecartJob(p.jobId, apiKey, progEl, '');
+      _runwayVideoUrl = vidUrl;
+      var videoEl = document.getElementById('runway-video');
+      videoEl.src = vidUrl; videoEl.style.display = 'block';
+      var dlBar = document.getElementById('runway-download-bar');
+      dlBar.style.display = 'flex'; dlBar.innerHTML = '';
+      dlBar.appendChild(makeDownloadBtn(vidUrl, 'Download video', 'decart-stylized.mp4'));
+      progEl.textContent = 'Decart stylization complete!';
+      toast('Decart video ready');
+    }
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('Decart error: ' + err.message);
+    console.error('Decart check error:', err);
+  }
+}
+
+// Submit a video to a Decart V2V model with retry + direct fallback.
+// Safari can throw "Load failed" if the proxy times out or blocks the route.
+async function decartSubmitJob(model, apiKey, formData, progEl, label) {
+  var url = 'https://api.decart.ai/v1/jobs/' + model;
+  var attempts = [
+    function() { return proxiedFetch(url, { method: 'POST', headers: { 'X-API-KEY': apiKey }, body: formData }); },
+    function() { // Retry proxy after a short delay
+      return new Promise(function(r) { setTimeout(r, 1500); }).then(function() {
+        return proxiedFetch(url, { method: 'POST', headers: { 'X-API-KEY': apiKey }, body: formData });
+      });
+    },
+    function() { // Direct fetch (bypasses proxy, works if Decart allows CORS)
+      console.log('Decart: trying direct fetch (bypassing proxy)');
+      return fetch(url, { method: 'POST', headers: { 'X-API-KEY': apiKey }, body: formData });
+    }
+  ];
+  for (var i = 0; i < attempts.length; i++) {
+    try {
+      if (i > 0) progEl.textContent = label + 'Retrying Decart submit (attempt ' + (i + 1) + ')...';
+      var res = await attempts[i]();
+      if (!res.ok) { var errBody = await res.text(); throw new Error('Decart ' + model + ' (' + res.status + '): ' + errBody); }
+      return await res.json();
+    } catch (e) {
+      console.warn('Decart submit attempt ' + (i + 1) + ' failed:', e.message);
+      if (i === attempts.length - 1) throw e; // All attempts exhausted
+      // Network errors ("Load failed", "Failed to fetch") → retry; HTTP errors → throw immediately
+      if (e.message && !e.message.match(/load failed|failed to fetch|network/i)) throw e;
+    }
+  }
+}
+
+async function pollDecartJob(jobId, apiKey, progEl, prefix) {
+  prefix = prefix || '';
+  saveDecartPending(jobId, apiKey);
+  var startTime = Date.now();
+  var maxMs = 10 * 60 * 1000;
+  while (Date.now() - startTime < maxMs) {
+    await pollSleep(5000);
+    var elapsed = Math.round((Date.now() - startTime) / 1000);
+    progEl.textContent = prefix + 'Generating styled video... (' + elapsed + 's)';
+    try {
+      var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + jobId, {
+        headers: { 'X-API-KEY': apiKey }
+      });
+      if (!res.ok) continue;
+      var data = await res.json();
+      if (data.status === 'completed') {
+        clearDecartPending();
+        return await downloadDecartJob(jobId, apiKey);
+      }
+      if (data.status === 'failed') { clearDecartPending(); throw new Error('Decart job failed' + (data.error ? ': ' + data.error : '')); }
+      progEl.textContent = prefix + 'Decart: ' + data.status + ' (' + elapsed + 's)';
+    } catch (e) {
+      if (e.message.includes('Decart job failed')) throw e;
+    }
+  }
+  throw new Error('Decart timed out (10 min)');
+}
+
+async function downloadDecartJob(jobId, apiKey) {
+  var res = await proxiedFetch('https://api.decart.ai/v1/jobs/' + jobId + '/content', {
+    headers: { 'X-API-KEY': apiKey }
+  });
+  if (!res.ok) throw new Error('Decart download failed: ' + res.status);
+  var blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+async function runDecartStylize() {
+  var apiKey = document.getElementById('decart-apikey').value.trim();
+  if (!apiKey) { toast('Enter a Decart API key'); return; }
+  var prompt = document.getElementById('runway-prompt').value.trim();
+  var model = document.getElementById('runway-model').value;
+
+  if (!_flyBlob) { toast('Record a flythrough first'); return; }
+
+  var btn = document.getElementById('runway-btn');
+  var progEl = document.getElementById('runway-progress');
+  var segEl = document.getElementById('runway-segments');
+  var dlBar = document.getElementById('runway-download-bar');
+  btn.disabled = true; btn.textContent = 'Stylizing...';
+  progEl.style.display = 'block';
+  segEl.style.display = 'none'; segEl.innerHTML = '';
+  dlBar.style.display = 'none'; dlBar.innerHTML = '';
+
+  var sDbg = document.getElementById('stylize-debug');
+  sDbg.style.display = 'block';
+  var blobMB = _flyBlob ? (_flyBlob.size / (1024 * 1024)).toFixed(2) : '?';
+  sDbg.textContent = 'Model:      ' + model
+    + '\nProvider:   Decart'
+    + '\nInput blob: ' + blobMB + ' MB (' + (_flyBlob.type || 'unknown') + ')'
+    + '\nPrompt:     ' + (prompt || '(empty)')
+    + '\nProxy:      ' + (_proxyUrl || 'none');
+
+  try {
+    var segmentUrls = [];
+    var isRestyle = (model === 'lucy-restyle-v2v');
+
+    if (isRestyle) {
+      // ---- Restyle V2V: handles up to 30 min natively, single call ----
+      progEl.textContent = 'Submitting to Decart Restyle V2V...';
+      var form = new FormData();
+      form.append('prompt', prompt);
+      form.append('data', _flyBlob, 'flythrough.mp4');
+      var jobData = await decartSubmitJob(model, apiKey, form, progEl, '');
+      sDbg.textContent += '\nJob ID:     ' + jobData.job_id;
+      var vidUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, '');
+      segmentUrls = [vidUrl];
+    } else {
+      // ---- Lucy Pro V2V: 5-second output cap, chunk and concatenate ----
+      var DECART_SEG_DUR = 5; // Lucy Pro V2V max output is 5 seconds
+      var flyDur = _flyFrames.length ? _flyFrames[_flyFrames.length - 1].time : 0;
+      if (!flyDur && _flyBlob) {
+        // Estimate from blob: try loading into video element for duration
+        var tmpVid = document.createElement('video');
+        tmpVid.muted = true; tmpVid.preload = 'auto';
+        tmpVid.src = URL.createObjectURL(_flyBlob);
+        await new Promise(function(r) { tmpVid.onloadedmetadata = r; tmpVid.onerror = r; });
+        if (isFinite(tmpVid.duration)) flyDur = tmpVid.duration;
+        URL.revokeObjectURL(tmpVid.src);
+      }
+
+      var videoChunks;
+      if (flyDur <= DECART_SEG_DUR + 0.5) {
+        // Fits in one chunk — send as-is
+        videoChunks = [{ blob: _flyBlob, duration: Math.round(flyDur) || DECART_SEG_DUR }];
+      } else {
+        progEl.textContent = 'Splitting flythrough into ' + DECART_SEG_DUR + 's chunks...';
+        videoChunks = await splitVideoIntoChunks(_flyBlob, DECART_SEG_DUR);
+      }
+
+      var numChunks = videoChunks.length;
+      progEl.textContent = numChunks === 1
+        ? 'Submitting to Decart V2V...'
+        : 'Stylizing ' + numChunks + ' chunks with Decart V2V...';
+
+      for (var ci = 0; ci < videoChunks.length; ci++) {
+        var chunk = videoChunks[ci];
+        var segLabel = numChunks > 1 ? 'Chunk ' + (ci + 1) + '/' + numChunks + ': ' : '';
+
+        progEl.textContent = segLabel + 'Submitting to Decart V2V...';
+        var form = new FormData();
+        form.append('prompt', prompt);
+        form.append('data', chunk.blob, 'flythrough.mp4');
+        var jobData = await decartSubmitJob(model, apiKey, form, progEl, segLabel);
+        var segUrl = await pollDecartJob(jobData.job_id, apiKey, progEl, segLabel);
+        segmentUrls.push(segUrl);
+
+        if (numChunks > 1) {
+          segEl.style.display = 'block';
+          var segVid = document.createElement('video');
+          segVid.src = segUrl; segVid.controls = true;
+          segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
+          var segTitle = document.createElement('div');
+          segTitle.textContent = 'Chunk ' + (ci + 1);
+          segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
+          segEl.appendChild(segTitle); segEl.appendChild(segVid);
+          segEl.appendChild(makeDownloadBtn(segUrl, 'Download chunk ' + (ci + 1), 'decart-chunk-' + (ci + 1) + '.mp4'));
+        }
+      }
+    }
+
+    // Store segment URLs for Marble pipeline
+    _runwaySegmentUrls = segmentUrls;
+    var numSegments = segmentUrls.length;
+
+    if (numSegments === 1) {
+      _runwayVideoUrl = segmentUrls[0];
+    } else {
+      // Concatenate chunks client-side
+      progEl.textContent = 'Downloading and concatenating ' + numSegments + ' chunks...';
+      _runwayVideoUrl = await concatenateSegments(segmentUrls, progEl);
+    }
+
+    var videoEl = document.getElementById('runway-video');
+    videoEl.src = _runwayVideoUrl;
+    videoEl.style.display = 'block';
+
+    // Show download bar
+    dlBar.style.display = 'flex'; dlBar.innerHTML = '';
+    dlBar.appendChild(makeDownloadBtn(_runwayVideoUrl, numSegments > 1 ? 'Download full video' : 'Download video', 'decart-stylized.mp4'));
+    if (numSegments > 1) {
+      for (var di = 0; di < segmentUrls.length; di++) {
+        dlBar.appendChild(makeDownloadBtn(segmentUrls[di], 'Chunk ' + (di + 1), 'decart-chunk-' + (di + 1) + '.mp4'));
+      }
+    }
+
+    progEl.textContent = 'Decart stylization complete!' + (numSegments > 1 ? ' (' + numSegments + ' chunks joined)' : '');
+    toast('Decart video ready');
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('Decart error: ' + err.message);
+    console.error('Decart error:', err);
+    sDbg.textContent += '\n\n--- ERROR ---\n' + err.message + (err.stack ? '\n' + err.stack : '');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Stylize with Decart';
+  }
+}
+
+function blobToDataUrl(blob) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() { resolve(reader.result); };
+    reader.onerror = function() { reject(new Error('Failed to read blob')); };
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Fix WebM duration metadata. MediaRecorder produces WebM blobs with
+// missing or zero duration, which causes Runway's API to reject them.
+// Patches the EBML Duration element (ID 0x4489) with the correct value.
+async function fixWebmDuration(blob, durationMs) {
+  var buffer = await blob.arrayBuffer();
+  var bytes = new Uint8Array(buffer);
+
+  // Search for the Duration EBML element: ID = 0x44 0x89
+  for (var i = 0; i < bytes.length - 12; i++) {
+    if (bytes[i] === 0x44 && bytes[i + 1] === 0x89) {
+      var sizeTag = bytes[i + 2];
+      if (sizeTag === 0x88) {
+        // 8-byte float64 duration (most common)
+        var dv = new DataView(buffer, i + 3, 8);
+        dv.setFloat64(0, durationMs);
+        return new Blob([buffer], { type: blob.type });
+      } else if (sizeTag === 0x84) {
+        // 4-byte float32 duration
+        var dv = new DataView(buffer, i + 3, 4);
+        dv.setFloat32(0, durationMs);
+        return new Blob([buffer], { type: blob.type });
+      }
+    }
+  }
+
+  // Duration element not found — inject it into Segment Info.
+  // Search for the Info element (ID 0x15 0x49 0xA9 0x66) and insert
+  // a Duration element right after the Info header.
+  for (var i = 0; i < bytes.length - 20; i++) {
+    if (bytes[i] === 0x15 && bytes[i + 1] === 0x49 && bytes[i + 2] === 0xA9 && bytes[i + 3] === 0x66) {
+      // Info element found. Read its VINT size to find where content starts.
+      var sizeStart = i + 4;
+      var infoByte = bytes[sizeStart];
+      var vintLen = 0;
+      for (var bit = 7; bit >= 0; bit--) {
+        if (infoByte & (1 << bit)) { vintLen = 8 - bit; break; }
+      }
+      if (vintLen === 0) break;
+      var insertPos = sizeStart + vintLen;
+
+      // Build the Duration element: ID(2) + size(1) + float64(8) = 11 bytes
+      var durEl = new Uint8Array(11);
+      durEl[0] = 0x44; durEl[1] = 0x89; // Duration element ID
+      durEl[2] = 0x88; // VINT size = 8 bytes
+      var durView = new DataView(durEl.buffer, 3, 8);
+      durView.setFloat64(0, durationMs);
+
+      // We also need to increase the Info element's size by 11.
+      // Read current size value
+      var sizeMask = infoByte & ~(1 << (8 - vintLen));
+      var sizeVal = sizeMask;
+      for (var j = 1; j < vintLen; j++) {
+        sizeVal = (sizeVal * 256) + bytes[sizeStart + j];
+      }
+      sizeVal += 11;
+
+      // Write updated size back (same VINT length)
+      var newSizeBytes = new Uint8Array(vintLen);
+      var tmp = sizeVal;
+      for (var j = vintLen - 1; j >= 0; j--) {
+        newSizeBytes[j] = tmp & 0xFF;
+        tmp = Math.floor(tmp / 256);
+      }
+      newSizeBytes[0] |= (1 << (8 - vintLen)); // set VINT marker bit
+
+      // Assemble: before insert | duration element | after insert
+      var before = bytes.slice(0, insertPos);
+      var after = bytes.slice(insertPos);
+
+      // Patch the size bytes in 'before'
+      for (var j = 0; j < vintLen; j++) {
+        before[sizeStart + j] = newSizeBytes[j];
+      }
+
+      var result = new Uint8Array(before.length + durEl.length + after.length);
+      result.set(before, 0);
+      result.set(durEl, before.length);
+      result.set(after, before.length + durEl.length);
+      return new Blob([result], { type: blob.type });
+    }
+  }
+
+  console.warn('fixWebmDuration: could not patch duration metadata');
+  return blob;
+}
+
+// Prefer MP4 for MediaRecorder (reliable duration metadata).
+// Fall back to WebM (needs EBML duration patching for Runway).
+function bestRecorderMime() {
+  if (typeof MediaRecorder !== 'undefined') {
+    if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')) return 'video/mp4;codecs=avc1';
+    if (MediaRecorder.isTypeSupported('video/mp4')) return 'video/mp4';
+  }
+  if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) return 'video/webm;codecs=vp9';
+  return 'video/webm';
+}
+
+// Upload a video blob to Runway via their ephemeral uploads endpoint.
+// Returns a runway:// URI that can be used as videoUri.
+// This avoids WebM duration metadata issues since Runway's server-side
+// tools (ffprobe) can determine duration from the actual video frames.
+async function uploadToRunway(blob, headers, progEl, prefix) {
+  prefix = prefix || '';
+  var ext = (blob.type && blob.type.indexOf('mp4') !== -1) ? 'mp4' : 'webm';
+
+  progEl.textContent = prefix + 'Requesting Runway upload URL...';
+  var initRes = await proxiedFetch('https://api.dev.runwayml.com/v1/uploads', {
+    method: 'POST', headers: headers,
+    body: JSON.stringify({ filename: 'flythrough.' + ext, type: 'ephemeral' })
+  });
+  if (!initRes.ok) {
+    var errText = await initRes.text();
+    throw new Error('Runway upload init failed (' + initRes.status + '): ' + errText);
+  }
+  var initData = await initRes.json();
+
+  progEl.textContent = prefix + 'Uploading video to Runway...';
+  var formData = new FormData();
+  var fields = initData.fields || {};
+  for (var key in fields) {
+    if (fields.hasOwnProperty(key)) formData.append(key, fields[key]);
+  }
+  formData.append('file', blob, 'flythrough.' + ext);
+
+  // Upload goes directly to the presigned URL (not proxied)
+  var upRes = await fetch(initData.uploadUrl, { method: 'POST', body: formData });
+  if (!upRes.ok && upRes.status !== 204) {
+    throw new Error('Runway file upload failed (' + upRes.status + ')');
+  }
+
+  return initData.runwayUri;
+}
+
+// Split a video blob into chunks of segDur seconds each.
+// Returns an array of { blob, duration } objects.
+async function splitVideoIntoChunks(videoBlob, segDur) {
+  var video = document.createElement('video');
+  video.muted = true; video.playsInline = true;
+  video.preload = 'auto';
+  video.src = URL.createObjectURL(videoBlob);
+
+  // Wait for metadata so we know the full duration
+  await new Promise(function(res, rej) {
+    video.onloadedmetadata = function() { res(); };
+    video.onerror = function() { rej(new Error('Cannot load video for chunking')); };
+  });
+
+  var totalDur = video.duration;
+  if (!isFinite(totalDur) || totalDur <= 0) {
+    // WebM duration can be unknown; fall back to flythrough keyframe time
+    totalDur = _flyFrames.length ? _flyFrames[_flyFrames.length - 1].time : segDur;
+  }
+  var numChunks = Math.max(1, Math.ceil(totalDur / segDur));
+  var chunks = [];
+
+  var canvas = document.createElement('canvas');
+  canvas.width = 1280; canvas.height = 720;
+  var ctx = canvas.getContext('2d');
+
+  for (var i = 0; i < numChunks; i++) {
+    var startT = i * segDur;
+    var endT = Math.min((i + 1) * segDur, totalDur);
+    var chunkDur = endT - startT;
+
+    // Seek to start of this chunk
+    await new Promise(function(res) {
+      video.currentTime = startT;
+      video.onseeked = function() { res(); };
+    });
+
+    // Record this chunk via canvas + MediaRecorder
+    var cStream = canvas.captureStream(30);
+    var mimeType = bestRecorderMime();
+    var blobType = mimeType.split(';')[0]; // clean MIME for blob/data URI
+    var rec = new MediaRecorder(cStream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
+    var parts = [];
+    rec.ondataavailable = function(e) { if (e.data.size) parts.push(e.data); };
+
+    var chunkBlob = await new Promise(function(resolve, reject) {
+      rec.start();
+      video.play();
+
+      function drawLoop() {
+        if (video.paused || video.ended || video.currentTime >= endT) {
+          video.pause();
+          rec.onstop = function() {
+            resolve(new Blob(parts, { type: blobType }));
+          };
+          rec.stop();
+          return;
+        }
+        ctx.drawImage(video, 0, 0, 1280, 720);
+        requestAnimationFrame(drawLoop);
+      }
+
+      // Also stop on timeupdate to catch endT precisely
+      video.ontimeupdate = function() {
+        if (video.currentTime >= endT) {
+          video.pause();
+        }
+      };
+      drawLoop();
+    });
+
+    // Fix WebM duration metadata (MP4 has reliable duration already)
+    var fixedBlob = blobType.startsWith('video/webm')
+      ? await fixWebmDuration(chunkBlob, chunkDur * 1000)
+      : chunkBlob;
+    chunks.push({ blob: fixedBlob, duration: Math.max(2, Math.round(chunkDur)) });
+  }
+
+  URL.revokeObjectURL(video.src);
+  return chunks;
+}
+
+async function runRunwayStylize() {
+var apiKey = document.getElementById('runway-apikey').value.trim();
+if (!apiKey) { toast('Enter a Runway API key'); return; }
+var prompt = document.getElementById('runway-prompt').value.trim();
+var model = document.getElementById('runway-model').value;
+var isAleph = (model === 'gen4_aleph');
+var segDuration = parseInt(document.getElementById('runway-duration').value);
+if (isAleph) segDuration = Math.min(segDuration, 5); // Aleph hard cap
+
+// Validation: Aleph needs the video blob, image-to-video needs keyframes
+if (isAleph) {
+  if (!_flyBlob) { toast('Record a flythrough first'); return; }
+} else {
+  if (!_flyFrames.length || _flyFrames.length < 2) { toast('Record a flythrough first'); return; }
+}
+
+var btn = document.getElementById('runway-btn');
+var progEl = document.getElementById('runway-progress');
+var segEl = document.getElementById('runway-segments');
+var dlBar = document.getElementById('runway-download-bar');
+btn.disabled = true; btn.textContent = 'Stylizing...';
+progEl.style.display = 'block';
+segEl.style.display = 'none'; segEl.innerHTML = '';
+dlBar.style.display = 'none'; dlBar.innerHTML = '';
+
+var headers = {
+'Content-Type': 'application/json',
+'Authorization': 'Bearer ' + apiKey,
+'X-Runway-Version': '2024-11-06'
+};
+
+try {
+var sDbg = document.getElementById('stylize-debug');
+sDbg.style.display = 'block';
+var blobMB = _flyBlob ? (_flyBlob.size / (1024 * 1024)).toFixed(2) : 'N/A';
+sDbg.textContent = 'Model:      ' + model
+  + '\nProvider:   Runway'
+  + '\nSeg dur:    ' + segDuration + 's'
+  + '\nInput blob: ' + blobMB + ' MB (' + (_flyBlob ? _flyBlob.type : 'none') + ')'
+  + '\nKeyframes:  ' + _flyFrames.length
+  + '\nPrompt:     ' + (prompt || '(empty)')
+  + '\nProxy:      ' + (_proxyUrl || 'none');
+var segmentUrls = [];
+var numSegments;
+
+if (isAleph) {
+  // ---- ALEPH: video-to-video path ----
+  // Prepend motion-preservation instruction so Aleph follows the source
+  // camera path exactly instead of hallucinating new curves/turns
+  var alephPrompt = 'Preserve the exact camera motion, direction, and trajectory from the source video. Do not add turns, curves, or direction changes that are not in the original. ' + prompt;
+
+  // Check if flythrough fits in a single chunk — skip re-encoding
+  var flyDur = _flyFrames.length ? _flyFrames[_flyFrames.length - 1].time : segDuration;
+  var videoChunks;
+  if (flyDur <= segDuration + 0.5) {
+    // Single chunk: use the already-duration-fixed _flyBlob directly
+    videoChunks = [{ blob: _flyBlob, duration: Math.max(2, Math.round(flyDur)) }];
+  } else {
+    progEl.textContent = 'Splitting flythrough into ' + segDuration + 's chunks...';
+    videoChunks = await splitVideoIntoChunks(_flyBlob, segDuration);
+  }
+  numSegments = videoChunks.length;
+  progEl.textContent = numSegments === 1
+    ? 'Submitting to Runway Aleph...'
+    : 'Stylizing ' + numSegments + ' chunks with Aleph (video-to-video)...';
+
+  for (var ci = 0; ci < videoChunks.length; ci++) {
+    var chunk = videoChunks[ci];
+    var segLabel = numSegments > 1 ? 'Chunk ' + (ci + 1) + '/' + numSegments + ': ' : '';
+
+    // Upload video to Runway (avoids WebM duration metadata issues with data URIs)
+    var runwayUri = await uploadToRunway(chunk.blob, headers, progEl, segLabel);
+
+    progEl.textContent = segLabel + 'Submitting to Runway Aleph...';
+    var res = await proxiedFetch('https://api.dev.runwayml.com/v1/video_to_video', {
+      method: 'POST', headers: headers,
+      body: JSON.stringify({
+        model: 'gen4_aleph',
+        videoUri: runwayUri,
+        promptText: alephPrompt,
+        ratio: '1280:720',
+        duration: Math.max(2, chunk.duration || segDuration)
+      })
+    });
+    if (!res.ok) { var errBody = await res.text(); throw new Error('Runway Aleph (' + res.status + '): ' + errBody); }
+    var taskData = await res.json();
+    var taskId = taskData.id;
+
+    var segUrl = await pollRunwayTask(taskId, apiKey, progEl, segLabel);
+    segmentUrls.push(segUrl);
+
+    if (numSegments > 1) {
+      segEl.style.display = 'block';
+      var segVid = document.createElement('video');
+      segVid.src = segUrl; segVid.controls = true;
+      segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
+      var segTitle = document.createElement('div');
+      segTitle.textContent = 'Chunk ' + (ci + 1);
+      segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
+      segEl.appendChild(segTitle); segEl.appendChild(segVid);
+      segEl.appendChild(makeDownloadBtn(segUrl, 'Download chunk ' + (ci + 1), 'runway-chunk-' + (ci + 1) + '.mp4'));
+    }
+  }
+} else {
+  // ---- IMAGE-TO-VIDEO path (Gen-4 Turbo / Gen-3 Alpha Turbo) ----
+  var totalDuration = _flyFrames[_flyFrames.length - 1].time;
+  numSegments = Math.max(1, Math.ceil(totalDuration / segDuration));
+
+  // Build segment boundaries using captured keyframes
+  var segments = [];
+  for (var s = 0; s < numSegments; s++) {
+    var startTime = s * segDuration;
+    var endTime = Math.min((s + 1) * segDuration, totalDuration);
+    var firstKF = _flyFrames.reduce(function(best, f) {
+      return Math.abs(f.time - startTime) < Math.abs(best.time - startTime) ? f : best;
+    });
+    var lastKF = _flyFrames.reduce(function(best, f) {
+      return Math.abs(f.time - endTime) < Math.abs(best.time - endTime) ? f : best;
+    });
+    if (firstKF === lastKF && _flyFrames.length > 1) {
+      var idx = _flyFrames.indexOf(firstKF);
+      lastKF = _flyFrames[Math.min(idx + 1, _flyFrames.length - 1)];
+    }
+    segments.push({ index: s, firstKF: firstKF, lastKF: lastKF, duration: segDuration });
+  }
+
+  progEl.textContent = numSegments === 1
+    ? 'Submitting to Runway (' + model + ')...'
+    : 'Stylizing ' + numSegments + ' segments with ' + model + '...';
+
+  for (var si = 0; si < segments.length; si++) {
+    var seg = segments[si];
+    var segLabel = numSegments > 1 ? 'Segment ' + (si + 1) + '/' + numSegments + ': ' : '';
+    var promptImage = seg.firstKF.dataUrl;
+
+    progEl.textContent = segLabel + 'Submitting to Runway...';
+    var res = await proxiedFetch('https://api.dev.runwayml.com/v1/image_to_video', {
+      method: 'POST', headers: headers,
+      body: JSON.stringify({
+        model: model,
+        promptImage: promptImage,
+        promptText: prompt,
+        ratio: '1280:720',
+        duration: seg.duration
+      })
+    });
+    if (!res.ok) { var errBody = await res.text(); throw new Error('Runway (' + res.status + '): ' + errBody); }
+    var taskData = await res.json();
+    var taskId = taskData.id;
+
+    var segUrl = await pollRunwayTask(taskId, apiKey, progEl, segLabel);
+    segmentUrls.push(segUrl);
+
+    if (numSegments > 1) {
+      segEl.style.display = 'block';
+      var segVid = document.createElement('video');
+      segVid.src = segUrl; segVid.controls = true;
+      segVid.style.cssText = 'width:100%;border-radius:4px;margin-bottom:4px;border:1px solid var(--border);background:#000';
+      var segTitle = document.createElement('div');
+      segTitle.textContent = 'Segment ' + (si + 1);
+      segTitle.style.cssText = 'font-size:10px;color:var(--text-dim);margin-bottom:2px';
+      segEl.appendChild(segTitle); segEl.appendChild(segVid);
+      segEl.appendChild(makeDownloadBtn(segUrl, 'Download segment ' + (si + 1), 'runway-segment-' + (si + 1) + '.mp4'));
+    }
+  }
+}
+
+// Store all segment URLs for Marble pipeline
+_runwaySegmentUrls = segmentUrls;
+
+if (numSegments === 1) {
+  _runwayVideoUrl = segmentUrls[0];
+  var videoEl = document.getElementById('runway-video');
+  videoEl.src = _runwayVideoUrl;
+  videoEl.style.display = 'block';
+} else {
+  // Concatenate segments client-side
+  progEl.textContent = 'Downloading and concatenating ' + numSegments + ' segments...';
+  _runwayVideoUrl = await concatenateSegments(segmentUrls, progEl);
+  var videoEl = document.getElementById('runway-video');
+  videoEl.src = _runwayVideoUrl;
+  videoEl.style.display = 'block';
+}
+
+// Show download bar
+dlBar.style.display = 'flex';
+dlBar.innerHTML = '';
+dlBar.appendChild(makeDownloadBtn(_runwayVideoUrl, numSegments > 1 ? 'Download full video' : 'Download video', 'runway-stylized.mp4'));
+if (numSegments > 1) {
+  for (var di = 0; di < segmentUrls.length; di++) {
+    dlBar.appendChild(makeDownloadBtn(segmentUrls[di], (isAleph ? 'Chunk ' : 'Seg ') + (di + 1), 'runway-part-' + (di + 1) + '.mp4'));
+  }
+}
+
+progEl.textContent = 'Runway stylization complete!' + (numSegments > 1 ? ' (' + numSegments + ' segments joined)' : '');
+toast('Runway video ready');
+} catch (err) {
+progEl.textContent = 'Error: ' + err.message;
+toast('Runway error: ' + err.message);
+console.error('Runway error:', err);
+if (sDbg) sDbg.textContent += '\n\n--- ERROR ---\n' + err.message + (err.stack ? '\n' + err.stack : '');
+} finally {
+btn.disabled = false; btn.textContent = 'Stylize with Runway';
+}
+}
+
+var _runwaySegmentUrls = [];
+
+async function concatenateSegments(urls, progEl) {
+// Fetch all segment videos
+var blobs = [];
+for (var i = 0; i < urls.length; i++) {
+  progEl.textContent = 'Downloading segment ' + (i + 1) + '/' + urls.length + '...';
+  var res = await proxiedFetch(urls[i]);
+  blobs.push(await res.blob());
+}
+
+// Concatenate via hidden video → canvas → MediaRecorder
+progEl.textContent = 'Joining segments...';
+var canvas = document.createElement('canvas');
+canvas.width = 1280; canvas.height = 720;
+var ctx = canvas.getContext('2d');
+var stream = canvas.captureStream(30);
+var mimeType = bestRecorderMime();
+var blobType = mimeType.split(';')[0];
+var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
+var recChunks = [];
+recorder.ondataavailable = function(e) { if (e.data.size) recChunks.push(e.data); };
+recorder.start();
+
+var vid = document.createElement('video');
+vid.muted = true; vid.playsInline = true;
+var totalRecordedSec = 0;
+
+for (var i = 0; i < blobs.length; i++) {
+  progEl.textContent = 'Encoding segment ' + (i + 1) + '/' + blobs.length + '...';
+  var blobUrl = URL.createObjectURL(blobs[i]);
+
+  // Load video and wait for play() to actually start
+  await new Promise(function(res, rej) {
+    vid.src = blobUrl;
+    vid.onloadeddata = function() {
+      vid.play().then(res).catch(function(e) {
+        // Autoplay may be blocked; try muted play
+        vid.muted = true;
+        vid.play().then(res).catch(rej);
+      });
+    };
+    vid.onerror = function() { rej(new Error('Failed to load segment ' + (i + 1))); };
+  });
+
+  // Draw frames until this segment ends
+  var segDur = vid.duration;
+  await new Promise(function(res) {
+    var done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      if (isFinite(segDur)) totalRecordedSec += segDur;
+      res();
+    }
+    vid.onended = finish;
+    // Safety timeout: if onended doesn't fire, stop after expected duration + buffer
+    var safetyMs = (isFinite(segDur) ? segDur : 10) * 1000 + 2000;
+    var safetyTimer = setTimeout(finish, safetyMs);
+    function drawFrame() {
+      if (done) { clearTimeout(safetyTimer); return; }
+      if (vid.ended) { clearTimeout(safetyTimer); finish(); return; }
+      ctx.drawImage(vid, 0, 0, 1280, 720);
+      requestAnimationFrame(drawFrame);
+    }
+    drawFrame();
+  });
+
+  URL.revokeObjectURL(blobUrl);
+}
+
+// Stop recorder and build final blob with fixed duration
+var finalBlobUrl = await new Promise(function(resolve) {
+  recorder.onstop = async function() {
+    var rawBlob = new Blob(recChunks, { type: blobType });
+    var fixedBlob = blobType.startsWith('video/webm')
+      ? await fixWebmDuration(rawBlob, totalRecordedSec * 1000)
+      : rawBlob;
+    resolve(URL.createObjectURL(fixedBlob));
+  };
+  recorder.stop();
+});
+return finalBlobUrl;
+}
+
+async function pollRunwayTask(taskId, apiKey, progEl, prefix) {
+prefix = prefix || '';
+var headers = { 'Authorization': 'Bearer ' + apiKey, 'X-Runway-Version': '2024-11-06' };
+saveRunwayPending(taskId, apiKey);
+var startTime = Date.now();
+var maxMs = 10 * 60 * 1000; // 10 min wall-clock timeout
+while (Date.now() - startTime < maxMs) {
+await pollSleep(5000);
+var elapsed = Math.round((Date.now() - startTime) / 1000);
+progEl.textContent = prefix + 'Generating styled video... (' + elapsed + 's)';
+try {
+var res = await proxiedFetch('https://api.dev.runwayml.com/v1/tasks/' + taskId, { headers: headers });
+if (!res.ok) continue;
+var data = await res.json();
+if (data.status === 'SUCCEEDED') { clearRunwayPending(); return data.output[0]; }
+if (data.status === 'FAILED') { clearRunwayPending(); throw new Error('Runway failed: ' + (data.failureCode || 'unknown')); }
+if (data.status === 'CANCELED') { clearRunwayPending(); throw new Error('Runway task canceled'); }
+progEl.textContent = prefix + 'Runway: ' + data.status + ' (' + elapsed + 's)';
+} catch (e) {
+if (e.message.includes('Runway failed') || e.message.includes('canceled')) throw e;
+}
+}
+throw new Error('Runway timed out (10 min)');
+}
+
+// Handle local video upload for Stage 3 Marble
+var _marbleVidEl = document.getElementById('marble-vid-upload');
+if (_marbleVidEl) _marbleVidEl.addEventListener('change', function(e) {
+  var file = e.target.files && e.target.files[0];
+  if (!file) return;
+  if (_runwayVideoUrl && _runwayVideoUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(_runwayVideoUrl);
+  }
+  _runwayVideoUrl = URL.createObjectURL(file);
+  _runwaySegmentUrls = [_runwayVideoUrl];
+  var nameEl = document.getElementById('marble-vid-name');
+  var sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+  nameEl.textContent = file.name + ' (' + sizeMB + ' MB)';
+  nameEl.title = file.name;
+  toast('Video loaded for Marble');
+});
+
+async function runMarbleFromVideo() {
+var marbleKey = document.getElementById('marble-apikey').value.trim();
+if (!marbleKey) { toast('Enter a Marble API key (panel 1)'); return; }
+if (!_runwayVideoUrl) { toast('Upload a video or run Stage 2 stylization first'); return; }
+var quality = document.getElementById('marble-quality').value;
+var prompt = document.getElementById('marble-prompt').value.trim();
+var btn = document.getElementById('marble-vid-btn');
+var progEl = document.getElementById('marble-vid-progress');
+btn.disabled = true; btn.textContent = 'Generating...';
+progEl.style.display = 'block';
+
+var headers = { 'Content-Type': 'application/json', 'WLT-Api-Key': marbleKey };
+
+try {
+// Fetch the video (blob URL for local/uploaded, remote URL for Stage 2 output)
+var isLocal = _runwayVideoUrl.startsWith('blob:');
+progEl.textContent = isLocal ? 'Reading uploaded video...' : 'Downloading styled video...';
+var vidRes = isLocal ? await fetch(_runwayVideoUrl) : await proxiedFetch(_runwayVideoUrl);
+if (!vidRes.ok) throw new Error('Video fetch failed: ' + vidRes.status);
+var videoBlob = await vidRes.blob();
+
+progEl.textContent = 'Uploading video to Marble...';
+var upRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/media-assets:prepare_upload', {
+method: 'POST', headers: headers,
+body: JSON.stringify({ file_name: 'styled-flythrough.mp4', kind: 'video', extension: 'mp4' })
+});
+if (!upRes.ok) throw new Error('Marble upload setup failed: ' + upRes.status);
+var upData = await upRes.json();
+var mediaId = upData.media_asset.media_asset_id;
+var upUrl = upData.upload_info.upload_url;
+var upMethod = upData.upload_info.upload_method || 'PUT';
+var upHeaders = upData.upload_info.required_headers || {};
+await proxiedFetch(upUrl, { method: upMethod, headers: upHeaders, body: videoBlob });
+
+progEl.textContent = 'Generating 3D world from video (1-5 min)...';
+var genRes = await proxiedFetch('https://api.worldlabs.ai/marble/v1/worlds:generate', {
+method: 'POST', headers: headers,
+body: JSON.stringify({
+display_name: 'Styled Track Environment',
+model: 'Marble 0.1-plus',
+world_prompt: {
+type: 'video',
+video_prompt: { source: 'media_asset', media_asset_id: mediaId },
+text_prompt: prompt || ''
+}
+})
+});
+if (!genRes.ok) {
+if (genRes.status === 401) throw new Error('Invalid Marble API key');
+var errText = await genRes.text();
+throw new Error('Marble generation failed (' + genRes.status + '): ' + errText);
+}
+
+var genData = await genRes.json();
+var opId = genData.operation_id || genData.name;
+var worldData = null;
+if (genData.done && genData.response) { worldData = genData.response; }
+else if (opId) {
+saveMarblePending(opId, marbleKey, quality);
+worldData = await pollMarbleOp(opId, marbleKey, quality, progEl);
+} else { worldData = genData.world || genData; }
+
+handleMarbleResult(worldData, quality);
+progEl.textContent = 'Pipeline complete — 3D world loaded!';
+toast('3D world reconstructed!');
+} catch (err) {
+progEl.textContent = 'Error: ' + err.message;
+toast('Error: ' + err.message);
+console.error('Marble video error:', err);
+} finally {
+btn.disabled = false; btn.textContent = 'Reconstruct 3D World';
+}
+}
+
+async function runFullPipeline() {
+var btn = document.getElementById('pipeline-full-btn');
+var progEl = document.getElementById('pipeline-progress');
+btn.disabled = true; progEl.style.display = 'block';
+try {
+progEl.textContent = 'Stage 1/3: Recording flythrough...';
+await recordFlythrough();
+var provider = document.getElementById('stylize-provider').value;
+progEl.textContent = 'Stage 2/3: ' + (provider === 'decart' ? 'Decart' : 'Runway') + ' stylization...';
+await runStylize();
+progEl.textContent = 'Stage 3/3: Marble 3D reconstruction...';
+await runMarbleFromVideo();
+progEl.textContent = 'Full pipeline complete!';
+toast('Pipeline complete!');
+} catch (err) {
+progEl.textContent = 'Pipeline error: ' + err.message;
+toast('Pipeline error: ' + err.message);
+} finally { btn.disabled = false; }
 }
 
 async function loadSplatFromURL() {
@@ -1542,8 +3805,6 @@ toast('Transform reset');
 // UI BINDING
 // ============================================================
 function bindUI(){
-var mkParam=new URLSearchParams(window.location.search).get('mk');
-if(mkParam){var mkEl=document.getElementById('marble-apikey');if(mkEl)mkEl.value=mkParam}
 var sliders={'smooth-iter':'smooth-iter-val','smooth-str':'smooth-str-val','cp-count':'cp-count-val','spline-resolution':'spline-res-val','loop-blend':'loop-blend-val','loop-pts':'loop-pts-val','elev-offset':'elev-val','s-imgscale':'v-imgscale','s-imgpts':'v-imgpts','s-imgsmooth':'v-imgsmooth','s-splatopacity':'v-splatopacity','s-splatscale':'v-splatscale'};
 Object.keys(sliders).forEach(function(a){var b=sliders[a];var sl=document.getElementById(a),vl=document.getElementById(b);if(sl&&vl)sl.addEventListener('input',function(){vl.textContent=sl.value})});
 document.querySelectorAll('input[type="range"]').forEach(function(sl){
@@ -1554,12 +3815,378 @@ if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 var el = document.getElementById(id);
 if (el) el.addEventListener('input', applySplatSettings);
 });
+// Panorama capture sliders
+['s-pano-sections','s-pano-height'].forEach(function(id){
+var sl=document.getElementById(id);if(!sl)return;
+var vlbl=document.getElementById('v-'+id.slice(2));
+if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
+});
+['s-pano-start','s-pano-end'].forEach(function(id){
+var sl=document.getElementById(id);if(!sl)return;
+var vlbl=document.getElementById('v-'+id.slice(2));
+if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value+'%'});
+});
 // Training view sliders
 ['s-trainviews','s-trainres'].forEach(function(id){
 var sl=document.getElementById(id);if(!sl)return;
 var vlbl=document.getElementById('v-'+id.slice(2));
 if(vlbl)sl.addEventListener('input',function(){vlbl.textContent=sl.value});
 });
+// Proxy URL persistence: ?proxy=<url> to set, ?proxy=clear to remove
+var _proxyParam = new URLSearchParams(window.location.search).get('proxy');
+if (_proxyParam === '' || _proxyParam === 'clear') { localStorage.removeItem('proxy_url'); }
+else if (_proxyParam) { var _pu = _proxyParam.replace(/\/+$/, ''); localStorage.setItem('proxy_url', _pu); _proxyUrl = _pu; }
+else { var _stored = localStorage.getItem('proxy_url'); if (_stored) _proxyUrl = _stored; }
+// API key persistence: load from localStorage, URL params override
+var _apiKeyIds = ['runway-apikey', 'decart-apikey', 'marble-apikey', 'kiri-apikey'];
+if (_proxyUrl) {
+  _apiKeyIds.forEach(function(id) {
+    var el = document.getElementById(id); if (!el) return;
+    el.value = 'proxy-managed';
+    el.disabled = true;
+    el.style.opacity = '0.5';
+    el.title = 'API key managed by proxy: ' + _proxyUrl;
+  });
+} else {
+  _apiKeyIds.forEach(function(id) {
+    var el = document.getElementById(id); if (!el) return;
+    var saved = localStorage.getItem('apikey_' + id);
+    if (saved && !el.value) el.value = saved;
+    el.addEventListener('input', function() {
+      var v = el.value.trim();
+      if (v) localStorage.setItem('apikey_' + id, v);
+      else localStorage.removeItem('apikey_' + id);
+    });
+  });
+  // URL params override localStorage (Runway, Decart, Marble)
+  var rkParam=new URLSearchParams(window.location.search).get('rk');
+  if(rkParam){var rkEl=document.getElementById('runway-apikey');if(rkEl)rkEl.value=rkParam}
+  var dkParam=new URLSearchParams(window.location.search).get('dk');
+  if(dkParam){var dkEl=document.getElementById('decart-apikey');if(dkEl)dkEl.value=dkParam}
+  var mkParam=new URLSearchParams(window.location.search).get('mk');
+  if(mkParam){var mkEl=document.getElementById('marble-apikey');if(mkEl)mkEl.value=mkParam}
+  var kkParam=new URLSearchParams(window.location.search).get('kk');
+  if(kkParam){var kkEl=document.getElementById('kiri-apikey');if(kkEl)kkEl.value=kkParam}
+}
+}
+
+// ============================================================
+// KIRI ENGINE — 3DGS FROM VIDEO / PHOTOS
+// ============================================================
+var _kiriSerialize = null;
+
+// Toggle video/images row based on mode selection
+var _kiriModeEl = document.getElementById('kiri-mode');
+if (_kiriModeEl) _kiriModeEl.addEventListener('change', function() {
+  var mode = this.value;
+  document.getElementById('kiri-video-row').style.display = mode === 'video' ? '' : 'none';
+  document.getElementById('kiri-images-row').style.display = mode === 'images' ? '' : 'none';
+});
+
+// File input display names
+var _kiriVideoEl = document.getElementById('kiri-video-input');
+if (_kiriVideoEl) _kiriVideoEl.addEventListener('change', function() {
+  var nameEl = document.getElementById('kiri-video-name');
+  if (this.files[0]) nameEl.textContent = this.files[0].name;
+  else nameEl.textContent = '';
+});
+var _kiriImagesEl = document.getElementById('kiri-images-input');
+if (_kiriImagesEl) _kiriImagesEl.addEventListener('change', function() {
+  var nameEl = document.getElementById('kiri-images-name');
+  if (this.files.length) nameEl.textContent = this.files.length + ' photos selected';
+  else nameEl.textContent = '';
+});
+
+// Video-to-Splat training: file input + slider handlers
+document.getElementById('v2s-video-input').addEventListener('change', function() {
+  var nameEl = document.getElementById('v2s-video-name');
+  if (this.files[0]) nameEl.textContent = this.files[0].name;
+  else nameEl.textContent = '';
+});
+var _flystepEl = document.getElementById('s-flystep');
+if (_flystepEl) _flystepEl.addEventListener('input', function() {
+  document.getElementById('v-flystep').textContent = this.value;
+});
+document.getElementById('s-runpod-iters').addEventListener('input', function() {
+  document.getElementById('v-runpod-iters').textContent = this.value;
+});
+
+function saveKiriPending(serialize, apiKey) {
+  localStorage.setItem('kiri_pending', JSON.stringify({ serialize: serialize, apiKey: apiKey, time: Date.now() }));
+}
+function clearKiriPending() {
+  localStorage.removeItem('kiri_pending');
+  _kiriSerialize = null;
+  var el = document.getElementById('kiri-pending'); if (el) el.style.display = 'none';
+}
+function showKiriPending() {
+  var raw = localStorage.getItem('kiri_pending'); if (!raw) return;
+  try { var p = JSON.parse(raw); } catch(e) { return; }
+  var age = Math.round((Date.now() - p.time) / 60000);
+  if (age > 60) { clearKiriPending(); return; } // expire after 1 hour
+  _kiriSerialize = p.serialize;
+  var el = document.getElementById('kiri-pending'); if (!el) return;
+  document.getElementById('kiri-pending-info').textContent = 'Serial: ' + p.serialize.substring(0, 20) + '... (' + age + ' min ago)';
+  el.style.display = '';
+}
+
+async function generateKiri() {
+  var apiKey = document.getElementById('kiri-apikey').value.trim();
+  if (!apiKey && !_proxyUrl) { toast('Enter a KIRI API key'); return; }
+  var mode = document.getElementById('kiri-mode').value;
+  var isMesh = document.getElementById('kiri-mesh').checked ? '1' : '0';
+  var isMask = document.getElementById('kiri-mask').checked ? '1' : '0';
+  var progEl = document.getElementById('kiri-progress');
+  var btn = document.getElementById('kiri-gen-btn');
+
+  var formData = new FormData();
+  formData.append('isMesh', isMesh);
+  formData.append('isMask', isMask);
+
+  var endpoint;
+  if (mode === 'video') {
+    var videoInput = document.getElementById('kiri-video-input');
+    if (!videoInput.files[0]) { toast('Select a video file first'); return; }
+    formData.append('videoFile', videoInput.files[0]);
+    endpoint = 'https://api.kiriengine.app/api/v1/open/3dgs/video';
+  } else {
+    var imagesInput = document.getElementById('kiri-images-input');
+    if (!imagesInput.files.length) { toast('Select photos first'); return; }
+    if (imagesInput.files.length < 20) { toast('KIRI requires at least 20 photos'); return; }
+    if (imagesInput.files.length > 300) { toast('KIRI supports max 300 photos'); return; }
+    for (var i = 0; i < imagesInput.files.length; i++) {
+      formData.append('imagesFiles', imagesInput.files[i]);
+    }
+    endpoint = 'https://api.kiriengine.app/api/v1/open/3dgs/image';
+  }
+
+  progEl.style.display = 'block';
+  progEl.textContent = 'Uploading to KIRI Engine...';
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+
+  try {
+    var uploadHeaders = {};
+    if (apiKey) uploadHeaders['Authorization'] = 'Bearer ' + apiKey;
+    var uploadRes = await proxiedFetch(endpoint, {
+      method: 'POST',
+      headers: uploadHeaders,
+      body: formData
+    });
+    if (!uploadRes.ok) {
+      if (uploadRes.status === 401) throw new Error('Invalid KIRI API key');
+      if (uploadRes.status === 402) throw new Error('Insufficient KIRI credits');
+      var errText = await uploadRes.text();
+      throw new Error('Upload failed (' + uploadRes.status + '): ' + errText);
+    }
+    var uploadData = await uploadRes.json();
+    var serialize = uploadData.data && uploadData.data.serialize || uploadData.serialize;
+    if (!serialize) throw new Error('No serial number returned — check API response');
+
+    _kiriSerialize = serialize;
+    saveKiriPending(serialize, apiKey);
+    progEl.textContent = 'Processing 3DGS... (serial: ' + serialize.substring(0, 16) + '...)';
+    btn.textContent = 'Processing...';
+
+    // Poll for completion
+    var result = await pollKiriStatus(serialize, apiKey, progEl);
+    handleKiriResult(result, apiKey);
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('KIRI error: ' + err.message);
+    console.error('KIRI generation error:', err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate 3DGS';
+  }
+}
+
+async function pollKiriStatus(serialize, apiKey, progEl) {
+  var maxAttempts = 120; // 20 min max (10s intervals)
+  for (var i = 0; i < maxAttempts; i++) {
+    await pollSleep(10000);
+    try {
+      var pollHeaders = {};
+      if (apiKey) pollHeaders['Authorization'] = 'Bearer ' + apiKey;
+      var statusRes = await proxiedFetch('https://api.kiriengine.app/api/v1/open/model/getStatus?serialize=' + encodeURIComponent(serialize), {
+        headers: pollHeaders
+      });
+      if (!statusRes.ok) throw new Error('Status check failed: ' + statusRes.status);
+      var statusData = await statusRes.json();
+      var status = statusData.data && statusData.data.status !== undefined ? statusData.data.status : statusData.status;
+
+      if (status === 2 || status === 4) {
+        // Success or Exported
+        clearKiriPending();
+        return statusData;
+      } else if (status === 1) {
+        throw new Error('KIRI processing failed');
+      } else {
+        var statusLabels = { '-1': 'Uploading', '0': 'Processing', '3': 'Queuing' };
+        var label = statusLabels[String(status)] || 'Status ' + status;
+        progEl.textContent = label + '... (' + Math.round((i + 1) * 10 / 60) + ' min)';
+      }
+    } catch (err) {
+      if (err.message === 'KIRI processing failed') throw err;
+      console.warn('KIRI poll error (retrying):', err);
+    }
+  }
+  throw new Error('KIRI processing timed out after 20 minutes');
+}
+
+async function handleKiriResult(statusData, apiKey) {
+  var progEl = document.getElementById('kiri-progress');
+  var resultsEl = document.getElementById('kiri-results');
+  var urlInput = document.getElementById('kiri-result-url');
+  var dlBar = document.getElementById('kiri-dl-bar');
+
+  progEl.textContent = 'Downloading model ZIP...';
+
+  try {
+    var serialize = _kiriSerialize || (statusData.data && statusData.data.serialize);
+    var dlHeaders = {};
+    if (apiKey) dlHeaders['Authorization'] = 'Bearer ' + apiKey;
+    var dlRes = await proxiedFetch('https://api.kiriengine.app/api/v1/open/model/getModelZip?serialize=' + encodeURIComponent(serialize), {
+      headers: dlHeaders
+    });
+    if (!dlRes.ok) throw new Error('Download failed: ' + dlRes.status);
+    var dlData = await dlRes.json();
+    var zipUrl = dlData.data && dlData.data.url || dlData.url;
+    if (!zipUrl) throw new Error('No download URL in response');
+
+    urlInput.value = zipUrl;
+    dlBar.innerHTML = '';
+    resultsEl.style.display = '';
+
+    // Download the ZIP and extract PLY
+    progEl.textContent = 'Fetching ZIP and extracting PLY...';
+    var zipResp = await proxiedFetch(zipUrl);
+    if (!zipResp.ok) throw new Error('Failed to fetch ZIP: ' + zipResp.status);
+    var zipBlob = await zipResp.blob();
+    var zip = await JSZip.loadAsync(zipBlob);
+
+    // Find PLY file in ZIP
+    var plyFile = null;
+    zip.forEach(function(path, entry) {
+      if (!entry.dir && path.toLowerCase().endsWith('.ply') && !plyFile) {
+        plyFile = entry;
+      }
+    });
+
+    if (plyFile) {
+      var plyBytes = await plyFile.async('uint8array');
+      progEl.textContent = 'Loading PLY into splat viewer...';
+
+      // Load into Spark.js viewer
+      await ensureSparkLoaded();
+      if (_splatMesh) { scene.remove(_splatMesh); if (_splatMesh.dispose) _splatMesh.dispose(); _splatMesh = null; }
+      var Spark = window.Spark;
+      _splatMesh = new Spark.SplatMesh({
+        fileBytes: plyBytes,
+        onLoad: function(mesh) {
+          var numSplats = mesh.numSplats || 'unknown';
+          progEl.textContent = 'KIRI 3DGS loaded! ' + numSplats + ' splats';
+          toast('KIRI splat loaded (' + numSplats + ' splats)');
+          document.getElementById('splat-info').textContent = 'KIRI: ' + numSplats + ' splats (' + (plyBytes.length / 1e6).toFixed(1) + ' MB)';
+          syncSplatSlidersToMesh();
+        }
+      });
+      scene.add(_splatMesh);
+
+      // Add download button
+      var dlBtn = document.createElement('button');
+      dlBtn.className = 'btn';
+      dlBtn.textContent = 'Download PLY';
+      dlBtn.onclick = function() {
+        var blob = new Blob([plyBytes], { type: 'application/octet-stream' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'kiri-3dgs.ply';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      dlBar.appendChild(dlBtn);
+
+      // Add download ZIP button
+      var zipBtn = document.createElement('button');
+      zipBtn.className = 'btn';
+      zipBtn.textContent = 'Download Full ZIP';
+      zipBtn.onclick = function() {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(zipBlob);
+        a.download = 'kiri-3dgs.zip';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      dlBar.appendChild(zipBtn);
+    } else {
+      progEl.textContent = 'ZIP downloaded but no PLY found — check ZIP contents';
+      toast('No PLY in KIRI ZIP');
+      // Still offer the ZIP download
+      var zipBtn2 = document.createElement('button');
+      zipBtn2.className = 'btn';
+      zipBtn2.textContent = 'Download ZIP';
+      zipBtn2.onclick = function() {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(zipBlob);
+        a.download = 'kiri-3dgs.zip';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      dlBar.appendChild(zipBtn2);
+    }
+  } catch (err) {
+    progEl.textContent = 'Download error: ' + err.message;
+    toast('KIRI download error: ' + err.message);
+    console.error('KIRI download error:', err);
+  }
+}
+
+async function checkKiriStatus() {
+  var raw = localStorage.getItem('kiri_pending');
+  if (!raw && !_kiriSerialize) { toast('No pending KIRI job'); return; }
+  var p = raw ? JSON.parse(raw) : { serialize: _kiriSerialize };
+  var apiKey = p.apiKey || document.getElementById('kiri-apikey').value.trim();
+  if (!apiKey && !_proxyUrl) { toast('Enter a KIRI API key'); return; }
+  var serialize = p.serialize || _kiriSerialize;
+  if (!serialize) { toast('No serial number found'); return; }
+
+  var progEl = document.getElementById('kiri-progress');
+  var pendEl = document.getElementById('kiri-pending');
+  progEl.style.display = 'block';
+  progEl.textContent = 'Checking KIRI status...';
+
+  try {
+    var chkHeaders = {};
+    if (apiKey) chkHeaders['Authorization'] = 'Bearer ' + apiKey;
+    var statusRes = await proxiedFetch('https://api.kiriengine.app/api/v1/open/model/getStatus?serialize=' + encodeURIComponent(serialize), {
+      headers: chkHeaders
+    });
+    if (!statusRes.ok) throw new Error('Status check failed: ' + statusRes.status);
+    var statusData = await statusRes.json();
+    var status = statusData.data && statusData.data.status !== undefined ? statusData.data.status : statusData.status;
+
+    var statusLabels = { '-1': 'Uploading', '0': 'Processing', '1': 'Failed', '2': 'Successful', '3': 'Queuing', '4': 'Exported' };
+    var label = statusLabels[String(status)] || 'Unknown (' + status + ')';
+
+    if (status === 2 || status === 4) {
+      progEl.textContent = 'KIRI job complete! Downloading...';
+      if (pendEl) pendEl.style.display = 'none';
+      _kiriSerialize = serialize;
+      handleKiriResult(statusData, apiKey);
+    } else if (status === 1) {
+      progEl.textContent = 'KIRI job failed';
+      clearKiriPending();
+      toast('KIRI processing failed');
+    } else {
+      progEl.textContent = 'KIRI status: ' + label;
+      toast('KIRI: ' + label);
+    }
+  } catch (err) {
+    progEl.textContent = 'Error: ' + err.message;
+    toast('KIRI check error: ' + err.message);
+    console.error('KIRI check error:', err);
+  }
 }
 
 // ============================================================
@@ -1675,6 +4302,634 @@ toast('Training views exported');
 }
 
 // ============================================================
+// VIDEO → SPLAT TRAINING EXPORT
+// ============================================================
+function _buildTransformsJson(poses, w, h, fov) {
+  var fl = w / (2 * Math.tan(fov * Math.PI / 360));
+  var transforms = {
+    camera_model: 'OPENCV',
+    fl_x: fl,
+    fl_y: fl,
+    cx: w / 2,
+    cy: h / 2,
+    w: w,
+    h: h,
+    frames: []
+  };
+  for (var i = 0; i < poses.length; i++) {
+    var me = poses[i].elements;
+    var c2w = [
+      [me[0], me[4], me[8], me[12]],
+      [me[1], me[5], me[9], me[13]],
+      [me[2], me[6], me[10], me[14]],
+      [me[3], me[7], me[11], me[15]]
+    ];
+    transforms.frames.push({
+      file_path: 'images/frame_' + String(i).padStart(5, '0') + '.png',
+      transform_matrix: c2w
+    });
+  }
+  return transforms;
+}
+
+async function exportFlythroughTraining() {
+  if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first'); return; }
+  var stepEl = document.getElementById('s-flystep');
+  var step = stepEl ? parseInt(stepEl.value) || 1 : 1;
+  var btn = document.getElementById('btn-export-fly-train');
+  var prog = document.getElementById('v2s-progress');
+  btn.disabled = true; btn.textContent = 'Rendering...';
+  prog.style.display = 'block';
+
+  var cp = _flyCamParams;
+  var selectedPoses = [];
+  for (var i = 0; i < _flyPoses.length; i += step) {
+    selectedPoses.push(_flyPoses[i]);
+  }
+
+  // Rebuild spline for re-rendering
+  var pts = [];
+  var spStep = Math.max(1, Math.floor(trackData.length / 500));
+  for (var i = 0; i < trackData.length; i += spStep) {
+    pts.push(new THREE.Vector3(trackData[i][0][0], trackData[i][0][1], trackData[i][0][2]));
+  }
+  var last = trackData[trackData.length - 1][0];
+  if (pts.length < 2 || pts[pts.length - 1].distanceTo(new THREE.Vector3(last[0], last[1], last[2])) > 1) {
+    pts.push(new THREE.Vector3(last[0], last[1], last[2]));
+  }
+
+  // Offscreen renderer
+  var offRndr = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  offRndr.setSize(cp.w, cp.h); offRndr.setPixelRatio(1);
+  offRndr.outputColorSpace = THREE.LinearSRGBColorSpace;
+  var offCam = new THREE.PerspectiveCamera(cp.fov, cp.w / cp.h, 1, 20000);
+
+  var zip = new JSZip();
+  var imgFolder = zip.folder('images');
+
+  // Re-render at each stored pose
+  var newPoses = [];
+  for (var i = 0; i < selectedPoses.length; i++) {
+    prog.textContent = 'Rendering frame ' + (i + 1) + ' / ' + selectedPoses.length;
+    var me = selectedPoses[i].elements;
+    offCam.matrixWorld.fromArray(me);
+    offCam.matrixWorld.decompose(offCam.position, offCam.quaternion, offCam.scale);
+    offCam.updateMatrixWorld(true);
+
+    offRndr.clear(); offRndr.render(scene, offCam);
+
+    newPoses.push({ elements: me });
+    var dataUrl = offRndr.domElement.toDataURL('image/png');
+    var b64 = dataUrl.split(',')[1];
+    imgFolder.file('frame_' + String(i).padStart(5, '0') + '.png', b64, { base64: true });
+
+    if (i % 4 === 0) await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  offRndr.dispose();
+
+  var transforms = _buildTransformsJson(newPoses, cp.w, cp.h, cp.fov);
+  prog.textContent = 'Compressing ZIP...';
+  zip.file('transforms.json', JSON.stringify(transforms, null, 2));
+
+  var blob = await zip.generateAsync({ type: 'blob' }, function(meta) {
+    prog.textContent = 'Compressing... ' + Math.round(meta.percent) + '%';
+  });
+
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a'); a.href = url; a.download = 'flythrough_training.zip'; a.click();
+  URL.revokeObjectURL(url);
+
+  btn.disabled = false; btn.textContent = 'Export Training ZIP';
+  prog.textContent = 'Done — ' + newPoses.length + ' frames at ' + cp.w + 'x' + cp.h + ' with camera poses';
+  toast('Flythrough training views exported');
+}
+
+async function extractStylizedTraining() {
+  if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first to capture camera poses'); return; }
+  var fileInput = document.getElementById('v2s-video-input');
+  if (!fileInput.files[0]) { toast('Choose a stylized video first'); return; }
+  var videoFile = fileInput.files[0];
+  var sampling = document.getElementById('v2s-sampling').value;
+  var btn = document.getElementById('btn-extract-stylized');
+  var prog = document.getElementById('v2s-progress');
+  btn.disabled = true; btn.textContent = 'Extracting...';
+  prog.style.display = 'block';
+  prog.textContent = 'Loading video...';
+
+  var cp = _flyCamParams;
+
+  // Create video element for frame extraction
+  var video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  var blobUrl = URL.createObjectURL(videoFile);
+  video.src = blobUrl;
+
+  await new Promise(function(resolve, reject) {
+    video.onloadedmetadata = resolve;
+    video.onerror = function() { reject(new Error('Failed to load video')); };
+  });
+
+  var vidDuration = video.duration;
+  if (!isFinite(vidDuration) || vidDuration <= 0) {
+    btn.disabled = false; btn.textContent = 'Extract & Export ZIP';
+    prog.textContent = 'Error: could not read video duration';
+    URL.revokeObjectURL(blobUrl);
+    toast('Cannot read video duration'); return;
+  }
+
+  // Determine which poses/timestamps to extract
+  var extractPoses = [];
+  if (sampling === 'match') {
+    // Match all flythrough poses — distribute them evenly across video duration
+    for (var i = 0; i < _flyPoses.length; i++) {
+      var frac = i / Math.max(_flyPoses.length - 1, 1);
+      extractPoses.push({ poseIdx: i, time: frac * vidDuration, elements: _flyPoses[i].elements });
+    }
+  } else {
+    // Fixed FPS sampling
+    var targetFps = parseInt(sampling); // '2fps' -> 2, '5fps' -> 5, '10fps' -> 10
+    var interval = 1 / targetFps;
+    var totalPoses = _flyPoses.length;
+    for (var t = 0; t < vidDuration; t += interval) {
+      var frac = t / vidDuration;
+      var poseIdx = Math.min(Math.round(frac * (totalPoses - 1)), totalPoses - 1);
+      extractPoses.push({ poseIdx: poseIdx, time: t, elements: _flyPoses[poseIdx].elements });
+    }
+  }
+
+  prog.textContent = 'Extracting ' + extractPoses.length + ' frames...';
+
+  // Canvas for frame capture
+  var canvas = document.createElement('canvas');
+  canvas.width = cp.w;
+  canvas.height = cp.h;
+  var ctx = canvas.getContext('2d');
+
+  var zip = new JSZip();
+  var imgFolder = zip.folder('images');
+  var finalPoses = [];
+
+  for (var i = 0; i < extractPoses.length; i++) {
+    var ep = extractPoses[i];
+    prog.textContent = 'Extracting frame ' + (i + 1) + ' / ' + extractPoses.length;
+
+    // Seek to timestamp
+    video.currentTime = Math.min(ep.time, vidDuration - 0.01);
+    await new Promise(function(resolve) {
+      video.onseeked = resolve;
+    });
+
+    // Draw frame to canvas at the target resolution
+    ctx.drawImage(video, 0, 0, cp.w, cp.h);
+    var dataUrl = canvas.toDataURL('image/png');
+    var b64 = dataUrl.split(',')[1];
+    imgFolder.file('frame_' + String(i).padStart(5, '0') + '.png', b64, { base64: true });
+    finalPoses.push({ elements: ep.elements });
+
+    if (i % 4 === 0) await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  URL.revokeObjectURL(blobUrl);
+
+  var transforms = _buildTransformsJson(finalPoses, cp.w, cp.h, cp.fov);
+  prog.textContent = 'Compressing ZIP...';
+  zip.file('transforms.json', JSON.stringify(transforms, null, 2));
+
+  var blob = await zip.generateAsync({ type: 'blob' }, function(meta) {
+    prog.textContent = 'Compressing... ' + Math.round(meta.percent) + '%';
+  });
+
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a'); a.href = url; a.download = 'stylized_training.zip'; a.click();
+  URL.revokeObjectURL(url);
+
+  btn.disabled = false; btn.textContent = 'Extract & Export ZIP';
+  prog.textContent = 'Done — ' + finalPoses.length + ' stylized frames at ' + cp.w + 'x' + cp.h + ' with camera poses';
+  toast('Stylized training ZIP exported');
+}
+
+// ============================================================
+// RUNPOD 3DGS TRAINING PIPELINE
+// ============================================================
+var _runpodState = { podId: null, token: null, apiKey: null, phase: null };
+
+function _runpodLog(msg) {
+  var el = document.getElementById('runpod-status');
+  if (el) { el.style.display = ''; el.textContent = msg; }
+}
+
+async function _runpodApi(method, path, apiKey, body) {
+  var opts = {
+    method: method,
+    headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  return proxiedFetch('https://rest.runpod.io/v1' + path, opts);
+}
+
+async function _jupyterApi(podId, token, method, path, body) {
+  var sep = path.indexOf('?') >= 0 ? '&' : '?';
+  var url = 'https://' + podId + '-8888.proxy.runpod.net' + path + sep + 'token=' + token;
+  var opts = { method: method };
+  if (body !== undefined) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = typeof body === 'string' ? body : JSON.stringify(body);
+  }
+  return proxiedFetch(url, opts);
+}
+
+async function _jupyterPut(podId, token, filePath, content) {
+  var isText = typeof content === 'string';
+  var body = { type: 'file', format: isText ? 'text' : 'base64', content: content };
+  return _jupyterApi(podId, token, 'PUT', '/api/contents/' + filePath, body);
+}
+
+async function _jupyterMkdir(podId, token, dirPath) {
+  return _jupyterApi(podId, token, 'PUT', '/api/contents/' + dirPath, { type: 'directory' });
+}
+
+async function _jupyterFileExists(podId, token, filePath) {
+  try {
+    var res = await _jupyterApi(podId, token, 'GET', '/api/contents/' + filePath + '?content=0');
+    return res.ok;
+  } catch(e) { return false; }
+}
+
+async function _jupyterGetText(podId, token, filePath) {
+  var res = await _jupyterApi(podId, token, 'GET', '/api/contents/' + filePath);
+  if (!res.ok) return null;
+  var data = await res.json();
+  return data.content || null;
+}
+
+async function _jupyterDownloadBinary(podId, token, filePath) {
+  var sep = filePath.indexOf('?') >= 0 ? '&' : '?';
+  var url = 'https://' + podId + '-8888.proxy.runpod.net/files/' + filePath + sep + 'token=' + token;
+  var res = await proxiedFetch(url);
+  if (!res.ok) throw new Error('Download failed: ' + res.status);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+function _arrayBufferToBase64(buffer) {
+  var bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  var binary = '';
+  for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+// Build training data from video + poses (shared logic)
+async function _buildTrainingFrames(prog) {
+  if (!_flyPoses.length || !_flyCamParams) throw new Error('Record a flythrough first');
+
+  var videoFile = null;
+  var fileInput = document.getElementById('v2s-video-input');
+  if (fileInput && fileInput.files[0]) {
+    videoFile = fileInput.files[0];
+  } else if (_runwayVideoUrl) {
+    // Use stylized video from Stage 2
+    prog('Fetching stylized video from Stage 2...');
+    var resp = await fetch(_runwayVideoUrl);
+    videoFile = await resp.blob();
+  }
+  if (!videoFile) throw new Error('Choose a stylized video or run Stage 2 first');
+
+  var sampling = document.getElementById('v2s-sampling').value;
+  var cp = _flyCamParams;
+
+  // Create video element
+  var video = document.createElement('video');
+  video.muted = true; video.playsInline = true;
+  var blobUrl = URL.createObjectURL(videoFile);
+  video.src = blobUrl;
+  await new Promise(function(resolve, reject) {
+    video.onloadedmetadata = resolve;
+    video.onerror = function() { reject(new Error('Failed to load video')); };
+  });
+  var vidDuration = video.duration;
+  if (!isFinite(vidDuration) || vidDuration <= 0) {
+    URL.revokeObjectURL(blobUrl);
+    throw new Error('Cannot read video duration');
+  }
+
+  // Determine poses to extract
+  var extractList = [];
+  if (sampling === 'match') {
+    for (var i = 0; i < _flyPoses.length; i++) {
+      var frac = i / Math.max(_flyPoses.length - 1, 1);
+      extractList.push({ poseIdx: i, time: frac * vidDuration, elements: _flyPoses[i].elements });
+    }
+  } else {
+    var targetFps = parseInt(sampling);
+    var interval = 1 / targetFps;
+    for (var t = 0; t < vidDuration; t += interval) {
+      var frac = t / vidDuration;
+      var poseIdx = Math.min(Math.round(frac * (_flyPoses.length - 1)), _flyPoses.length - 1);
+      extractList.push({ poseIdx: poseIdx, time: t, elements: _flyPoses[poseIdx].elements });
+    }
+  }
+
+  // Extract frames
+  var canvas = document.createElement('canvas');
+  canvas.width = cp.w; canvas.height = cp.h;
+  var ctx = canvas.getContext('2d');
+  var frames = [];
+
+  for (var i = 0; i < extractList.length; i++) {
+    if (i % 10 === 0) prog('Extracting frame ' + (i + 1) + ' / ' + extractList.length);
+    video.currentTime = Math.min(extractList[i].time, vidDuration - 0.01);
+    await new Promise(function(r) { video.onseeked = r; });
+    ctx.drawImage(video, 0, 0, cp.w, cp.h);
+    // Use JPEG for smaller upload size
+    var dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    var b64 = dataUrl.split(',')[1];
+    frames.push({ name: 'frame_' + String(i).padStart(5, '0') + '.jpg', b64: b64, elements: extractList[i].elements });
+    if (i % 4 === 0) await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  URL.revokeObjectURL(blobUrl);
+
+  var transforms = _buildTransformsJson(frames.map(function(f) { return { elements: f.elements }; }), cp.w, cp.h, cp.fov);
+  // Fix file paths to use .jpg
+  for (var i = 0; i < transforms.frames.length; i++) {
+    transforms.frames[i].file_path = 'images/' + frames[i].name;
+  }
+
+  return { frames: frames, transforms: transforms };
+}
+
+function useStylizedVideo() {
+  if (!_runwayVideoUrl) { toast('No stylized video available — run Stage 2 first'); return; }
+  var nameEl = document.getElementById('v2s-video-name');
+  nameEl.textContent = 'Stage 2 output';
+  // Clear file input so _buildTrainingFrames uses _runwayVideoUrl
+  var fileInput = document.getElementById('v2s-video-input');
+  if (fileInput) fileInput.value = '';
+  toast('Will use Stage 2 stylized video');
+}
+
+async function runpodTrain() {
+  var apiKey = document.getElementById('runpod-apikey').value.trim();
+  if (!apiKey) { toast('Enter a RunPod API key'); return; }
+  if (!_flyPoses.length || !_flyCamParams) { toast('Record a flythrough first'); return; }
+
+  var gpuType = document.getElementById('runpod-gpu').value;
+  var iterations = parseInt(document.getElementById('s-runpod-iters').value);
+  var btn = document.getElementById('btn-runpod-train');
+  var prog = document.getElementById('v2s-progress');
+  btn.disabled = true; btn.textContent = 'Starting...';
+  prog.style.display = 'block';
+
+  function updateProg(msg) { prog.textContent = msg; _runpodLog(msg); }
+
+  try {
+    // --- Phase 1: Extract frames from video ---
+    updateProg('Extracting frames from video...');
+    var data = await _buildTrainingFrames(function(m) { updateProg(m); });
+    updateProg('Extracted ' + data.frames.length + ' frames. Creating RunPod pod...');
+
+    // --- Phase 2: Create RunPod pod ---
+    var token = 'ad' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    _runpodState = { podId: null, token: token, apiKey: apiKey, phase: 'creating' };
+
+    var createRes = await _runpodApi('POST', '/pods', apiKey, {
+      name: 'accel-driv-3dgs-' + Date.now().toString(36).slice(-4),
+      imageName: 'runpod/pytorch:2.4.1-py3.11-cuda12.4.1-devel-ubuntu22.04',
+      gpuTypeIds: [gpuType],
+      gpuCount: 1,
+      cloudType: 'ALL',
+      containerDiskInGb: 50,
+      volumeInGb: 20,
+      volumeMountPath: '/workspace',
+      ports: '8888/http',
+      env: [
+        { key: 'JUPYTER_PASSWORD', value: token },
+        { key: 'JUPYTER_TOKEN', value: token }
+      ]
+    });
+    if (!createRes.ok) {
+      var errText = await createRes.text();
+      throw new Error('Failed to create pod (' + createRes.status + '): ' + errText);
+    }
+    var podData = await createRes.json();
+    var podId = podData.id;
+    if (!podId) throw new Error('No pod ID returned');
+    _runpodState.podId = podId;
+    _runpodState.phase = 'starting';
+    updateProg('Pod created: ' + podId + '. Waiting for GPU...');
+
+    // --- Phase 3: Wait for pod RUNNING ---
+    for (var attempt = 0; attempt < 120; attempt++) {
+      await pollSleep(5000);
+      var statusRes = await _runpodApi('GET', '/pods/' + podId, apiKey);
+      if (statusRes.ok) {
+        var statusData = await statusRes.json();
+        var ds = statusData.desiredStatus || statusData.status || '';
+        var runtime = statusData.runtime;
+        if (runtime && runtime.uptimeInSeconds > 0) break;
+        updateProg('Pod ' + podId + ': ' + ds + ' (waiting for GPU, ' + (attempt * 5) + 's)');
+      }
+      if (attempt >= 119) throw new Error('Pod failed to start after 10 minutes');
+    }
+    _runpodState.phase = 'jupyter-wait';
+    updateProg('Pod running. Waiting for JupyterLab...');
+
+    // --- Phase 4: Wait for JupyterLab ---
+    var jupyterReady = false;
+    for (var jAttempt = 0; jAttempt < 60; jAttempt++) {
+      await pollSleep(5000);
+      try {
+        var jRes = await _jupyterApi(podId, token, 'GET', '/api');
+        if (jRes.ok) { jupyterReady = true; break; }
+      } catch(e) { /* retry */ }
+      updateProg('Waiting for JupyterLab... (' + (jAttempt * 5) + 's)');
+    }
+    if (!jupyterReady) throw new Error('JupyterLab failed to start after 5 minutes');
+    _runpodState.phase = 'uploading';
+    updateProg('JupyterLab ready. Uploading training data...');
+
+    // --- Phase 5: Upload training data ---
+    await _jupyterMkdir(podId, token, 'data');
+    await _jupyterMkdir(podId, token, 'data/images');
+
+    // Upload transforms.json
+    await _jupyterPut(podId, token, 'data/transforms.json', JSON.stringify(data.transforms, null, 2));
+
+    // Upload frames in parallel batches of 8
+    var batchSize = 8;
+    for (var bi = 0; bi < data.frames.length; bi += batchSize) {
+      var batch = data.frames.slice(bi, bi + batchSize);
+      await Promise.all(batch.map(function(f) {
+        return _jupyterPut(podId, token, 'data/images/' + f.name, f.b64);
+      }));
+      var pct = Math.round(Math.min(bi + batchSize, data.frames.length) / data.frames.length * 100);
+      updateProg('Uploading frames... ' + pct + '% (' + Math.min(bi + batchSize, data.frames.length) + '/' + data.frames.length + ')');
+    }
+
+    // --- Phase 6: Upload and start training script ---
+    var trainScript = [
+      '#!/bin/bash',
+      'set -e',
+      'cd /workspace',
+      'echo "install" > /workspace/STATUS',
+      'pip install nerfstudio gsplat 2>&1 | tee install.log',
+      'echo "train" > /workspace/STATUS',
+      'ns-train splatfacto \\',
+      '  --data /workspace/data \\',
+      '  --max-num-iterations ' + iterations + ' \\',
+      '  --output-dir /workspace/ns-output \\',
+      '  --viewer.quit-on-train-completion True \\',
+      '  --pipeline.datamanager.dataparser nerfstudio-data \\',
+      '  2>&1 | tee train.log',
+      'echo "export" > /workspace/STATUS',
+      'CONFIG=$(find /workspace/ns-output -name "config.yml" -path "*/splatfacto/*" | head -1)',
+      'if [ -z "$CONFIG" ]; then echo "error: no config" > /workspace/STATUS; exit 1; fi',
+      'ns-export gaussian-splat \\',
+      '  --load-config "$CONFIG" \\',
+      '  --output-dir /workspace/export \\',
+      '  2>&1 | tee export.log',
+      'echo "done" > /workspace/STATUS',
+      'touch /workspace/DONE'
+    ].join('\n');
+    await _jupyterPut(podId, token, 'train.sh', trainScript);
+    updateProg('Starting nerfstudio training (' + iterations + ' iterations)...');
+
+    // Start training via kernel
+    _runpodState.phase = 'training';
+    var kernelRes = await _jupyterApi(podId, token, 'POST', '/api/kernels', { name: 'python3' });
+    if (!kernelRes.ok) throw new Error('Failed to create kernel: ' + kernelRes.status);
+    var kernelData = await kernelRes.json();
+    var kernelId = kernelData.id;
+
+    // Execute training via kernel WebSocket
+    var wsUrl = 'wss://' + podId + '-8888.proxy.runpod.net/api/kernels/' + kernelId + '/channels?token=' + token;
+    await new Promise(function(resolve, reject) {
+      var ws = new WebSocket(wsUrl);
+      var sent = false;
+      ws.onopen = function() {
+        var msgId = 'exec-' + Date.now();
+        ws.send(JSON.stringify({
+          header: { msg_id: msgId, msg_type: 'execute_request', username: '', session: msgId, version: '5.3' },
+          parent_header: {},
+          metadata: {},
+          content: { code: 'import subprocess; subprocess.Popen(["bash", "/workspace/train.sh"]); print("STARTED")', silent: false, store_history: false, user_expressions: {}, allow_stdin: false },
+          channel: 'shell'
+        }));
+        sent = true;
+      };
+      ws.onmessage = function(e) {
+        try {
+          var msg = JSON.parse(e.data);
+          if (msg.msg_type === 'stream' && msg.content && msg.content.text && msg.content.text.indexOf('STARTED') >= 0) {
+            ws.close(); resolve();
+          }
+          if (msg.msg_type === 'execute_reply') {
+            ws.close(); resolve();
+          }
+        } catch(ex) {}
+      };
+      ws.onerror = function(e) { if (!sent) reject(new Error('WebSocket failed — check RunPod pod status')); };
+      // Timeout: if WS doesn't respond in 30s, assume training started anyway
+      setTimeout(function() { try { ws.close(); } catch(ex) {} resolve(); }, 30000);
+    });
+
+    updateProg('Training started on GPU. This takes 15-45 min. Polling...');
+
+    // --- Phase 7: Poll for completion ---
+    var maxPolls = 360; // 60 min max (10s intervals)
+    for (var pi = 0; pi < maxPolls; pi++) {
+      await pollSleep(10000);
+      var done = await _jupyterFileExists(podId, token, 'DONE');
+      if (done) break;
+      var statusText = await _jupyterGetText(podId, token, 'STATUS');
+      var phase = statusText ? statusText.trim() : 'waiting';
+      var elapsed = Math.round((pi + 1) * 10 / 60);
+      updateProg('Training: ' + phase + ' (' + elapsed + ' min elapsed)');
+      if (phase.indexOf('error') >= 0) throw new Error('Training failed: ' + phase);
+      if (pi >= maxPolls - 1) throw new Error('Training timed out after 60 minutes');
+    }
+
+    _runpodState.phase = 'downloading';
+    updateProg('Training complete! Downloading PLY splat...');
+
+    // --- Phase 8: Download PLY ---
+    var plyBytes = await _jupyterDownloadBinary(podId, token, 'export/splat.ply');
+    updateProg('Downloaded PLY (' + (plyBytes.length / 1e6).toFixed(1) + ' MB). Loading into viewer...');
+
+    // --- Phase 9: Load into Spark.js ---
+    await ensureSparkLoaded();
+    if (_splatMesh) { scene.remove(_splatMesh); if (_splatMesh.dispose) _splatMesh.dispose(); _splatMesh = null; }
+    var Spark = window.Spark;
+    _splatMesh = new Spark.SplatMesh({
+      fileBytes: plyBytes,
+      onLoad: function(mesh) {
+        var numSplats = mesh.numSplats || 'unknown';
+        document.getElementById('splat-info').textContent = 'RunPod 3DGS: ' + numSplats + ' splats (' + (plyBytes.length / 1e6).toFixed(1) + ' MB)';
+        toast('Splat loaded (' + numSplats + ' splats)');
+        syncSplatSlidersToMesh();
+      }
+    });
+    scene.add(_splatMesh);
+
+    // --- Phase 10: Terminate pod ---
+    updateProg('Splat loaded! Terminating pod to save costs...');
+    await _runpodApi('DELETE', '/pods/' + podId, apiKey);
+    _runpodState.phase = 'done';
+    _runpodState.podId = null;
+    updateProg('Done! Pod terminated. Splat loaded in viewer.');
+    toast('RunPod training complete — splat loaded!');
+
+  } catch (err) {
+    updateProg('Error: ' + err.message);
+    toast('RunPod error: ' + err.message);
+    console.error('RunPod training error:', err);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Train on RunPod';
+  }
+}
+
+async function runpodCheckStatus() {
+  if (!_runpodState.podId || !_runpodState.apiKey) { toast('No active RunPod pod'); return; }
+  var prog = document.getElementById('v2s-progress');
+  prog.style.display = 'block';
+  try {
+    var res = await _runpodApi('GET', '/pods/' + _runpodState.podId, _runpodState.apiKey);
+    if (!res.ok) { prog.textContent = 'Pod status check failed: ' + res.status; return; }
+    var data = await res.json();
+    var status = data.desiredStatus || 'unknown';
+    var uptime = data.runtime && data.runtime.uptimeInSeconds ? Math.round(data.runtime.uptimeInSeconds / 60) + ' min' : 'N/A';
+    var gpu = data.runtime && data.runtime.gpus && data.runtime.gpus[0] ? data.runtime.gpus[0].gpuUtilPercent + '% GPU' : '';
+    _runpodLog('Pod: ' + _runpodState.podId + '\nStatus: ' + status + '\nUptime: ' + uptime + (gpu ? '\nGPU: ' + gpu : ''));
+    // Also check training status
+    if (_runpodState.token) {
+      var statusText = await _jupyterGetText(_runpodState.podId, _runpodState.token, 'STATUS');
+      if (statusText) _runpodLog('Pod: ' + _runpodState.podId + '\nStatus: ' + status + '\nUptime: ' + uptime + (gpu ? '\nGPU: ' + gpu : '') + '\nTraining: ' + statusText.trim());
+    }
+    prog.textContent = 'Pod ' + status + ', uptime ' + uptime;
+  } catch (err) {
+    prog.textContent = 'Status check error: ' + err.message;
+  }
+}
+
+async function runpodTerminate() {
+  if (!_runpodState.podId || !_runpodState.apiKey) { toast('No active RunPod pod'); return; }
+  var prog = document.getElementById('v2s-progress');
+  prog.style.display = 'block';
+  prog.textContent = 'Terminating pod ' + _runpodState.podId + '...';
+  try {
+    await _runpodApi('DELETE', '/pods/' + _runpodState.podId, _runpodState.apiKey);
+    _runpodLog('Pod ' + _runpodState.podId + ' terminated.');
+    prog.textContent = 'Pod terminated.';
+    _runpodState.podId = null;
+    _runpodState.phase = null;
+    toast('Pod terminated');
+  } catch (err) {
+    prog.textContent = 'Terminate error: ' + err.message;
+  }
+}
+
+// ============================================================
 // DRAWER (mobile)
 // ============================================================
 function setupDrawer(){}
@@ -1693,8 +4948,8 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,exportSceneAsGLB,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,exportTrainingViews});
-init();fitView();showMarblePending();
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,exportSceneAsGLB,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,checkRunwayOperation,clearRunwayPending,exportTrainingViews,previewPanoCaptures,batchPanoMarble,loadPanoSection,exportPanoSections,recordFlythrough,downloadFlythrough,runRunwayStylize,runMarbleFromVideo,runFullPipeline,onProviderChange,onModelChange,runStylize,checkPendingOperation,clearAllPending,generateKiri,checkKiriStatus,clearKiriPending,exportFlythroughTraining,extractStylizedTraining,runpodTrain,runpodCheckStatus,runpodTerminate,useStylizedVideo});
+init();fitView();showMarblePending();showRunwayPending();showDecartPending();showKiriPending();onRunwayModelChange();
 </script>
 
 </body>

@@ -9,7 +9,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none}
-canvas{display:block;width:100%;height:100%}
+canvas.game-canvas{display:block;width:100%;height:100%}
 
 #ui-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10;pointer-events:none}
 #ui-overlay>*{pointer-events:auto}
@@ -54,6 +54,8 @@ canvas{display:block;width:100%;height:100%}
     <div id="boost-hud" style="display:none;color:#0f0;font-size:16px;font-weight:900;text-shadow:0 0 12px #0f0,0 0 24px #0f0">BOOST!</div>
   </div>
   <div id="position-hud" style="position:absolute;top:50px;right:16px;font:900 28px system-ui;color:#ffd700;text-shadow:0 0 12px rgba(255,215,0,.6);display:none"><span id="pos-num">1</span><span id="pos-suffix" style="font-size:14px;opacity:.7">st</span><span style="font-size:12px;opacity:.5;margin-left:4px">/ 6</span></div>
+  <div id="lap-hud" style="position:absolute;top:82px;right:16px;font:700 16px system-ui;color:#fff;text-shadow:0 0 8px rgba(255,255,255,.4);display:none">Lap <span id="lap-num">1</span><span style="opacity:.5"> / 3</span></div>
+  <canvas id="minimap" width="140" height="140" style="position:absolute;top:106px;right:16px;width:140px;height:140px;border:1px solid rgba(255,110,199,.35);border-radius:8px;background:rgba(0,0,0,.55);display:none"></canvas>
 
   <div id="xp-hud" style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);text-align:center;font:900 14px/1 system-ui,sans-serif;display:none;pointer-events:none">
     <div id="xp-multi" style="font:900 14px/1 system-ui,sans-serif;color:#ff6ec7;text-shadow:0 0 8px rgba(255,110,199,.6);margin-bottom:2px">x1</div>
@@ -84,7 +86,11 @@ canvas{display:block;width:100%;height:100%}
 
   <!-- Debug bloom panel -->
   <div id="debug-panel" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.75);border:1px solid rgba(255,110,199,.4);border-radius:8px;padding:10px 14px;z-index:40;font:400 .7rem system-ui;color:rgba(220,200,255,.85);display:flex;flex-direction:column;gap:6px;min-width:180px;touch-action:auto;-webkit-user-select:none;user-select:none">
-    <div style="font-weight:700;font-size:.75rem;color:#ff6ec7;margin-bottom:2px">Bloom Debug</div>
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="font-weight:700;font-size:.75rem;color:#ff6ec7">Bloom Debug</span>
+      <button id="dbg-minimize" style="background:none;border:1px solid rgba(255,110,199,.4);border-radius:4px;color:#ff6ec7;font:700 .7rem system-ui;width:20px;height:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1" title="Minimize">&ndash;</button>
+    </div>
+    <div id="dbg-body" style="display:flex;flex-direction:column;gap:6px">
     <label style="display:flex;align-items:center;justify-content:space-between;gap:8px">
       Threshold <span style="display:flex;align-items:center;gap:4px"><input type="range" id="dbg-threshold" min="0" max="1" step="0.01" value="0" style="width:80px;accent-color:#ff6ec7;touch-action:auto"><span id="dbg-threshold-val" style="min-width:28px;text-align:right">0</span></span>
     </label>
@@ -103,6 +109,7 @@ canvas{display:block;width:100%;height:100%}
     </label>
     <div style="border-top:1px solid rgba(255,110,199,.2);margin:2px 0"></div>
     <div style="display:flex;justify-content:space-between"><span>FPS</span><span id="dbg-fps" style="color:#33ff88">--</span></div>
+    </div>
   </div>
 </div>
 
@@ -113,6 +120,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 THREE.ColorManagement.enabled = false;
 (function(){
 'use strict';
@@ -179,6 +187,8 @@ let trackData = null;
 let curve = null;
 let trackLength = 0;
 let scene, camera, renderer, composer, bloomPass;
+let _pageHidden = false, _contextLost = false;
+const inIframe = window.parent !== window;
 let roadMesh, groundMesh;
 let carGroup, carBody;
 let barrierLeft, barrierRight;
@@ -192,6 +202,10 @@ let boostMeshes = [];
 let aiCars = [];
 // 1-based position among all racers
 let playerPosition = 1;
+// Lap tracking
+const TOTAL_LAPS = 3;
+let currentLap = 1;
+let lastProgressForLap = 0;
 
 // loading, ready, countdown, racing, finished
 let gameState = 'loading';
@@ -258,28 +272,56 @@ const $tiltDot = document.getElementById('tilt-dot');
 const $positionHud = document.getElementById('position-hud');
 const $posNum = document.getElementById('pos-num');
 const $posSuffix = document.getElementById('pos-suffix');
+const $lapHud = document.getElementById('lap-hud');
+const $lapNum = document.getElementById('lap-num');
+const $minimap = document.getElementById('minimap');
+const minimapCtx = $minimap.getContext('2d');
 
 // ── LOAD TRACK ──
-fetch('track.json')
-  .then(r => r.json())
-  .then(data => {
-    trackData = data;
-    init();
-  })
-  .catch(e => {
-    $loading.textContent = 'Failed to load track: ' + e.message;
+if (window.parent !== window) {
+  // Running inside editor iframe — receive track data via postMessage
+  window.addEventListener('message', function onMsg(e) {
+    if (e.data && e.data.type === 'trackData') {
+      window.removeEventListener('message', onMsg);
+      trackData = e.data.track;
+      try { init(); } catch(err) {
+        $loading.textContent = 'Init error: ' + err.message;
+        console.error(err);
+      }
+    }
   });
+  // Forward ESC to parent so editor can close the overlay
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') window.parent.postMessage({ type: 'gameExit' }, '*');
+  });
+  // Tell parent we're ready to receive track data
+  window.parent.postMessage({ type: 'gameReady' }, '*');
+} else {
+  // Running standalone — fetch track.json
+  fetch('track.json')
+    .then(r => r.json())
+    .then(data => { trackData = data; init(); })
+    .catch(e => { $loading.textContent = 'Failed to load track: ' + e.message; });
+}
 
 function init() {
+  // Apply Android performance settings
+  if (isAndroid) SKID_MAX_STRIPS = 60;
+
   // Build Three.js curve from track data
   // Use every 3rd point to keep it manageable (1000 control points)
   const points = [];
   for (let i = 0; i < trackData.length; i += 3) {
     const p = trackData[i][0];
-    // Swap Y/Z for Three.js coordinate system (Y up)
-    points.push(new THREE.Vector3(p[0], p[2], -p[1]));
+    if (inIframe) {
+      // Editor already uses Three.js Y-up coordinates — use as-is
+      points.push(new THREE.Vector3(p[0], p[1], p[2]));
+    } else {
+      // Standalone: track.json uses Z-up convention — swap Y/Z
+      points.push(new THREE.Vector3(p[0], p[2], -p[1]));
+    }
   }
-  curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
+  curve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.5);
   trackLength = curve.getLength();
 
   setupScene();
@@ -289,6 +331,7 @@ function init() {
   buildEnvironment();
   setupInput();
   setupUI();
+  buildMinimapData();
 
   $loading.style.display = 'none';
   gameState = 'ready';
@@ -310,13 +353,32 @@ function setupScene() {
   scene.fog = new THREE.FogExp2(0x0a001a, 0.004);
 
   camera = new THREE.PerspectiveCamera(CFG.fov, innerWidth/innerHeight, 0.5, 800);
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({ antialias: !isAndroid, powerPreference: 'high-performance' });
   renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(isAndroid ? 1 : Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
+  renderer.domElement.classList.add('game-canvas');
+  renderer.domElement.style.position = 'absolute';
+  renderer.domElement.style.top = '0';
+  renderer.domElement.style.left = '0';
+  renderer.domElement.style.zIndex = '0';
   document.body.appendChild(renderer.domElement);
+  // Handle WebGL context loss (mobile Safari kills GPU when backgrounded)
+  renderer.domElement.addEventListener('webglcontextlost', function(e) {
+    e.preventDefault(); _contextLost = true;
+    console.warn('[HorizonDrive] WebGL context lost — pausing render');
+  });
+  renderer.domElement.addEventListener('webglcontextrestored', function() {
+    _contextLost = false;
+    console.log('[HorizonDrive] WebGL context restored — resuming render');
+    if (!_pageHidden) requestAnimationFrame(animate);
+  });
+  document.addEventListener('visibilitychange', function() {
+    _pageHidden = document.hidden;
+    if (!document.hidden && !_contextLost) requestAnimationFrame(animate);
+  });
 
   // Lighting
   const ambient = new THREE.AmbientLight(0x4040a0, 1.26);
@@ -331,20 +393,17 @@ function setupScene() {
   underLight.position.set(0, -5, 0);
   scene.add(underLight);
 
-  // ── BLOOM POST-PROCESSING ──
-  const renderPass = new RenderPass(scene, camera);
-  bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(innerWidth, innerHeight),
-    // bloom strength
-    1.0,
-    // bloom radius
-    0.1,
-    // bloom threshold
-    0.0
-  );
-  composer = new EffectComposer(renderer);
-  composer.addPass(renderPass);
-  composer.addPass(bloomPass);
+  // ── BLOOM POST-PROCESSING (skip in iframe and Android — renders black / too slow) ──
+  if (!inIframe && !isAndroid) {
+    const renderPass = new RenderPass(scene, camera);
+    bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(innerWidth, innerHeight),
+      1.0, 0.1, 0.0
+    );
+    composer = new EffectComposer(renderer);
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+  }
 
   // ── DEBUG BLOOM SLIDERS ──
   function wireSlider(id, cb) {
@@ -372,11 +431,20 @@ function setupScene() {
     dprVal.textContent = v;
     renderer.setPixelRatio(v);
     renderer.setSize(innerWidth, innerHeight);
-    composer.setSize(innerWidth, innerHeight);
+    if (composer) composer.setSize(innerWidth, innerHeight);
   });
 
   // Prevent debug panel touches from reaching game controls
   const dbgPanel = document.getElementById('debug-panel');
+  if (inIframe || isAndroid) dbgPanel.style.display = 'none';
+  const dbgMinBtn = document.getElementById('dbg-minimize');
+  const dbgBody = document.getElementById('dbg-body');
+  dbgMinBtn.addEventListener('click', () => {
+    const collapsed = dbgBody.style.display === 'none';
+    dbgBody.style.display = collapsed ? 'flex' : 'none';
+    dbgMinBtn.innerHTML = collapsed ? '&ndash;' : '+';
+    dbgPanel.style.minWidth = collapsed ? '180px' : 'auto';
+  });
   ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'pointerup'].forEach(evt => {
     dbgPanel.addEventListener(evt, e => e.stopPropagation());
   });
@@ -385,7 +453,7 @@ function setupScene() {
     camera.aspect = innerWidth/innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
-    composer.setSize(innerWidth, innerHeight);
+    if (composer) composer.setSize(innerWidth, innerHeight);
   });
 }
 
@@ -442,17 +510,22 @@ function buildTrack() {
   roadGeo.setIndex(indices);
   roadGeo.computeVertexNormals();
 
-  const roadMat = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    metalness: 0.8,
-    roughness: 0.2,
-    emissive: new THREE.Color(0x330066),
-    emissiveIntensity: 0.6,
-    side: THREE.DoubleSide,
-  });
+  const roadMat = isAndroid
+    ? new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })
+    : new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        metalness: 0.8,
+        roughness: 0.2,
+        emissive: new THREE.Color(0x330066),
+        emissiveIntensity: 0.6,
+        side: THREE.DoubleSide,
+      });
 
   roadMesh = new THREE.Mesh(roadGeo, roadMat);
   scene.add(roadMesh);
+
+  // Dashed lane lines
+  buildLaneLines(divisions);
 
   // Edge barriers (neon rails)
   buildBarriers(divisions, halfWidth);
@@ -462,6 +535,105 @@ function buildTrack() {
 
   // Boost pads
   buildBoostPads();
+}
+
+function buildLaneLines(divisions) {
+  // Dashed center line + edge lines for V2V reference
+  const dashLen = 6;       // world-unit length of each dash
+  const gapLen = 8;        // world-unit gap between dashes
+  const dashWidth = 0.35;  // width of each dash
+  const edgeInset = 1.2;   // edge lines inset from barriers
+  const halfWidth = CFG.roadWidth / 2;
+  const cycleLen = dashLen + gapLen;
+
+  // Materials — flat white for strong silhouette, slight transparency
+  const centerMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, side: THREE.DoubleSide, depthWrite: false,
+    transparent: true, opacity: 0.6,
+  });
+  const edgeMat = new THREE.MeshBasicMaterial({
+    color: 0xffdd44, side: THREE.DoubleSide, depthWrite: false,
+    transparent: true, opacity: 0.5,
+  });
+
+  const dashGeo = new THREE.PlaneGeometry(dashWidth, dashLen);
+  const edgeDashGeo = new THREE.PlaneGeometry(dashWidth * 0.7, dashLen * 0.7);
+
+  // Collect geometries for batching into single draw calls
+  const centerGeos = [];
+  const edgeGeos = [];
+
+  // Walk along the curve placing dashes
+  const totalLen = curve.getLength();
+  let dist = 0;
+
+  while (dist < totalLen - dashLen) {
+    const t = dist / totalLen;
+    const tEnd = Math.min((dist + dashLen) / totalLen, 0.9999);
+    const tMid = (t + tEnd) / 2;
+
+    if (tMid > 0.9999) break;
+
+    const point = curve.getPointAt(tMid);
+    const tangent = curve.getTangentAt(tMid).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (right.length() < 0.1) { dist += cycleLen; continue; }
+
+    // Center dash — clone, position, and apply matrix
+    const cGeo = dashGeo.clone();
+    const cObj = new THREE.Object3D();
+    cObj.position.copy(point);
+    cObj.position.y += 0.06;
+    cObj.up.copy(up);
+    cObj.lookAt(point.clone().add(tangent));
+    cObj.rotateX(-Math.PI / 2);
+    cObj.updateMatrix();
+    cGeo.applyMatrix4(cObj.matrix);
+    centerGeos.push(cGeo);
+
+    // Left edge dash
+    const lGeo = edgeDashGeo.clone();
+    const lObj = new THREE.Object3D();
+    lObj.position.set(
+      point.x - right.x * (halfWidth - edgeInset),
+      point.y + 0.06,
+      point.z - right.z * (halfWidth - edgeInset)
+    );
+    lObj.up.copy(up);
+    lObj.lookAt(lObj.position.clone().add(tangent));
+    lObj.rotateX(-Math.PI / 2);
+    lObj.updateMatrix();
+    lGeo.applyMatrix4(lObj.matrix);
+    edgeGeos.push(lGeo);
+
+    // Right edge dash
+    const rGeo = edgeDashGeo.clone();
+    const rObj = new THREE.Object3D();
+    rObj.position.set(
+      point.x + right.x * (halfWidth - edgeInset),
+      point.y + 0.06,
+      point.z + right.z * (halfWidth - edgeInset)
+    );
+    rObj.up.copy(up);
+    rObj.lookAt(rObj.position.clone().add(tangent));
+    rObj.rotateX(-Math.PI / 2);
+    rObj.updateMatrix();
+    rGeo.applyMatrix4(rObj.matrix);
+    edgeGeos.push(rGeo);
+
+    dist += cycleLen;
+  }
+
+  // Merge all dashes into 2 draw calls (center + edge)
+  if (centerGeos.length > 0) {
+    const merged = BufferGeometryUtils.mergeGeometries(centerGeos);
+    scene.add(new THREE.Mesh(merged, centerMat));
+  }
+  if (edgeGeos.length > 0) {
+    const merged = BufferGeometryUtils.mergeGeometries(edgeGeos);
+    scene.add(new THREE.Mesh(merged, edgeMat));
+  }
 }
 
 function buildBarriers(divisions, halfWidth) {
@@ -490,8 +662,8 @@ function buildBarriers(divisions, halfWidth) {
   }
 
   // Glowing tube barriers using TubeGeometry on CatmullRomCurve3
-  const leftCurve = new THREE.CatmullRomCurve3(leftPts, false, 'catmullrom', 0.5);
-  const rightCurve = new THREE.CatmullRomCurve3(rightPts, false, 'catmullrom', 0.5);
+  const leftCurve = new THREE.CatmullRomCurve3(leftPts, true, 'catmullrom', 0.5);
+  const rightCurve = new THREE.CatmullRomCurve3(rightPts, true, 'catmullrom', 0.5);
 
   // Left barrier - hot pink neon glow
   const leftGeo = new THREE.TubeGeometry(leftCurve, divisions / step, 0.12, 6, false);
@@ -676,7 +848,7 @@ function buildCar() {
 
 // ── SKID MARKS ──
 const skidStrips = [];
-const SKID_MAX_STRIPS = 200;
+let SKID_MAX_STRIPS = 200;
 const SKID_FADE_TIME = 4.0;
 const SKID_WIDTH = 0.25;
 // Car-local wheel offsets (x = lateral, z = front/back) — scaled to the 8-unit car
@@ -814,10 +986,12 @@ function buildAICars() {
 
       group.add(model);
 
-      // Neon underglow matching car color
-      const ugLight = new THREE.PointLight(aiColors[i % aiColors.length], 4.71, 8, 1);
-      ugLight.position.set(0, -0.1, 0);
-      group.add(ugLight);
+      // Neon underglow matching car color (skip lights on Android for perf)
+      if (!isAndroid) {
+        const ugLight = new THREE.PointLight(aiColors[i % aiColors.length], 4.71, 8, 1);
+        ugLight.position.set(0, -0.1, 0);
+        group.add(ugLight);
+      }
 
       scene.add(group);
 
@@ -836,6 +1010,7 @@ function buildAICars() {
         weavePhase: Math.random() * Math.PI * 2,
         boostTimer: 0,
         finished: false,
+        lap: 1,
       });
     }
   });
@@ -876,10 +1051,14 @@ function updateAICar(ai, dt) {
   // Lateral weaving
   ai.lateral = Math.sin(performance.now() * 0.001 * CFG.aiWeaveFreq + ai.weavePhase) * CFG.aiWeaveAmp;
 
-  // Finish check
+  // Lap wrap for AI
   if (ai.progress >= 1) {
-    ai.progress = 1;
-    ai.finished = true;
+    ai.progress -= 1;
+    ai.lap++;
+    if (ai.lap > TOTAL_LAPS) {
+      ai.progress = 0.999;
+      ai.finished = true;
+    }
   }
 
   // Position the car on track
@@ -906,8 +1085,10 @@ function updateAICar(ai, dt) {
 
 function calcPosition() {
   let pos = 1;
+  const playerTotal = (currentLap - 1) + trackProgress;
   for (let ai of aiCars) {
-    if (ai.progress > trackProgress) pos++;
+    const aiTotal = (ai.lap - 1) + ai.progress;
+    if (aiTotal > playerTotal) pos++;
   }
   return pos;
 }
@@ -975,23 +1156,23 @@ function checkCollisions(dt) {
 function buildEnvironment() {
   // Ground plane
   const groundGeo = new THREE.PlaneGeometry(8000, 8000);
-  const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x050010,
-    roughness: 1,
-    metalness: 0,
-  });
+  const groundMat = isAndroid
+    ? new THREE.MeshBasicMaterial({ color: 0x050010 })
+    : new THREE.MeshStandardMaterial({ color: 0x050010, roughness: 1, metalness: 0 });
   groundMesh = new THREE.Mesh(groundGeo, groundMat);
   groundMesh.rotation.x = -Math.PI/2;
-  groundMesh.position.y = -2;
+  // Position ground below the track start
+  const groundY = curve.getPointAt(0).y - 2;
+  groundMesh.position.y = groundY;
   scene.add(groundMesh);
 
   // Grid lines on ground
-  const gridHelper = new THREE.GridHelper(4000, 200, 0x1a0040, 0x0a0020);
+  const gridHelper = new THREE.GridHelper(4000, isAndroid ? 60 : 200, 0x1a0040, 0x0a0020);
   gridHelper.position.y = -1.9;
   scene.add(gridHelper);
 
   // Starfield
-  const starCount = 2000;
+  const starCount = isAndroid ? 500 : 2000;
   const starGeo = new THREE.BufferGeometry();
   const starPositions = new Float32Array(starCount * 3);
   for (let i = 0; i < starCount; i++) {
@@ -1004,8 +1185,41 @@ function buildEnvironment() {
   const stars = new THREE.Points(starGeo, starMat);
   scene.add(stars);
 
+  // Sky dome — gradient hemisphere for V2V sky reference
+  buildSkyDome(groundY);
+
   // Decorative neon pillars along the track
   buildTrackDecorations();
+
+  // Lightweight environment geometry for V2V reference
+  buildCityBlocks();
+  buildTreeClusters();
+}
+
+function buildSkyDome(groundY) {
+  const radius = 600;
+  const skySegs = isAndroid ? 12 : 32;
+  const geo = new THREE.SphereGeometry(radius, skySegs, skySegs / 2, 0, Math.PI * 2, 0, Math.PI / 2);
+  // Vertex color gradient: dark purple at horizon → deep blue at zenith
+  const posAttr = geo.getAttribute('position');
+  const colors = new Float32Array(posAttr.count * 3);
+  const horizonColor = new THREE.Color(0x1a0533);
+  const zenithColor = new THREE.Color(0x050822);
+  for (let i = 0; i < posAttr.count; i++) {
+    const y = posAttr.getY(i);
+    const t = Math.max(0, y / radius);
+    const c = new THREE.Color().lerpColors(horizonColor, zenithColor, t);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors: true, side: THREE.BackSide, fog: false,
+  });
+  const dome = new THREE.Mesh(geo, mat);
+  dome.position.y = groundY;
+  scene.add(dome);
 }
 
 function buildTrackDecorations() {
@@ -1013,17 +1227,24 @@ function buildTrackDecorations() {
   const glowOrbGeo = new THREE.SphereGeometry(0.35, 8, 8);
   const neonColors = [0xff6ec7, 0x00ffff, 0xffd700, 0x6e3cff];
   const halfWidth = CFG.roadWidth / 2;
-  const count = 120;
+  const count = isAndroid ? 60 : 120;
 
-  // Pre-create materials for reuse
-  const pillarMats = neonColors.map(c => new THREE.MeshStandardMaterial({
-    color: 0x111122,
-    emissive: new THREE.Color(c),
-    emissiveIntensity: 0.15,
-    metalness: 0.9,
-    roughness: 0.3,
-  }));
+  // Pre-create materials — use MeshBasicMaterial on Android
+  const pillarMats = neonColors.map(c => isAndroid
+    ? new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(0.3) })
+    : new THREE.MeshStandardMaterial({
+        color: 0x111122,
+        emissive: new THREE.Color(c),
+        emissiveIntensity: 0.15,
+        metalness: 0.9,
+        roughness: 0.3,
+      })
+  );
   const orbMats = neonColors.map(c => new THREE.MeshBasicMaterial({ color: c }));
+
+  // Collect geometries per color for merging
+  const pillarGeos = neonColors.map(() => []);
+  const orbGeos = neonColors.map(() => []);
 
   for (let i = 0; i < count; i++) {
     const t = i / count;
@@ -1036,20 +1257,266 @@ function buildTrackDecorations() {
     const side = (i % 2 === 0) ? -1 : 1;
     const ci = i % neonColors.length;
 
-    // Dark pillar with faint emissive
-    const pillar = new THREE.Mesh(pillarGeo, pillarMats[ci]);
-    pillar.position.set(
-      point.x + right.x * (halfWidth + 3) * side,
-      point.y + 4,
-      point.z + right.z * (halfWidth + 3) * side
-    );
-    scene.add(pillar);
+    const px = point.x + right.x * (halfWidth + 3) * side;
+    const py = point.y + 4;
+    const pz = point.z + right.z * (halfWidth + 3) * side;
 
-    // Bright glowing orb on top — this blooms hard
-    const orb = new THREE.Mesh(glowOrbGeo, orbMats[ci]);
-    orb.position.set(pillar.position.x, pillar.position.y + 4.3, pillar.position.z);
-    scene.add(orb);
+    const pGeo = pillarGeo.clone();
+    const pMat = new THREE.Matrix4().makeTranslation(px, py, pz);
+    pGeo.applyMatrix4(pMat);
+    pillarGeos[ci].push(pGeo);
+
+    const oGeo = glowOrbGeo.clone();
+    const oMat = new THREE.Matrix4().makeTranslation(px, py + 4.3, pz);
+    oGeo.applyMatrix4(oMat);
+    orbGeos[ci].push(oGeo);
   }
+
+  // Merge into one mesh per color (8 draw calls total instead of 240)
+  for (let ci = 0; ci < neonColors.length; ci++) {
+    if (pillarGeos[ci].length > 0) {
+      scene.add(new THREE.Mesh(BufferGeometryUtils.mergeGeometries(pillarGeos[ci]), pillarMats[ci]));
+    }
+    if (orbGeos[ci].length > 0) {
+      scene.add(new THREE.Mesh(BufferGeometryUtils.mergeGeometries(orbGeos[ci]), orbMats[ci]));
+    }
+  }
+}
+
+// ── CITY BLOCKS — boxes at varying heights along the track for V2V building silhouettes ──
+function buildCityBlocks() {
+  const halfWidth = CFG.roadWidth / 2;
+  const count = isAndroid ? 40 : 80;
+  // Seeded random for deterministic placement
+  let seed = 42;
+  function srand() { seed = (seed * 16807 + 0) % 2147483647; return (seed - 1) / 2147483646; }
+
+  // Use BasicMaterial on Android for cheaper rendering
+  const buildingMat = isAndroid
+    ? new THREE.MeshBasicMaterial({ color: 0x0c0c1e })
+    : new THREE.MeshStandardMaterial({
+        color: 0x0c0c1e,
+        emissive: new THREE.Color(0x1a0a30),
+        emissiveIntensity: 0.2,
+        metalness: 0.7,
+        roughness: 0.4,
+      });
+  // Window-lit accent material
+  const windowMat = new THREE.MeshBasicMaterial({
+    color: 0x332255, transparent: true, opacity: 0.6,
+  });
+
+  const buildingGeos = [];
+  const windowGeos = [];
+
+  for (let i = 0; i < count; i++) {
+    const t = (i / count + srand() * 0.005) % 1;
+    const point = curve.getPointAt(Math.min(t, 0.9999));
+    const tangent = curve.getTangentAt(Math.min(t, 0.9999)).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (right.length() < 0.1) continue;
+
+    const side = (i % 2 === 0) ? -1 : 1;
+    // Buildings placed 30-80 units from track center
+    const dist = halfWidth + 10 + srand() * 50;
+    const height = 8 + srand() * 40;
+    const width = 4 + srand() * 10;
+    const depth = 4 + srand() * 10;
+
+    const geo = new THREE.BoxGeometry(width, height, depth);
+    const obj = new THREE.Object3D();
+    obj.position.set(
+      point.x + right.x * dist * side,
+      point.y + height / 2 - 1,
+      point.z + right.z * dist * side
+    );
+    obj.rotation.y = srand() * Math.PI * 0.3;
+    obj.updateMatrix();
+    geo.applyMatrix4(obj.matrix);
+    buildingGeos.push(geo);
+
+    // Window strip accent on tall buildings
+    if (height > 20) {
+      const stripGeo = new THREE.PlaneGeometry(width * 0.8, height * 0.6);
+      const stripObj = new THREE.Object3D();
+      stripObj.position.copy(obj.position);
+      stripObj.position.x += right.x * side * (depth / 2 + 0.1) * -1;
+      stripObj.position.z += right.z * side * (depth / 2 + 0.1) * -1;
+      stripObj.lookAt(stripObj.position.clone().add(right.clone().multiplyScalar(side * -1)));
+      stripObj.updateMatrix();
+      stripGeo.applyMatrix4(stripObj.matrix);
+      windowGeos.push(stripGeo);
+    }
+  }
+
+  // Merge into 2 draw calls
+  if (buildingGeos.length > 0) {
+    scene.add(new THREE.Mesh(BufferGeometryUtils.mergeGeometries(buildingGeos), buildingMat));
+  }
+  if (windowGeos.length > 0) {
+    scene.add(new THREE.Mesh(BufferGeometryUtils.mergeGeometries(windowGeos), windowMat));
+  }
+}
+
+// ── TREE CLUSTERS — cone+cylinder primitives for V2V vegetation silhouettes ──
+function buildTreeClusters() {
+  const halfWidth = CFG.roadWidth / 2;
+  const clusterCount = isAndroid ? 20 : 40;
+  let seed = 137;
+  function srand() { seed = (seed * 16807 + 0) % 2147483647; return (seed - 1) / 2147483646; }
+
+  // Shared geometries
+  const trunkGeo = new THREE.CylinderGeometry(0.3, 0.4, 3, 5);
+  const canopyGeo = new THREE.ConeGeometry(2.5, 5, 6);
+
+  const trunkMat = isAndroid
+    ? new THREE.MeshBasicMaterial({ color: 0x1a0e08 })
+    : new THREE.MeshStandardMaterial({ color: 0x1a0e08, roughness: 0.9, metalness: 0.1 });
+  const canopyMat = isAndroid
+    ? new THREE.MeshBasicMaterial({ color: 0x0a1a0a })
+    : new THREE.MeshStandardMaterial({
+        color: 0x0a1a0a,
+        emissive: new THREE.Color(0x051005),
+        emissiveIntensity: 0.3,
+        roughness: 0.8,
+        metalness: 0.1,
+      });
+
+  const trunkGeos = [];
+  const canopyGeos = [];
+
+  for (let i = 0; i < clusterCount; i++) {
+    const t = (i / clusterCount + srand() * 0.008) % 1;
+    const point = curve.getPointAt(Math.min(t, 0.9999));
+    const tangent = curve.getTangentAt(Math.min(t, 0.9999)).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (right.length() < 0.1) continue;
+
+    const side = (i % 2 === 0) ? -1 : 1;
+    const baseDist = halfWidth + 5 + srand() * 30;
+    const treesInCluster = 2 + Math.floor(srand() * 3);
+
+    for (let j = 0; j < treesInCluster; j++) {
+      const jitter = (srand() - 0.5) * 6;
+      const dist = baseDist + (srand() - 0.5) * 8;
+      const treeHeight = 3 + srand() * 4;
+      const scale = 0.6 + srand() * 0.8;
+
+      const tx = point.x + right.x * dist * side + tangent.x * jitter;
+      const ty = point.y + 1.5 * scale - 1;
+      const tz = point.z + right.z * dist * side + tangent.z * jitter;
+
+      const tGeo = trunkGeo.clone();
+      const tMat = new THREE.Matrix4().makeTranslation(tx, ty, tz).multiply(new THREE.Matrix4().makeScale(scale, scale, scale));
+      tGeo.applyMatrix4(tMat);
+      trunkGeos.push(tGeo);
+
+      const cGeo = canopyGeo.clone();
+      const cy = ty + 2.5 * scale + treeHeight * 0.3;
+      const cScaleY = scale * (0.8 + srand() * 0.4);
+      const cMat = new THREE.Matrix4().makeTranslation(tx, cy, tz).multiply(new THREE.Matrix4().makeScale(scale, cScaleY, scale));
+      cGeo.applyMatrix4(cMat);
+      canopyGeos.push(cGeo);
+    }
+  }
+
+  // Merge into 2 draw calls
+  if (trunkGeos.length > 0) {
+    scene.add(new THREE.Mesh(BufferGeometryUtils.mergeGeometries(trunkGeos), trunkMat));
+  }
+  if (canopyGeos.length > 0) {
+    scene.add(new THREE.Mesh(BufferGeometryUtils.mergeGeometries(canopyGeos), canopyMat));
+  }
+}
+
+// ── MINIMAP ──
+let minimapTrackPoints = null;
+let minimapBounds = null;
+
+function buildMinimapData() {
+  const steps = 200;
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const p = curve.getPointAt(i / steps);
+    pts.push({ x: p.x, z: p.z });
+  }
+  // Compute bounds
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z;
+    if (p.z > maxZ) maxZ = p.z;
+  }
+  const pad = 10;
+  minimapBounds = { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad };
+  minimapTrackPoints = pts;
+}
+
+function drawMinimap() {
+  if (!minimapTrackPoints) return;
+  const w = $minimap.width;
+  const h = $minimap.height;
+  const b = minimapBounds;
+  const rangeX = b.maxX - b.minX;
+  const rangeZ = b.maxZ - b.minZ;
+  const scale = Math.min((w - 16) / rangeX, (h - 16) / rangeZ);
+  const offX = (w - rangeX * scale) / 2;
+  const offZ = (h - rangeZ * scale) / 2;
+
+  function toMap(x, z) {
+    return { mx: offX + (x - b.minX) * scale, my: offZ + (z - b.minZ) * scale };
+  }
+
+  const ctx = minimapCtx;
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw track outline
+  ctx.beginPath();
+  for (let i = 0; i < minimapTrackPoints.length; i++) {
+    const m = toMap(minimapTrackPoints[i].x, minimapTrackPoints[i].z);
+    if (i === 0) ctx.moveTo(m.mx, m.my);
+    else ctx.lineTo(m.mx, m.my);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(255,110,199,0.5)';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Start/finish marker
+  const s = toMap(minimapTrackPoints[0].x, minimapTrackPoints[0].z);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(s.mx - 3, s.my - 3, 6, 6);
+
+  // AI car dots
+  for (const ai of aiCars) {
+    const at = ((ai.progress % 1) + 1) % 1;
+    const ap = curve.getPointAt(Math.min(at, 0.9999));
+    const am = toMap(ap.x, ap.z);
+    ctx.beginPath();
+    ctx.arc(am.mx, am.my, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,80,80,0.8)';
+    ctx.fill();
+  }
+
+  // Player dot
+  let playerT;
+  if (freeRoam) {
+    playerT = freeNearestT;
+  } else {
+    playerT = ((trackProgress % 1) + 1) % 1;
+  }
+  const pp = freeRoam ? freePos : curve.getPointAt(Math.min(playerT, 0.9999));
+  const pm = toMap(pp.x, pp.z);
+  ctx.beginPath();
+  ctx.arc(pm.mx, pm.my, 4.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#0ff';
+  ctx.shadowColor = '#0ff';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
 }
 
 // ── INPUT ──
@@ -1256,6 +1723,8 @@ function doCountdown() {
       raceStartTime = performance.now();
       $hud.style.display = 'flex';
       $positionHud.style.display = '';
+      $lapHud.style.display = '';
+      $minimap.style.display = '';
       $xpHud.style.display = '';
       document.getElementById('drift-btn').style.display = '';
       if (gyroAvailable) $tiltIndicator.style.display = 'block';
@@ -1267,6 +1736,8 @@ function finishRace() {
   gameState = 'finished';
   $hud.style.display = 'none';
   $positionHud.style.display = 'none';
+  $lapHud.style.display = 'none';
+  $minimap.style.display = 'none';
   $xpHud.style.display = 'none';
   $tiltIndicator.style.display = 'none';
   document.getElementById('drift-btn').style.display = 'none';
@@ -1280,8 +1751,8 @@ function finishRace() {
   // Show final position + XP
   const pos = calcPosition();
   document.querySelector('#finish-screen .label').textContent =
-    'You finished ' + pos + positionSuffix(pos) + ' out of ' + (CFG.aiCount + 1) +
-    '  —  ' + Math.round(xpTotal) + ' XP';
+    pos + positionSuffix(pos) + ' of ' + (CFG.aiCount + 1) +
+    '  •  ' + TOTAL_LAPS + ' laps  •  ' + Math.round(xpTotal) + ' XP';
   $finishScreen.style.display = 'flex';
 }
 
@@ -1303,6 +1774,10 @@ function restartRace() {
   freeNearestT = 0;
   freeSmoothY = 0;
   freePos.set(0, 0, 0);
+  // Reset laps
+  currentLap = 1;
+  lastProgressForLap = 0;
+  $lapNum.textContent = '1';
   // Reset XP
   xpTotal = 0;
   xpMultiplier = 1;
@@ -1323,6 +1798,7 @@ function restartRace() {
     aiCars[i].speed = 0;
     aiCars[i].boostTimer = 0;
     aiCars[i].finished = false;
+    aiCars[i].lap = 1;
     aiCars[i].lateral = (i - 2) * 3;
   }
   updateCarPosition(0, 0);
@@ -1365,7 +1841,8 @@ function updateCarPosition(progress, lateral) {
     let bestDist = Infinity;
     let bestT = freeNearestT;
     const coarseStep = 0.002;
-    for (let i = -20; i <= 20; i++) {
+    const coarseRange = isAndroid ? 12 : 20;
+    for (let i = -coarseRange; i <= coarseRange; i++) {
       const st = Math.max(0, Math.min(0.9999, freeNearestT + i * coarseStep));
       const sp = curve.getPointAt(st);
       const d = (newX - sp.x) ** 2 + (newZ - sp.z) ** 2;
@@ -1373,7 +1850,8 @@ function updateCarPosition(progress, lateral) {
     }
     // Fine pass: narrow down within the coarse winner's neighborhood
     const fineStep = 0.0002;
-    for (let i = -10; i <= 10; i++) {
+    const fineRange = isAndroid ? 5 : 10;
+    for (let i = -fineRange; i <= fineRange; i++) {
       const st = Math.max(0, Math.min(0.9999, bestT + i * fineStep));
       const sp = curve.getPointAt(st);
       const d = (newX - sp.x) ** 2 + (newZ - sp.z) ** 2;
@@ -1486,7 +1964,7 @@ function updateCamera(instant) {
     const camBaseY = Math.max(freePos.y, camBehindPt.y);
     idealPos = new THREE.Vector3(
       freePos.x + behindX,
-      Math.max(camBaseY + CFG.cameraHeight, 0),
+      camBaseY + CFG.cameraHeight,
       freePos.z + behindZ
     );
     // Look at the car, not ahead of it
@@ -1513,8 +1991,7 @@ function updateCamera(instant) {
 
     idealPos = new THREE.Vector3(
       point.x - tangent.x * CFG.cameraDist + right.x * lateralOffset * 0.5,
-      // Ensure camera never goes below ground plane (-2) + minimum clearance
-      Math.max(camBaseY + CFG.cameraHeight, -2 + 2),
+      camBaseY + CFG.cameraHeight,
       point.z - tangent.z * CFG.cameraDist + right.z * lateralOffset * 0.5
     );
 
@@ -1555,6 +2032,7 @@ function updateFPSCounter(now) {
 }
 
 function animate(now = 0) {
+  if (_pageHidden || _contextLost) return; // stop loop when hidden or GPU lost
   requestAnimationFrame(animate);
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   frameDt = dt;
@@ -1689,8 +2167,9 @@ function animate(now = 0) {
     const metersPerSec = effectiveSpeed / 3.6;
     trackProgress += (metersPerSec * dt) / trackLength;
 
-    // Snapshot which AI cars are ahead (for overtake XP)
-    const wasAhead = aiCars.map(ai => ai.progress > trackProgress);
+    // Snapshot which AI cars are ahead (for overtake XP) — account for laps
+    const playerTotal = (currentLap - 1) + trackProgress;
+    const wasAhead = aiCars.map(ai => ((ai.lap - 1) + ai.progress) > playerTotal);
 
     // Update AI cars
     for (let ai of aiCars) {
@@ -1701,8 +2180,9 @@ function animate(now = 0) {
     checkCollisions(dt);
 
     // XP: detect overtakes (AI was ahead, now behind)
+    const playerTotalNow = (currentLap - 1) + trackProgress;
     for (let i = 0; i < aiCars.length; i++) {
-      if (wasAhead[i] && aiCars[i].progress <= trackProgress) {
+      if (wasAhead[i] && ((aiCars[i].lap - 1) + aiCars[i].progress) <= playerTotalNow) {
         awardXP(200, 'PASS');
       }
     }
@@ -1714,7 +2194,8 @@ function animate(now = 0) {
 
     // Update HUD
     $speedVal.textContent = Math.round(speed);
-    $progressVal.textContent = Math.round(trackProgress * 100) + '%';
+    const totalProgress = ((currentLap - 1) + trackProgress) / TOTAL_LAPS;
+    $progressVal.textContent = Math.round(totalProgress * 100) + '%';
 
     // Update XP system
     updateXPTimers(dt);
@@ -1725,10 +2206,16 @@ function animate(now = 0) {
       $tiltDot.style.left = pct + '%';
     }
 
-    // Check finish
+    // Lap detection: progress wraps at 1.0
     if (trackProgress >= 1) {
-      trackProgress = 1;
-      finishRace();
+      trackProgress -= 1;
+      lastProgressForLap = trackProgress;
+      currentLap++;
+      $lapNum.textContent = currentLap;
+      if (currentLap > TOTAL_LAPS) {
+        trackProgress = 0.999;
+        finishRace();
+      }
     }
 
     updateCarPosition(trackProgress, lateralOffset);
@@ -1739,12 +2226,19 @@ function animate(now = 0) {
 
   // Move ground to follow camera loosely
   if (groundMesh) {
+    const t = Math.max(0, Math.min(0.9999, trackProgress));
+    const gPt = curve.getPointAt(t);
     groundMesh.position.x = camera.position.x;
+    groundMesh.position.y = gPt.y - 2;
     groundMesh.position.z = camera.position.z;
   }
 
+  // Minimap (every 3rd frame on Android to reduce getPointAt calls)
+  if (gameState === 'racing' && (!isAndroid || (fpsCount % 3 === 0))) drawMinimap();
+
   // Render
-  composer.render();
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
 }
 
 // ── EXTERNAL API ──
@@ -1779,6 +2273,8 @@ window.AccelDriv = {
       playerPosition,
       raceTime,
       freeRoam,
+      currentLap,
+      totalLaps: TOTAL_LAPS,
       xp: { total: Math.round(xpTotal), multiplier: xpMultiplier },
     };
   },

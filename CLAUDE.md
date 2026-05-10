@@ -1,107 +1,190 @@
-# ACCEL DRIV — Claude Code Project Guide
+# CLAUDE.md — Project Memory
 
-## What This Is
-A Three.js track editor ("Track Suite") with an integrated racing game ("Horizon Drive"), deployed via GitHub Pages.
-Two-file architecture: `index.html` is the editor (~1116 lines), `game.html` is the standalone game (~1794 lines).
+## Git Workflow
 
-**Live URL:** https://phdev.github.io/accel-driv/
+- **Always push and merge into `main`** for every change.
+- GitHub Pages deploys automatically from `main` via GitHub Actions (`.github/workflows/deploy.yml`).
 
-## Push & Merge Workflow
+### Push & Merge Process (Direct to Main via PAT)
 
-There are **no PRs**. Push directly to `main` using two sequential pushes after every commit:
+Bypass pull requests entirely using two sequential pushes:
+
+1. Commit changes on the `claude/` feature branch.
+2. Push the feature branch to origin:
+   ```
+   git push -u origin claude/<branch-name>
+   ```
+3. Push the feature branch directly onto `main` via PAT-authenticated URL:
+   ```
+   git push https://x-access-token:<PAT>@github.com/phdev/accel-driv.git claude/<branch-name>:main
+   ```
+   - `x-access-token` is the username GitHub expects for PAT-based HTTPS auth.
+   - The refspec `branch:main` fast-forwards `main` to the feature branch tip.
+   - No PR, no merge commit, no review step.
+   - GitHub Pages deploys immediately after push succeeds.
+
+**PAT is stored outside the repo (never committed).** Use the token provided at session start.
+
+### Retry Policy
+
+- If push fails due to network errors, retry up to 4 times with exponential backoff (2s, 4s, 8s, 16s).
+
+## Project Overview
+
+- Vite-based project deployed to GitHub Pages.
+- Build output goes to `./dist`.
+- Node LTS with npm for dependency management.
+
+## TV Dashboard UI
+
+### Display Target
+
+- **Physical display:** Samsung TV, 3840x2160 (4K) via HDMI
+- **Logical resolution:** 1920x1080 — Chromium runs with `--force-device-scale-factor=2` in `~/.config/labwc/autostart`, so all CSS is authored for 1080p and rendered at 2x sharpness
+- **Platform:** Chromium kiosk mode on Raspberry Pi (labwc Wayland compositor, lightdm)
+- **Viewport:** Fixed position, no scrolling (`position: fixed; inset: 0; overflow: hidden`)
+- **Mobile breakpoint:** 768px (switches to single-column scrollable layout)
+
+### Layout
+
+- **Desktop grid:** Two rows
+  - Top row (36% height): Calendar (1fr) | Weather (1.3fr) | Photos (1fr) | Facts (0.8fr)
+  - Bottom row (64% height): Notifications+AgentTasks | Events+Timers | Birthdays | Search/Ask Anything
+- **Gaps:** 14px between panels, 20px 44px 12px padding
+
+### Typography
+
+- **Display fonts:** Fraunces (default), Playfair Display, VT323, Baloo 2, Cormorant Garamond (per theme)
+- **Body fonts:** DM Sans (default), Source Serif 4, Space Mono, Nunito, Outfit (per theme)
+- **Current font sizes (rem):** Header title 1.5–1.6, clock 2.4–2.8, panel headers 0.8–0.9, content text 0.75–0.82, buttons 0.62–0.9, labels 0.5–0.65, micro text 0.45–0.6
+
+### Themes (5 available)
+
+1. **Midnight Observatory** — dark blue, cyan accent, serif, ambient glow
+2. **Morning Paper** — light beige, red accent, serif, no glow
+3. **Retro Terminal** — black/green monospace, CRT scanlines
+4. **Soft Playroom** — pastel gradients, pink accent, rounded
+5. **Glass Noir** — dark gradient, gold accent, backdrop blur
+
+### Key UI Files
+
+| File | Purpose |
+|---|---|
+| `src/App.jsx` | Main dashboard grid layout |
+| `src/themes/index.js` | Theme definitions (colors, fonts, effects) |
+| `src/hooks/usePreviewMode.js` | TV resolution constants (1920x1080) |
+| `src/components/` | 17 panel/widget components |
+| `index.html` | Viewport config, font imports, dark background |
+
+## Pencil Designs & TV Preview
+
+### Workflow (ALWAYS follow when creating/updating pencil designs)
+
+When you create or modify a pencil design in `home-center.pen`, you MUST also:
+
+1. **Add to `src/TVPreview.jsx` PENCIL_PAGES array** — add a `{ slug, label, nodeId }` entry so it appears in the TV Preview dropdown under "Pencil Designs".
+2. **Add to `scripts/update-pencil-screenshots.mjs` pages array** — add a `{ slug, nodeId }` entry matching the TVPreview slug.
+3. **Run the screenshot script** — `node scripts/update-pencil-screenshots.mjs` to generate static PNGs in `public/pencil-screenshots/`.
+4. **If it's a live page, add to LIVE_VIEWS too** — add `{ slug, label, params }` entry in TVPreview.
+
+Do this automatically without being asked. Every pencil design must be viewable in the TV Preview at `192.168.1.103:5174/home-center/tv-preview/`.
+
+### Current Pencil Designs
+
+| Design | Node ID | Slug |
+|--------|---------|------|
+| Family TV Dashboard | `8pkH2` | `family-tv-dashboard` |
+| Full Calendar Page | `85GSD` | `full-calendar-page` |
+| Weekly Calendar Page | `ZPJSg` | `weekly-calendar-design` |
+| Daily Calendar Page | `jRHG1` | `daily-calendar-design` |
+| Full Weather Page | `VD32B` | `full-weather-page` |
+| Full Photos Page | `ZOFqi` | `full-photos-page` |
+| LLM Response Page | `dMUil` | `full-llm-response-page` |
+| History Page | `Tbtje` | `full-history-page` |
+| Transcription Overlay | `DeP7G` | `transcription-overlay` |
+
+### Key Files
+
+| File | Purpose |
+|---|---|
+| `home-center.pen` | Pencil design file (in ~/Documents/) |
+| `src/TVPreview.jsx` | TV Preview page — PENCIL_PAGES + LIVE_VIEWS arrays |
+| `scripts/update-pencil-screenshots.mjs` | Generates static PNGs from pencil designs via MCP |
+| `public/pencil-screenshots/` | Generated PNG files served by TV Preview |
+
+## Wake Word Service (Raspberry Pi)
+
+### Architecture
+
+A Python service (`pi/wake_word_service.py`) runs on a Raspberry Pi, continuously listening for voice commands via a ReSpeaker 2-Mic Pi HAT. On detection, it controls a TV via HDMI-CEC (`cec-client`).
+
+**Commands:**
+- "Hey Homer" → Turn TV on + set Pi as active HDMI source
+- "Hey Homer, turn off" → Put TV in standby
+- "Hey Homer, turn on" → Turn TV on (explicit variant)
+
+### Pi Access
+
+- **SSH:** `ssh pi@homecenter.local`
+- **Service:** `sudo systemctl {start|stop|restart|status} wake-word`
+- **Logs:** `sudo journalctl -u wake-word -f`
+- **Venv:** `/home/pi/home-center/pi/.venv/`
+- **Service unit:** `/etc/systemd/system/wake-word.service`
+- **Audio device:** ReSpeaker 2-Mic HAT (WM8960 codec, typically `hw:2,0`)
+
+### Key Files
+
+| File | Purpose |
+|---|---|
+| `pi/wake_word_service.py` | Main service — audio capture, wake word detection, CEC control, chime playback |
+| `pi/train_hey_homer.py` | Training script for openWakeWord custom models |
+| `pi/models/` | ONNX/PT model files for openWakeWord |
+| `pi/sounds/acknowledge.wav` | Two-tone chime (C5+E5) played on detection |
+
+### Current Status (as of 2026-03-01)
+
+Uses openWakeWord with custom ONNX models trained via `pi/train_hey_homer.py`. After wake word detection, uses faster-whisper (tiny model, int8, local) for speech-to-text to parse voice commands.
+
+**Commands (via STT after wake word):**
+- "Hey Homer, set a timer for X minutes for Y" → creates timer via worker API
+- "Hey Homer, stop" → dismisses all expired timers
+- "Hey Homer, turn off" → TV standby via HDMI-CEC
+- "Hey Homer" (no command) → does nothing (previously defaulted to turn_on)
+
+**Two-stage detection (DNN → Whisper verification):**
+1. openWakeWord DNN detects wake word candidate
+2. Rolling 2.5s audio buffer is fed to Whisper to verify "homer" was actually spoken
+3. Only if Whisper confirms → chime plays and command recording begins
+4. This eliminates false positives from ambient noise/TV audio
+
+**Robustness mitigations against false positives:**
+- **Whisper verification gate** — two-stage: DNN triggers → Whisper confirms "homer" in rolling buffer before acting
+- **Phonetic pattern matching** — Whisper tiny often mis-transcribes "hey homer" as "homework", "home", etc. Verification accepts these phonetic near-matches
+- **No-speech threshold raised to 0.95** — prevents Whisper from discarding short/quiet utterances as silence
+- RMS energy gate (MIN_RMS_ENERGY=300) — ignores low-energy audio chunks
+- Consecutive frame requirement — needs 5+ consecutive high-scoring frames (raised from 3)
+- Score smoothing — averages last 3 prediction scores
+- Post-action mute — 15s silence after trigger to prevent TV audio feedback loops (raised from 3s)
+- Model reset after each detection to clear prediction buffer
+- Cooldown window (10s) between triggers
+- Empty transcription returns "none" action (no longer defaults to turn_on)
+
+**Training (for retraining the DNN):**
+- `python pi/train_hey_homer.py --negative-samples 2000 --positive-samples 500 --augments 6`
+- Training script includes noise, silence, music, and phonetically-similar negatives
+- Use `--clip-duration 2.0` for "hey homer"
+
+The systemd service runs with `--debug` for diagnostics. Worker URL is configured via `--worker-url`.
+
+### Deploying to Pi
 
 ```bash
-# 1. Push to feature branch (standard)
-git push -u origin claude/accelerometer-game-controls-rG6UR
+# Copy a file to the Pi
+scp pi/wake_word_service.py pi@homecenter.local:/home/pi/home-center/pi/
 
-# 2. Push to main via PAT (this IS the "merge")
-git push https://x-access-token:<PAT>@github.com/phdev/accel-driv.git claude/accelerometer-game-controls-rG6UR:main
+# Restart the service after changes
+ssh pi@homecenter.local "sudo systemctl restart wake-word"
+
+# Install a Python package in the Pi's venv
+ssh pi@homecenter.local "/home/pi/home-center/pi/.venv/bin/pip install <package>"
 ```
-
-The `<branch>:main` syntax pushes the local branch onto remote `main`. The PAT provides write access. GitHub Pages deploys from `main` at root `/`.
-
-**PAT is stored in the Claude Code memory file** (`MEMORY.md`) — not committed to the repo. Claude Code sessions will have it automatically.
-
-**After both pushes succeed, say: "pushed and merged"**
-
-## Tech Stack
-- **Three.js r128** (CDN) — editor uses basic renderer, game uses EffectComposer + UnrealBloomPass
-- **Spark.js** (CDN) — Gaussian splat rendering in the editor's Splat tab
-- **World Labs Marble API** — AI-powered 3D environment generation
-- **No build step, no bundler**
-- **GitHub Pages** — deployed from `main`, root `/`
-
-## Files
-- `index.html` — Track Suite editor (track editing, terrain, gameplay config, Play mode, splat viewer)
-- `game.html` — Standalone Horizon Drive racing game (rendering, physics, AI, controls, HUD)
-- `track.json` — 3000 spline points defining the default track shape
-- `track_backup.json` — Backup copy of the default track
-- `base_basic_shaded.glb` — Car model (~2400 tris), used in the game
-- `base_basic_pbr.glb` — PBR version of the car model
-
-## Architecture Overview
-
-### Editor (`index.html`)
-
-The landing page is a track editor with 5 tabs:
-
-**Track tab** — Load/export tracks, edit track points, control points, spline manipulation, smoothing, elevation offset, loop creation, image-to-track conversion, per-control-point width editing
-
-**Terrain tab** — Procedural terrain generation using seeded simplex noise (configurable amplitude, frequency, octaves, lacunarity, persistence, seed). Track-aware blending (clearance, blend radius, depression). Vertex-colored height map with 4-color gradient.
-
-**Game tab** — Place speed pads (count, boost multiplier, length) and AI cars (count, spacing, grid columns, start offset). Export full scene as JSON.
-
-**Play tab** — Launches the racing game inline via an iframe. The editor dynamically generates a standalone HTML document (via `buildGameHTML()`) containing the full game engine, injects the current track data, and loads it as a blob URL. Press ESC or exit button to return to the editor.
-
-**Splat tab** — World Labs Marble API integration for AI 3D environment generation (text or screenshot+text prompts). Spark.js-based Gaussian splat viewer supporting .spz, .ply, .splat, .sog formats. Splat opacity and scale controls.
-
-**Editor 3D viewport** — Three.js r128, no post-processing. Orbit/pan/zoom controls. Gizmo cube overlay. Grid helper. Mobile-responsive sidebar drawer.
-
-### Game Engine (embedded in Play tab / `game.html`)
-
-**Rendering** — Three.js r128 with UnrealBloomPass post-processing (threshold 0, strength 1, radius 0.1, exposure 1). ACES filmic tone mapping. FogExp2 atmosphere. Neon-lit track with emissive barriers.
-
-**Track & Movement** — `CatmullRomCurve3` spline (Y/Z swapped for Three.js coords). Rail mode (default): car follows spline via `curve.getPointAt(t)` with lateral offset. Free-roam mode available via checkbox.
-
-**Car & Physics** — GLB model auto-centered and scaled to 8 units. Auto-gas with manual braking. Speed capped at 270 km/h. Drift state machine: GRIP ↔ DRIFT with assist stabilization, speed bleed, exit snap boost. 15° normal yaw, up to 45° during drift.
-
-**AI** — 5 opponents with staggered speeds (165-248 km/h), road weaving, boost pad usage. Box geometry placeholders with unique hue-shifted colors.
-
-**Boost Pads** — 40 pads placed along track, 1.5s boost to 390 km/h.
-
-**XP System** — Continuous XP during drift, discrete awards for boosts (+200) and passing AI (+200). Multiplier increments on events, resets after 3s idle.
-
-**Controls** (priority order):
-1. External API (`window.AccelDriv`) — for web wrapper integration
-2. Keyboard (arrow keys / WASD)
-3. Touch
-4. Accelerometer (DeviceOrientation `gamma`)
-   - iOS: requires user gesture for permission, activates after 3 samples
-   - Android: activates after 20 samples averaging >5° (filters false positives)
-   - Deadzone: 3° normal, 8° free-roam
-
-**HUD** — Speed, time, progress %, position (1st-6th), boost indicator, drift indicator, XP display with multiplier. Tilt indicator bar. Finish screen with time/placement/XP.
-
-**External API** (`window.AccelDriv` in `game.html`):
-- `setSteer(v)`, `setBrake(v)`, `setDrift(v)`, `releaseAll()`
-- `start()`, `restart()`
-- `getState()`, `setFreeRoam(v)`, `getCFG()`
-
-## Key Implementation Details
-
-### Play Mode Game Generation
-The editor's Play tab generates a complete standalone HTML game at runtime via `buildGameHTML()`. Track data is serialized as JSON and injected into the generated HTML. The game runs in an iframe using a blob URL. GLB assets are loaded from the GitHub raw URL.
-
-### Image-to-Track Pipeline
-1. Upload image → grayscale conversion → Otsu thresholding
-2. Distance transform (BFS) → ridge detection (local maxima)
-3. Nearest-neighbor chain ordering → uniform resampling → smoothing
-4. Auto-loop closure if endpoints are close enough
-
-### Terrain Generation
-Seeded simplex noise with configurable FBM (fractional Brownian motion). Track-aware height blending: clearance zone forces terrain to track height + depression, smooth hermite blend in transition zone.
-
-### Drift Visuals
-- Normal steering: car yaws up to 15°
-- Drifting: car yaws up to full `driftAngle` (max 45°)
-- Drift direction follows gyro/steer input in real-time
