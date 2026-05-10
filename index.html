@@ -175,7 +175,7 @@
     <label class="chk"><input type="checkbox" id="chk-scenery" checked onchange="toggleScenery()"><span>Show scenery</span></label>
     <div class="btn-group"><button class="btn btn-accent2" onclick="generateScenery()">Generate</button><button class="btn" onclick="clearScenery()">Clear</button></div>
   </div>
-  <div class="panel"><div class="btn-group"><button class="btn btn-accent" onclick="exportAll()">Export Scene</button></div></div>
+  <div class="panel"><div class="btn-group"><button class="btn btn-accent" onclick="exportAll()">Export Scene</button><button class="btn btn-accent2" onclick="exportSceneAsGLB()">Download GLB</button></div></div>
 </div>
 
 <!-- ===== PLAY TAB ===== -->
@@ -328,6 +328,7 @@
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from 'three';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 THREE.ColorManagement.enabled=false;
 // ============================================================
 // SHARED DATA
@@ -813,6 +814,21 @@ var d={track:trackData.map(function(p){return[Math.round(p[0][0]*10)/10,Math.rou
 speedPads:speedPadData,aiCars:aiCarData,
 terrain:{amplitude:parseFloat(document.getElementById('s-amp').value),frequency:parseFloat(document.getElementById('s-freq').value),octaves:parseInt(document.getElementById('s-oct').value),seed:parseInt(document.getElementById('s-seed').value),resolution:parseInt(document.getElementById('s-res').value),extent:parseFloat(document.getElementById('s-ext').value)}};
 var b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download='track_scene.json';a.click();URL.revokeObjectURL(u);toast('Scene exported')}
+
+function exportSceneAsGLB(){
+var group=new THREE.Group();
+var add=function(obj){if(obj){var cl=obj.clone();cl.updateMatrixWorld(true);group.add(cl);}};
+add(trackRibbon);add(terrainMesh);add(speedPadGroup);add(aiCarGroup);add(sceneryGroup);
+if(group.children.length===0){toast('Nothing to export');return;}
+toast('Exporting GLB…');
+var exporter=new GLTFExporter();
+exporter.parse(group,function(buf){
+  var blob=new Blob([buf],{type:'application/octet-stream'});
+  var u=URL.createObjectURL(blob);var a=document.createElement('a');
+  a.href=u;a.download='track_scene.glb';a.click();URL.revokeObjectURL(u);
+  toast('GLB downloaded');
+},function(err){toast('GLB export failed');console.error(err);},{binary:true});
+}
 
 // ============================================================
 // IMAGE TO TRACK
@@ -1677,7 +1693,7 @@ var vp=rndr.getSize(new THREE.Vector2());rndr.setViewport(vp.x-s-10,vp.y-s-10,s,
 }
 
 // Expose for inline HTML handlers
-Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,exportTrainingViews});
+Object.assign(window,{switchTab,toggleDrawer,fitView,loadFile,exportTrack,undoAll,handleFile,handleImageUpload,setEditMode,smoothSelection,smoothAll,applyElevation,extractControlPoints,rebuildFromSpline,updateCPFromInput,insertCPAfter,deleteSelectedCP,onDefaultWidthChange,setAllWidths,onCPWidthChange,widthPreset,rebuildWithWidth,previewLoop,makeLoop,removeLoop,generateTerrain,clearTerrain,toggleSpeedPads,placeSpeedPads,toggleAICars,placeAICars,generateScenery,clearScenery,toggleScenery,exportAll,exportSceneAsGLB,startGame,stopGame,generateMarbleWorld,trackAwarePrompt,loadSplatFromURL,loadSplatFromFile,removeSplat,splatBackdropPreset,splatResetTransform,checkMarbleOperation,clearMarblePending,exportTrainingViews});
 init();fitView();showMarblePending();
 </script>
 
