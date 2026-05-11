@@ -962,6 +962,10 @@ var group=new THREE.Group();
 var add=function(obj){if(obj){var cl=obj.clone();cl.updateMatrixWorld(true);group.add(cl);}};
 add(trackRibbon);add(terrainMesh);add(speedPadGroup);add(aiCarGroup);add(sceneryGroup);
 if(group.children.length===0){toast('Nothing to export');return;}
+// Center at origin so the GLB imports near (0,0,0) in external tools
+var bbox=new THREE.Box3().setFromObject(group);
+var center=bbox.getCenter(new THREE.Vector3());
+group.children.forEach(function(c){c.position.sub(center);});
 toast('Exporting GLB…');
 var exporter=new GLTFExporter();
 exporter.parse(group,function(buf){
