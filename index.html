@@ -966,7 +966,7 @@ if(group.children.length===0){toast('Nothing to export');return;}
 var bbox=new THREE.Box3().setFromObject(group);
 var center=bbox.getCenter(new THREE.Vector3());
 group.children.forEach(function(c){c.position.sub(center);});
-group.scale.setScalar(0.01);
+group.scale.setScalar(0.1);
 toast('Exporting GLB…');
 var exporter=new GLTFExporter();
 exporter.parse(group,function(buf){
